@@ -1,0 +1,14 @@
+[package]
+name = "using-quinn"
+version = "0.1.0"
+authors = ["ustulation <ustulation@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+futures = "*"
+quinn = { path = "../quinn/quinn" }
+tokio = "*"
+unwrap = "*"
+bincode = "*"
+serde = "*"
+serde_derive = "*"
