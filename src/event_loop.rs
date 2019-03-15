@@ -1,26 +1,33 @@
-use crate::event::Event;
-use futures::{Future, Stream};
-use std::cell::RefCell;
+use futures::Stream;
 use std::fmt;
-use std::rc::Rc;
-use std::sync::mpsc::Sender;
 use std::thread::{self, JoinHandle};
 use tokio::runtime::current_thread;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
+/// Post messages to event loop
+pub fn post<F>(tx: &mut UnboundedSender<EventLoopMsg>, f: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    let msg = EventLoopMsg::new(f);
+    if let Err(e) = tx.try_send(msg) {
+        println!("Error posting messages to event loop: {:?}", e);
+    }
+}
+
 /// Message that event loop can accept in order to be requested to do something
-pub struct EventLoopMsg(Option<Box<FnMut(&EventLoopState) + Send>>);
+pub struct EventLoopMsg(Option<Box<FnMut() + Send>>);
 
 impl EventLoopMsg {
     /// Create a new message to be posted to the event loop
     pub fn new<F>(f: F) -> Self
     where
-        F: FnOnce(&EventLoopState) + Send + 'static,
+        F: FnOnce() + Send + 'static,
     {
         let mut f = Some(f);
-        EventLoopMsg(Some(Box::new(move |el_state| {
+        EventLoopMsg(Some(Box::new(move || {
             let f = unwrap!(f.take());
-            f(el_state)
+            f()
         })))
     }
 
@@ -41,65 +48,29 @@ impl fmt::Debug for EventLoopMsg {
     }
 }
 
-#[derive(Clone)]
-pub struct EventLoopState {
-    inner: Rc<RefCell<Inner>>,
-}
-
-struct Inner {
-    event_tx: Sender<Event>,
-    quic_ep: Option<quinn::Endpoint>,
-}
-
-impl EventLoopState {
-    /// Insert a QUIC Endpoint if not already. If already done previously this will return false.
-    pub fn insert_quic_endpoint(&self, quic_ep: quinn::Endpoint) -> bool {
-        let mut inner = self.inner.borrow_mut();
-        if inner.quic_ep.is_none() {
-            inner.quic_ep = Some(quic_ep);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Crust event sender to users
-    pub fn tx(&self) -> Sender<Event> {
-        self.inner.borrow_mut().event_tx.clone()
-    }
-
-    fn new(event_tx: Sender<Event>) -> Self {
-        Self {
-            inner: Rc::new(RefCell::new(Inner {
-                event_tx,
-                quic_ep: None,
-            })),
-        }
-    }
-}
-
 pub struct EventLoop {
     tx: UnboundedSender<EventLoopMsg>,
     j: Option<JoinHandle<()>>,
 }
 
 impl EventLoop {
-    pub fn spawn(event_tx: Sender<Event>) -> Self {
+    pub fn spawn() -> Self {
         let (tx, rx) = mpsc::unbounded_channel::<EventLoopMsg>();
 
         let j = unwrap!(thread::Builder::new()
             .name("Crust-Event-Loop".into())
             .spawn(move || {
-                let el_state = EventLoopState::new(event_tx);
                 let event_loop_future = rx.map_err(|_| ()).for_each(move |ev_loop_msg| {
                     if let Some(mut f) = ev_loop_msg.0 {
-                        f(&el_state);
+                        f();
                         Ok(())
                     } else {
                         Err(())
                     }
                 });
 
+                // let mut rt = unwrap!(tokio::runtime::current_thread::Runtime::new());
+                // let _ = rt.block_on(event_loop_future);
                 current_thread::run(event_loop_future);
                 println!("Exiting Crust Event Loop");
             }));
@@ -107,19 +78,17 @@ impl EventLoop {
         Self { tx, j: Some(j) }
     }
 
+    #[allow(unused)]
     pub fn tx(&mut self) -> &mut UnboundedSender<EventLoopMsg> {
         &mut self.tx
     }
 
     /// Post messages to event loop
-    pub fn post<F>(tx: &mut UnboundedSender<EventLoopMsg>, f: F)
+    pub fn post<F>(&mut self, f: F)
     where
-        F: FnOnce(&EventLoopState) + Send + 'static,
+        F: FnOnce() + Send + 'static,
     {
-        let msg = EventLoopMsg::new(f);
-        if let Err(e) = tx.try_send(msg) {
-            println!("Error posting messages to event loop: {:?}", e);
-        }
+        post(&mut self.tx, f)
     }
 }
 

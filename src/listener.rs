@@ -1,55 +1,62 @@
-use crate::event::Event;
-use crate::event_loop::EventLoopState;
-use crate::wire_msg::WireMsg;
-use futures::{Future, Stream};
-use std::net::SocketAddr;
-use std::sync::mpsc::Sender;
+use crate::communicate::read_from_peer;
+use crate::connect::connect_to;
+use crate::context::{ctx_mut, Connection, ConnectionStatus};
+use futures::Stream;
+use std::collections::hash_map::Entry;
 use tokio::runtime::current_thread;
 
 /// Start listening
-pub fn listen(el_state: EventLoopState, incoming_connections: quinn::Incoming) {
+pub fn listen(incoming_connections: quinn::Incoming) {
     let leaf = incoming_connections.for_each(move |new_conn| {
         let connection = new_conn.connection;
         let incoming_streams = new_conn.incoming;
 
-        let el_state = el_state.clone();
         let peer_addr = connection.remote_address();
+
+        let mut establish_reverse_connection = false;
+        let allow = ctx_mut(|c| match c.connections.entry(peer_addr) {
+            Entry::Occupied(mut oe) => {
+                let conn = oe.get_mut();
+                if conn.from_peer.is_no_connection() {
+                    conn.from_peer = ConnectionStatus::Established(connection);
+                    establish_reverse_connection = conn.to_peer.status.is_no_connection();
+                    true
+                } else {
+                    false
+                }
+            }
+            Entry::Vacant(ve) => {
+                let mut conn: Connection = Default::default();
+                conn.from_peer = ConnectionStatus::Established(connection);
+                ve.insert(conn);
+                establish_reverse_connection = true;
+                true
+            }
+        });
+
+        if !allow {
+            println!("Not allowing duplicate connection from peer: {}", peer_addr);
+            return Ok(());
+        }
+
+        if establish_reverse_connection {
+            if let Err(e) = connect_to(peer_addr) {
+                println!(
+                    "Dropping incoming connection as we could not reverse connect to peer {}: {:?}",
+                    peer_addr, e
+                );
+                return Ok(());
+            }
+        }
 
         let leaf = incoming_streams
             .map_err(|e| println!("Connection closed due to: {:?}", e))
             .for_each(move |quic_stream| {
-                handle_peer_req(el_state.clone(), quic_stream, peer_addr);
+                read_from_peer(peer_addr, quic_stream);
                 Ok(())
             });
         current_thread::spawn(leaf);
         Ok(())
     });
-    current_thread::spawn(leaf);
-}
-
-fn handle_peer_req(el_state: EventLoopState, quic_stream: quinn::NewStream, peer: SocketAddr) {
-    let i_stream = match quic_stream {
-        quinn::NewStream::Bi(_bi) => {
-            print!("No code handling for bi-directional stream");
-            return;
-        }
-        quinn::NewStream::Uni(uni) => uni,
-    };
-
-    let leaf = quinn::read_to_end(i_stream, 64 * 1024)
-        .map_err(|e| println!("Error reading stream: {:?}", e))
-        .and_then(move |(_i_stream, raw)| {
-            let event_tx = el_state.tx();
-            let wire_msg = unwrap!(bincode::deserialize(&*raw));
-            match wire_msg {
-                WireMsg::UserMsg(msg) => {
-                    let new_msg = Event::NewMessage { peer, msg };
-                    unwrap!(event_tx.send(new_msg));
-                }
-                x => panic!("No handler for message: {:?}", x),
-            }
-            Ok(())
-        });
-
     current_thread::spawn(leaf);
 }
