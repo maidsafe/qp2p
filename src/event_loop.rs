@@ -1,6 +1,6 @@
-use futures::Stream;
 use std::fmt;
 use std::thread::{self, JoinHandle};
+use tokio::prelude::Stream;
 use tokio::runtime::current_thread;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
@@ -69,9 +69,7 @@ impl EventLoop {
                     }
                 });
 
-                // let mut rt = unwrap!(tokio::runtime::current_thread::Runtime::new());
-                // let _ = rt.block_on(event_loop_future);
-                current_thread::run(event_loop_future);
+                let _r = current_thread::block_on_all(event_loop_future);
                 println!("Exiting Crust Event Loop");
             }));
 

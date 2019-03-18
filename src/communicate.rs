@@ -1,40 +1,44 @@
-use crate::connect;
-use crate::context::{ctx, ctx_mut, Connection, ConnectionStatus};
+use crate::context::{ctx, ctx_mut, FromPeer, ToPeer};
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
-use futures::Future;
-use std::collections::hash_map::Entry;
+use crate::{connect, CrustInfo};
 use std::net::SocketAddr;
+use std::sync::mpsc::Sender;
+use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
 /// Send message to peer. If the peer is not connected, it will attempt to connect to it first
 /// and then send the message
-pub fn try_write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
-    let should_connect = ctx_mut(|c| match c.connections.entry(peer_addr) {
-        Entry::Occupied(mut oe) => match oe.get().to_peer.status {
-            ConnectionStatus::Initiated => {
-                oe.get_mut().to_peer.pending_sends.push_back(msg);
-                false
+// TODO accept only if there's peer certificate available
+pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
+    let connect_and_send = ctx_mut(|c| {
+        let conn = c
+            .connections
+            .entry(peer_info.peer_addr)
+            .or_insert_with(|| Default::default());
+        match conn.to_peer {
+            ToPeer::NoConnection => Some(msg),
+            ToPeer::Initiated {
+                ref peer_cert_der,
+                ref mut pending_sends,
+            } => {
+                if *peer_cert_der != peer_info.peer_cert_der {
+                    println!("TODO Certificate we have for the peer already doesn't match with the \
+                    one given - we should disconnect to such peers - something fishy going on.");
+                }
+                pending_sends.push_back(msg);
+                None
             }
-            ConnectionStatus::Established(ref conn) => {
-                write_to_peer_connection(peer_addr, conn, &msg);
-                false
+            ToPeer::Established { ref q_conn, .. } => {
+                write_to_peer_connection(peer_info.peer_addr, q_conn, &msg);
+                None
             }
-            ConnectionStatus::NoConnection => {
-                oe.get_mut().to_peer.pending_sends.push_back(msg);
-                true
-            }
-        },
-        Entry::Vacant(ve) => {
-            let mut conn: Connection = Default::default();
-            conn.to_peer.pending_sends.push_back(msg);
-            ve.insert(conn);
-            true
         }
     });
 
-    if should_connect {
-        if let Err(e) = connect::connect_to(peer_addr) {
+    if connect_and_send.is_some() {
+        let peer_addr = peer_info.peer_addr;
+        if let Err(e) = connect::connect_to(peer_info, connect_and_send) {
             println!(
                 "Unable to connect to peer {} to be able to send message: {:?}",
                 peer_addr, e
@@ -43,6 +47,8 @@ pub fn try_write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
     }
 }
 
+/// This will fail if we don't have a connection to the peer or if the peer is in an invalid state
+/// to be sent a message to.
 #[allow(unused)]
 pub fn write_to_peer(peer_addr: SocketAddr, msg: &WireMsg) {
     ctx(|c| {
@@ -51,8 +57,8 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: &WireMsg) {
             None => return println!("Asked to communicate with an unknown peer: {}", peer_addr),
         };
 
-        let conn = match &conn.to_peer.status {
-            ConnectionStatus::Established(ref conn) => conn,
+        let q_conn = match &conn.to_peer {
+            ToPeer::Established { ref q_conn, .. } => q_conn,
             x => {
                 return println!(
                     "Peer {} is in invalid state {:?} to be communicated to",
@@ -61,7 +67,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: &WireMsg) {
             }
         };
 
-        write_to_peer_connection(peer_addr, conn, msg);
+        write_to_peer_connection(peer_addr, q_conn, msg);
     })
 }
 
@@ -72,23 +78,26 @@ pub fn write_to_peer_connection(
 ) {
     let m = unwrap!(bincode::serialize(wire_msg));
     let leaf = conn
-        .open_uni() // TODO How do you close the stream
+        .open_uni()
         .map_err(move |e| println!("Error opening write stream to peer {}: {:?}", peer_addr, e))
-        .map(move |o_stream| tokio::io::write_all(o_stream, m))
-        .then(move |r| {
-            if let Err(e) = r {
-                println!("Error writing to peer {}; {:?}", peer_addr, e)
-            }
-            Ok(())
-        });
+        .and_then(move |o_stream| {
+            tokio::io::write_all(o_stream, m)
+                .map_err(|e| println!("Error writing to the stream: {:?}", e))
+        })
+        .and_then(|(o_stream, _)| {
+            tokio::io::shutdown(o_stream)
+                .map_err(|e| println!("Error shutting down the stream: {:?}", e))
+        })
+        .map(|_| ());
 
     current_thread::spawn(leaf);
 }
 
+/// Read messages from peer
 pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) {
     let i_stream = match quic_stream {
         quinn::NewStream::Bi(_bi) => {
-            print!("No code handling for bi-directional stream");
+            print!("TODO: No code handling for bi-directional stream");
             return;
         }
         quinn::NewStream::Uni(uni) => uni,
@@ -98,15 +107,110 @@ pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) {
         .map_err(|e| println!("Error reading stream: {:?}", e))
         .and_then(move |(_i_stream, raw)| {
             let wire_msg = unwrap!(bincode::deserialize(&*raw));
-            match wire_msg {
-                WireMsg::UserMsg(m) => handle_user_msg(peer_addr, m),
-                WireMsg::EndpointEchoReq => handle_echo_req(peer_addr),
-                WireMsg::EndpointEchoResp(our_addr) => handle_echo_resp(our_addr),
-            }
+            handle_wire_msg(peer_addr, wire_msg);
             Ok(())
         });
 
     current_thread::spawn(leaf);
+}
+
+/// Handle wire messages from peer
+pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
+    match wire_msg {
+        WireMsg::CertificateDer(cert) => handle_rx_cert(peer_addr, cert),
+        wire_msg => {
+            ctx_mut(|c| {
+                let conn = unwrap!(
+                    c.connections.get_mut(&peer_addr),
+                    "Logic Error - can't \
+                     get incoming from someone we don't know"
+                );
+
+                match conn.from_peer {
+                    FromPeer::Established {
+                        ref mut pending_reads,
+                        ..
+                    } => match conn.to_peer {
+                        ToPeer::NoConnection { .. } | ToPeer::Initiated { .. } => {
+                            pending_reads.push_back(wire_msg);
+                        }
+                        ToPeer::Established { ref q_conn, .. } => {
+                            dispatch_wire_msg(peer_addr, q_conn, c.our_ext_addr_tx.take(), wire_msg)
+                        }
+                    },
+                    FromPeer::NoConnection => unreachable!(
+                        "Cannot have no connection for someone \
+                         we got a message from"
+                    ),
+                }
+            });
+        }
+    }
+}
+
+/// Dispatch wire message
+// TODO: Improve by not taking `inform_tx` which is necessary right now to prevent double borrow
+pub fn dispatch_wire_msg(
+    peer_addr: SocketAddr,
+    q_conn: &quinn::Connection,
+    inform_tx: Option<Sender<SocketAddr>>,
+    wire_msg: WireMsg,
+) {
+    match wire_msg {
+        WireMsg::UserMsg(m) => handle_user_msg(peer_addr, m),
+        WireMsg::EndpointEchoReq => handle_echo_req(peer_addr, q_conn),
+        WireMsg::EndpointEchoResp(our_addr) => handle_echo_resp(our_addr, inform_tx),
+        WireMsg::CertificateDer(_) => unreachable!("Should have been handled already"),
+    }
+}
+
+fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
+    let peer_info = CrustInfo {
+        peer_addr,
+        peer_cert_der,
+    };
+
+    let reverse_connect_to_peer = ctx_mut(|c| {
+        let conn = unwrap!(
+            c.connections.get_mut(&peer_addr),
+            "Logic Error - cannot rx from unknown peer"
+        );
+
+        match conn.to_peer {
+            ToPeer::NoConnection { .. } => true,
+            ToPeer::Initiated {
+                ref peer_cert_der, ..
+            } => {
+                if *peer_cert_der != peer_info.peer_cert_der {
+                    println!("TODO Certificate we have for the peer already doesn't match with \
+                        the one given - we should disconnect to such peers - something fishy going \
+                        on.");
+                }
+                true
+            }
+            ToPeer::Established {
+                ref peer_cert_der, ..
+            } => {
+                if *peer_cert_der != peer_info.peer_cert_der {
+                    println!("TODO Certificate we have for the peer already doesn't match with \
+                        the one given - we should disconnect to such peers - something fishy going \
+                        on.");
+                }
+                false
+            }
+        }
+    });
+
+    if reverse_connect_to_peer {
+        if let Err(e) = connect::connect_to(peer_info, None) {
+            println!(
+                "Dropping incoming connection as we could not reverse connect to peer \
+                 {}: {:?}",
+                peer_addr, e
+            );
+            //TODO drop the connection but probably not for duplicate connects
+        }
+    }
 }
 
 fn handle_user_msg(peer_addr: SocketAddr, msg: Vec<u8>) {
@@ -114,17 +218,15 @@ fn handle_user_msg(peer_addr: SocketAddr, msg: Vec<u8>) {
     ctx(|c| unwrap!(c.event_tx.send(new_msg)));
 }
 
-fn handle_echo_req(peer_addr: SocketAddr) {
+fn handle_echo_req(peer_addr: SocketAddr, q_conn: &quinn::Connection) {
     let msg = WireMsg::EndpointEchoResp(peer_addr);
-    try_write_to_peer(peer_addr, msg);
+    write_to_peer_connection(peer_addr, q_conn, &msg);
 }
 
-fn handle_echo_resp(our_ext_addr: SocketAddr) {
-    ctx_mut(|c| {
-        if let Some(tx) = c.our_ext_addr_tx.take() {
-            if let Err(e) = tx.send(our_ext_addr) {
-                println!("Error informing endpoint echo service response: {:?}", e);
-            }
+fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAddr>>) {
+    if let Some(tx) = inform_tx {
+        if let Err(e) = tx.send(our_ext_addr) {
+            println!("Error informing endpoint echo service response: {:?}", e);
         }
-    })
+    }
 }

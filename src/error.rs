@@ -11,8 +11,15 @@ quick_error! {
              display("Connection Error: {}", e)
              from()
          }
+         CertificateParseError(e: quinn::tls::ParseError) {
+             display("Certificate Parse Error: {}", e)
+             from()
+         }
          DuplicateConnectionToPeer(peer_addr: SocketAddr) {
              display("Duplicate connection attempted to peer {}", peer_addr)
+         }
+         NoEndpointEchoServerFound {
+             display("There's no endpoint echo server to ask.")
          }
      }
 }
