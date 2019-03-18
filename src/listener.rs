@@ -45,7 +45,18 @@ pub fn listen(incoming_connections: quinn::Incoming) {
         let leaf = incoming_streams
             .map_err(move |e| println!("Connection closed by peer {} due to: {:?}", peer_addr, e))
             .for_each(move |quic_stream| {
-                communicate::read_from_peer(peer_addr, quic_stream);
+                if let Err(e) = communicate::read_from_peer(peer_addr, quic_stream) {
+                    println!(
+                        "Error \"{}\" reading from peer. Closing all connections to it.",
+                        e
+                    );
+                    ctx_mut(|c| {
+                        if let Entry::Occupied(oe) = c.connections.entry(peer_addr) {
+                            oe.remove();
+                        }
+                    });
+                    return Err(());
+                }
                 Ok(())
             })
             .then(|r| {

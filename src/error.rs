@@ -3,6 +3,9 @@ use std::net::SocketAddr;
 quick_error! {
     #[derive(Debug)]
      pub enum Error {
+         BiDirectionalStreamAttempted(peer_addr: SocketAddr) {
+             display("Bi-directional stream attempted by peer {}", peer_addr)
+         }
          ConnectError(e: quinn::ConnectError) {
              display("Connection Error: {}", e)
              from()

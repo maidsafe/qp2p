@@ -1,6 +1,8 @@
 use crate::context::{ctx, ctx_mut, FromPeer, ToPeer};
+use crate::error::Error;
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
+use crate::R;
 use crate::{connect, CrustInfo};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
@@ -94,11 +96,10 @@ pub fn write_to_peer_connection(
 }
 
 /// Read messages from peer
-pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) {
+pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<()> {
     let i_stream = match quic_stream {
         quinn::NewStream::Bi(_bi) => {
-            print!("TODO: No code handling for bi-directional stream");
-            return;
+            return Err(Error::BiDirectionalStreamAttempted(peer_addr));
         }
         quinn::NewStream::Uni(uni) => uni,
     };
@@ -112,6 +113,8 @@ pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) {
         });
 
     current_thread::spawn(leaf);
+
+    Ok(())
 }
 
 /// Handle wire messages from peer
@@ -120,6 +123,10 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
         WireMsg::CertificateDer(cert) => handle_rx_cert(peer_addr, cert),
         wire_msg => {
             ctx_mut(|c| {
+                // FIXME: Dropping the connection most probably will not drop the incoming stream
+                // and then if you get a message on it you might still end up here without an entry
+                // for the peer in your connection map. Fix by finding out the best way to drop the
+                // incoming stream - probably use a select (on future) or something.
                 let conn = unwrap!(
                     c.connections.get_mut(&peer_addr),
                     "Logic Error - can't \
@@ -134,9 +141,13 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                         ToPeer::NoConnection { .. } | ToPeer::Initiated { .. } => {
                             pending_reads.push_back(wire_msg);
                         }
-                        ToPeer::Established { ref q_conn, .. } => {
-                            dispatch_wire_msg(peer_addr, q_conn, c.our_ext_addr_tx.take(), wire_msg)
-                        }
+                        ToPeer::Established { ref q_conn, .. } => dispatch_wire_msg(
+                            peer_addr,
+                            q_conn,
+                            c.our_ext_addr_tx.take(),
+                            &c.event_tx,
+                            wire_msg,
+                        ),
                     },
                     FromPeer::NoConnection => unreachable!(
                         "Cannot have no connection for someone \
@@ -154,10 +165,11 @@ pub fn dispatch_wire_msg(
     peer_addr: SocketAddr,
     q_conn: &quinn::Connection,
     inform_tx: Option<Sender<SocketAddr>>,
+    event_tx: &Sender<Event>,
     wire_msg: WireMsg,
 ) {
     match wire_msg {
-        WireMsg::UserMsg(m) => handle_user_msg(peer_addr, m),
+        WireMsg::UserMsg(m) => handle_user_msg(peer_addr, event_tx, m),
         WireMsg::EndpointEchoReq => handle_echo_req(peer_addr, q_conn),
         WireMsg::EndpointEchoResp(our_addr) => handle_echo_resp(our_addr, inform_tx),
         WireMsg::CertificateDer(_) => unreachable!("Should have been handled already"),
@@ -213,9 +225,11 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
     }
 }
 
-fn handle_user_msg(peer_addr: SocketAddr, msg: Vec<u8>) {
+fn handle_user_msg(peer_addr: SocketAddr, event_tx: &Sender<Event>, msg: Vec<u8>) {
     let new_msg = Event::NewMessage { peer_addr, msg };
-    ctx(|c| unwrap!(c.event_tx.send(new_msg)));
+    if let Err(e) = event_tx.send(new_msg) {
+        println!("Could not dispatch incoming user message: {:?}", e);
+    }
 }
 
 fn handle_echo_req(peer_addr: SocketAddr, q_conn: &quinn::Connection) {

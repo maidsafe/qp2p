@@ -100,8 +100,11 @@ impl Crust {
         });
     }
 
-    /// Send message to peer. If the peer is not connected, it will attempt to connect to it first
-    /// and then send the message
+    /// Send message to peer.
+    ///
+    /// If the peer is not connected, it will attempt to connect to it first
+    /// and then send the message. This can be called multiple times while the peer is still being
+    /// connected to - all the sends will be buffered until the peer is connected to.
     pub fn send(&mut self, peer_info: CrustInfo, msg: Vec<u8>) {
         self.el
             .post(move || communicate::try_write_to_peer(peer_info, WireMsg::UserMsg(msg)));
@@ -204,41 +207,66 @@ mod tests {
         crust0.start_listening();
         crust1.start_listening();
 
-        crust1.connect_to(crust0_info);
+        let msg_to_crust0 = vec![255, 255, 0];
+        let msg_to_crust0_clone = msg_to_crust0.clone();
+
+        let msg_to_crust1 = vec![120, 129, 2];
+        let msg_to_crust1_clone = msg_to_crust1.clone();
 
         let j0 = unwrap!(std::thread::Builder::new()
             .name("Crust0-test-thread".to_string())
             .spawn(move || {
-                let event = match rx0.recv() {
-                    Ok(ev) => ev,
+                match rx0.recv() {
+                    Ok(Event::ConnectedTo { peer_addr }) => assert_eq!(peer_addr, crust1_addr),
+                    Ok(x) => panic!("Expected Event::ConnectedTo - got {:?}", x),
                     Err(e) => panic!(
                         "Crust0 Expected Event::ConnectedTo; got error: {:?} {}",
                         e, e
                     ),
                 };
-                match event {
-                    Event::ConnectedTo { peer_addr } => assert_eq!(peer_addr, crust1_addr),
-                    x => panic!("Crust0 Expected Event::ConnectedTo; got event: {:?}", x),
-                }
+                match rx0.recv() {
+                    Ok(Event::NewMessage { peer_addr, msg }) => {
+                        assert_eq!(peer_addr, crust1_addr);
+                        assert_eq!(msg, msg_to_crust0_clone);
+                    }
+                    Ok(x) => panic!("Expected Event::NewMessage - got {:?}", x),
+                    Err(e) => panic!(
+                        "Crust0 Expected Event::NewMessage; got error: {:?} {}",
+                        e, e
+                    ),
+                };
             }));
         let j1 = unwrap!(std::thread::Builder::new()
             .name("Crust1-test-thread".to_string())
             .spawn(move || {
-                let event = match rx1.recv() {
-                    Ok(ev) => ev,
+                match rx1.recv() {
+                    Ok(Event::ConnectedTo { peer_addr }) => assert_eq!(peer_addr, crust0_addr),
+                    Ok(x) => panic!("Expected Event::ConnectedTo - got {:?}", x),
                     Err(e) => panic!(
-                        "Crust1 Expected Event::ConnectedTo; got error: {:?} {}",
+                        "Crust0 Expected Event::ConnectedTo; got error: {:?} {}",
                         e, e
                     ),
                 };
-                match event {
-                    Event::ConnectedTo { peer_addr } => assert_eq!(peer_addr, crust0_addr),
-                    x => panic!("Crust1 Expected Event::ConnectedTo; got event: {:?}", x),
-                }
+                match rx1.recv() {
+                    Ok(Event::NewMessage { peer_addr, msg }) => {
+                        assert_eq!(peer_addr, crust0_addr);
+                        assert_eq!(msg, msg_to_crust1_clone);
+                    }
+                    Ok(x) => panic!("Expected Event::NewMessage - got {:?}", x),
+                    Err(e) => panic!(
+                        "Crust0 Expected Event::NewMessage; got error: {:?} {}",
+                        e, e
+                    ),
+                };
             }));
+
+        crust1.connect_to(crust0_info.clone());
 
         let crust1_info = unwrap!(crust1.our_connection_info());
         assert_eq!(CRUST1_PORT, crust1_info.peer_addr.port());
+
+        crust1.send(crust0_info.clone(), msg_to_crust0);
+        crust0.send(crust1_info.clone(), msg_to_crust1);
 
         unwrap!(j0.join());
         unwrap!(j1.join());

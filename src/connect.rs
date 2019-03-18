@@ -95,6 +95,7 @@ fn handle_new_connection_res(
                                         peer_addr,
                                         &q_conn,
                                         c.our_ext_addr_tx.take(),
+                                        &c.event_tx,
                                         pending_read,
                                     );
                                 }
