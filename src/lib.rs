@@ -120,6 +120,17 @@ impl Crust {
         });
     }
 
+    /// Disconnect from the given peer
+    pub fn disconnect_from(&mut self, peer_addr: SocketAddr) {
+        self.el.post(move || {
+            ctx_mut(|c| {
+                if c.connections.remove(&peer_addr).is_none() {
+                    println!("Asked to disconnect from an unknown peer");
+                }
+            })
+        });
+    }
+
     /// Send message to peer.
     ///
     /// If the peer is not connected, it will attempt to connect to it first
