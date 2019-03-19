@@ -14,6 +14,10 @@ quick_error! {
              display("Connection Error: {}", e)
              from()
          }
+         EndpointError(e: quinn::EndpointError) {
+             display("Endpoint error: {}", e)
+             from()
+         }
          CertificateParseError(e: quinn::tls::ParseError) {
              display("Certificate Parse Error: {}", e)
              from()

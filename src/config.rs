@@ -5,8 +5,12 @@ use crate::CrustInfo;
 pub struct Config {
     /// Hard Coded contacts
     pub hard_coded_contacts: Vec<CrustInfo>,
-    /// Port we want to reserve for QUIC
+    /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
     pub port: Option<u16>,
+    /// This is the maximum message size we'll allow the peer to send to us. Any bigger message and
+    /// we'll error out probably shutting down the connection to the peer. If none supplied we'll
+    /// default to the documented constant.
+    pub max_msg_size_allowed: Option<u32>,
     /// Path to our TLS Certificate. This file must contain `SerialisableCeritificate` as content
     pub our_complete_cert: Option<SerialisableCeritificate>,
 }
@@ -21,6 +25,7 @@ impl Config {
         Self {
             hard_coded_contacts: Default::default(),
             port: Default::default(),
+            max_msg_size_allowed: Default::default(),
             our_complete_cert: Some(Default::default()),
         }
     }

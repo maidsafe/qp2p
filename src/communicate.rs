@@ -104,9 +104,7 @@ pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R
         quinn::NewStream::Uni(uni) => uni,
     };
 
-    // FIXME stuff bigger than the buffer - how to read it
-    // let leaf = quinn::read_to_end(i_stream, 64 * 1024)
-    let leaf = quinn::read_to_end(i_stream, 64 * 1024)
+    let leaf = quinn::read_to_end(i_stream, ctx(|c| c.max_msg_size_allowed))
         .map_err(|e| println!("Error reading stream: {:?}", e))
         .map(move |(_i_stream, raw)| {
             let wire_msg = unwrap!(bincode::deserialize(&*raw));
@@ -139,7 +137,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                         ref mut pending_reads,
                         ..
                     } => match conn.to_peer {
-                        ToPeer::NoConnection { .. } | ToPeer::Initiated { .. } => {
+                        ToPeer::NoConnection | ToPeer::Initiated { .. } => {
                             pending_reads.push_back(wire_msg);
                         }
                         ToPeer::Established { ref q_conn, .. } => dispatch_wire_msg(
@@ -178,11 +176,6 @@ pub fn dispatch_wire_msg(
 }
 
 fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
-    println!(
-        "Size of exchanged certificate-der from {}: {}B",
-        peer_addr,
-        peer_cert_der.len()
-    );
     let peer_info = CrustInfo {
         peer_addr,
         peer_cert_der,
@@ -195,18 +188,11 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
         );
 
         match conn.to_peer {
-            ToPeer::NoConnection { .. } => true,
+            ToPeer::NoConnection => true,
             ToPeer::Initiated {
                 ref peer_cert_der, ..
-            } => {
-                if *peer_cert_der != peer_info.peer_cert_der {
-                    println!("TODO Certificate we have for the peer already doesn't match with \
-                        the one given - we should disconnect to such peers - something fishy going \
-                        on.");
-                }
-                true
             }
-            ToPeer::Established {
+            | ToPeer::Established {
                 ref peer_cert_der, ..
             } => {
                 if *peer_cert_der != peer_info.peer_cert_der {

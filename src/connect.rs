@@ -16,7 +16,7 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
     let peer_addr = peer_info.peer_addr;
 
     let mut peer_cfg_builder = quinn::ClientConfigBuilder::new();
-    unwrap!(peer_cfg_builder.add_certificate_authority(peer_cert));
+    peer_cfg_builder.add_certificate_authority(peer_cert)?;
     let peer_cfg = peer_cfg_builder.build();
 
     let r = ctx_mut(|c| {

@@ -72,6 +72,7 @@ pub struct Context {
     pub connections: HashMap<SocketAddr, Connection>,
     pub our_ext_addr_tx: Option<Sender<SocketAddr>>,
     pub our_complete_cert: SerialisableCeritificate,
+    pub max_msg_size_allowed: usize,
     quic_ep: quinn::Endpoint,
 }
 
@@ -79,6 +80,7 @@ impl Context {
     pub fn new(
         event_tx: Sender<Event>,
         our_complete_cert: SerialisableCeritificate,
+        max_msg_size_allowed: usize,
         quic_ep: quinn::Endpoint,
     ) -> Self {
         Self {
@@ -86,6 +88,7 @@ impl Context {
             connections: Default::default(),
             our_ext_addr_tx: Default::default(),
             our_complete_cert,
+            max_msg_size_allowed,
             quic_ep,
         }
     }
