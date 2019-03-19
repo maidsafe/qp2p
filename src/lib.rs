@@ -69,16 +69,15 @@ impl Crust {
         let port = self.cfg.port.unwrap_or(0);
         let tx = self.event_tx.clone();
 
-        let (key, cert, our_complete_cert) = {
+        let ((key, cert), our_complete_cert) = {
             let our_complete_cert = self
                 .cfg
                 .our_complete_cert
                 .clone()
                 .unwrap_or_else(Default::default);
             (
-                unwrap!(quinn::PrivateKey::from_der(&our_complete_cert.key_der)),
-                unwrap!(quinn::Certificate::from_der(&our_complete_cert.cert_der)),
-                our_complete_cert,
+                our_complete_cert.obtain_priv_key_and_cert(),
+                our_complete_cert
             )
         };
 
