@@ -1,4 +1,4 @@
-use crate::context::{ctx, ctx_mut, FromPeer, ToPeer};
+use crate::context::{ctx, ctx_mut, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
@@ -13,10 +13,12 @@ use tokio::runtime::current_thread;
 /// and then send the message
 pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
     let connect_and_send = ctx_mut(|c| {
+        let peer_addr = peer_info.peer_addr;
+        let event_tx = c.event_tx.clone();
         let conn = c
             .connections
-            .entry(peer_info.peer_addr)
-            .or_insert_with(Default::default);
+            .entry(peer_addr)
+            .or_insert_with(|| Connection::new(peer_addr, event_tx));
         match conn.to_peer {
             ToPeer::NoConnection => Some(msg),
             ToPeer::Initiated {

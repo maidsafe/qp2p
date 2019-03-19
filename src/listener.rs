@@ -1,5 +1,5 @@
 use crate::communicate;
-use crate::context::{ctx_mut, FromPeer};
+use crate::context::{ctx_mut, Connection, FromPeer};
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
@@ -14,10 +14,11 @@ pub fn listen(incoming_connections: quinn::Incoming) {
             let peer_addr = q_conn.remote_address();
 
             let is_duplicate = ctx_mut(|c| {
+                let event_tx = c.event_tx.clone();
                 let conn = c
                     .connections
                     .entry(peer_addr)
-                    .or_insert_with(Default::default);
+                    .or_insert_with(|| Connection::new(peer_addr, event_tx));
                 if conn.from_peer.is_no_connection() {
                     conn.from_peer = FromPeer::Established {
                         q_conn,

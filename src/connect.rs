@@ -1,9 +1,8 @@
-use crate::context::{ctx_mut, FromPeer, ToPeer};
+use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
 use crate::{communicate, CrustInfo, R};
-use std::collections::hash_map::Entry;
 use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::{fmt, mem};
@@ -20,10 +19,11 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
     let peer_cfg = peer_cfg_builder.build();
 
     let r = ctx_mut(|c| {
+        let event_tx = c.event_tx.clone();
         let conn = c
             .connections
             .entry(peer_addr)
-            .or_insert_with(Default::default);
+            .or_insert_with(|| Connection::new(peer_addr, event_tx));
         if conn.to_peer.is_no_connection() {
             let mut pending_sends: VecDeque<_> = Default::default();
             if let Some(pending_send) = send_after_connect {
@@ -128,9 +128,7 @@ fn handle_new_connection_res(
 fn handle_connect_err<E: fmt::Debug>(peer_addr: SocketAddr, err: E) {
     println!("Error connecting to peer {}: {:?}", peer_addr, err);
     ctx_mut(|c| {
-        unwrap!(c.event_tx.send(Event::ConnectionFailure { peer_addr }));
-        if let Entry::Occupied(oe) = c.connections.entry(peer_addr) {
-            let conn = oe.remove();
+        if let Some(conn) = c.connections.remove(&peer_addr) {
             if !conn.from_peer.is_no_connection() {
                 println!(
                     "Peer {} has a connection to us but we couldn't connect to it. \

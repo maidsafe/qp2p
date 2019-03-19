@@ -98,10 +98,47 @@ impl Context {
     }
 }
 
-#[derive(Debug, Default)]
 pub struct Connection {
     pub to_peer: ToPeer,
     pub from_peer: FromPeer,
+    peer_addr: SocketAddr,
+    event_tx: Sender<Event>,
+}
+
+impl Connection {
+    pub fn new(peer_addr: SocketAddr, event_tx: Sender<Event>) -> Self {
+        Self {
+            to_peer: Default::default(),
+            from_peer: Default::default(),
+            peer_addr,
+            event_tx,
+        }
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        // TODO Improve this further by noting down if we intitated the connection OR if we fired
+        // connect success to the user. Onle in these cases fire the failure.
+        if !self.to_peer.is_no_connection() {
+            if let Err(e) = self.event_tx.send(Event::ConnectionFailure {
+                peer_addr: self.peer_addr,
+            }) {
+                // TODO log this as trace as this will happen frequently when the user drops itself
+                println!("Error informing ConnectionFailure: {:?}", e);
+            }
+        }
+    }
+}
+
+impl fmt::Debug for Connection {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Connection {{ to_peer: {:?}, from_peer: {:?} }}",
+            self.to_peer, self.from_peer
+        )
+    }
 }
 
 pub enum ToPeer {
