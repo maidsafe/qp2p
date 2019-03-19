@@ -11,13 +11,12 @@ use tokio::runtime::current_thread;
 
 /// Send message to peer. If the peer is not connected, it will attempt to connect to it first
 /// and then send the message
-// TODO accept only if there's peer certificate available
 pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
     let connect_and_send = ctx_mut(|c| {
         let conn = c
             .connections
             .entry(peer_info.peer_addr)
-            .or_insert_with(|| Default::default());
+            .or_insert_with(Default::default);
         match conn.to_peer {
             ToPeer::NoConnection => Some(msg),
             ToPeer::Initiated {
@@ -73,6 +72,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: &WireMsg) {
     })
 }
 
+/// Write to the peer, given the QUIC connection to it
 pub fn write_to_peer_connection(
     peer_addr: SocketAddr,
     conn: &quinn::Connection,
@@ -104,6 +104,8 @@ pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R
         quinn::NewStream::Uni(uni) => uni,
     };
 
+    // FIXME stuff bigger than the buffer - how to read it
+    // let leaf = quinn::read_to_end(i_stream, 64 * 1024)
     let leaf = quinn::read_to_end(i_stream, 64 * 1024)
         .map_err(|e| println!("Error reading stream: {:?}", e))
         .and_then(move |(_i_stream, raw)| {
@@ -177,6 +179,11 @@ pub fn dispatch_wire_msg(
 }
 
 fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
+    println!(
+        "Size of exchanged certificate-der from {}: {}B",
+        peer_addr,
+        peer_cert_der.len()
+    );
     let peer_info = CrustInfo {
         peer_addr,
         peer_cert_der,

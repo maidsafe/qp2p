@@ -23,7 +23,7 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
         let conn = c
             .connections
             .entry(peer_addr)
-            .or_insert_with(|| Default::default());
+            .or_insert_with(Default::default);
         if conn.to_peer.is_no_connection() {
             let mut pending_sends: VecDeque<_> = Default::default();
             if let Some(pending_send) = send_after_connect {
@@ -84,7 +84,7 @@ fn handle_new_connection_res(
                             FromPeer::NoConnection => communicate::write_to_peer_connection(
                                 peer_addr,
                                 &q_conn,
-                                &WireMsg::CertificateDer(c.our_cert_der.clone()),
+                                &WireMsg::CertificateDer(c.our_complete_cert.cert_der.clone()),
                             ),
                             FromPeer::Established {
                                 ref mut pending_reads,

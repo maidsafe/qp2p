@@ -1,3 +1,4 @@
+use crate::config::SerialisableCeritificate;
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
 use std::cell::RefCell;
@@ -64,21 +65,27 @@ where
     })
 }
 
+/// The context to the event loop. This holds all the states that are necessary to be persistant
+/// between calls to poll the event loop for the next event.
 pub struct Context {
     pub event_tx: Sender<Event>,
     pub connections: HashMap<SocketAddr, Connection>,
     pub our_ext_addr_tx: Option<Sender<SocketAddr>>,
-    pub our_cert_der: Vec<u8>,
+    pub our_complete_cert: SerialisableCeritificate,
     quic_ep: quinn::Endpoint,
 }
 
 impl Context {
-    pub fn new(event_tx: Sender<Event>, our_cert_der: Vec<u8>, quic_ep: quinn::Endpoint) -> Self {
+    pub fn new(
+        event_tx: Sender<Event>,
+        our_complete_cert: SerialisableCeritificate,
+        quic_ep: quinn::Endpoint,
+    ) -> Self {
         Self {
             event_tx,
             connections: Default::default(),
             our_ext_addr_tx: Default::default(),
-            our_cert_der,
+            our_complete_cert,
             quic_ep,
         }
     }

@@ -5,12 +5,12 @@ extern crate serde_derive;
 #[macro_use]
 extern crate unwrap;
 
+pub use config::{Config, SerialisableCeritificate};
+pub use error::Error;
 pub use event::Event;
 
 use crate::wire_msg::WireMsg;
-use config::Config;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
-use error::Error;
 use event_loop::EventLoop;
 use std::net::SocketAddr;
 use std::sync::mpsc::{self, Sender};
@@ -47,7 +47,7 @@ pub struct CrustInfo {
 impl Crust {
     /// Create a new Crust instance
     pub fn new(event_tx: Sender<Event>) -> Self {
-        Self::with_config(event_tx, Default::default())
+        Self::with_config(event_tx, Config::read_or_construct_default())
     }
 
     /// Create a new Crust instance with supplied Configuration
@@ -68,23 +68,32 @@ impl Crust {
     pub fn start_listening(&mut self) {
         let port = self.cfg.port.unwrap_or(0);
         let tx = self.event_tx.clone();
-        let cert = self.cfg.cert.clone();
-        let cert_der = self.cfg.cert.cert_der.clone();
+
+        let (key, cert, our_complete_cert) = {
+            let our_complete_cert = self
+                .cfg
+                .our_complete_cert
+                .clone()
+                .unwrap_or_else(Default::default);
+            (
+                unwrap!(quinn::PrivateKey::from_der(&our_complete_cert.key_der)),
+                unwrap!(quinn::Certificate::from_der(&our_complete_cert.cert_der)),
+                our_complete_cert,
+            )
+        };
 
         self.el.post(move || {
             let server_cfg = Default::default();
             let mut server_cfg_builder = quinn::ServerConfigBuilder::new(server_cfg);
-            unwrap!(server_cfg_builder.certificate(
-                quinn::CertificateChain::from_certs(vec![cert.cert]),
-                cert.key
-            ));
+            unwrap!(server_cfg_builder
+                .certificate(quinn::CertificateChain::from_certs(vec![cert]), key));
 
             let mut ep_builder = quinn::Endpoint::new();
             ep_builder.listen(server_cfg_builder.build());
             let (ep, dr, incoming_connections) =
                 unwrap!(ep_builder.bind(&format!("127.0.0.1:{}", port)));
 
-            let ctx = Context::new(tx, cert_der, ep);
+            let ctx = Context::new(tx, our_complete_cert, ep);
             initialise_ctx(ctx);
 
             current_thread::spawn(dr.map_err(|e| println!("Error in quinn Driver: {:?}", e)));
@@ -133,7 +142,7 @@ impl Crust {
         let (tx, rx) = mpsc::channel();
 
         self.el.post(move || {
-            let our_cert_der = ctx(|c| c.our_cert_der.clone());
+            let our_cert_der = ctx(|c| c.our_complete_cert.cert_der.clone());
             unwrap!(tx.send(our_cert_der));
         });
 
@@ -162,7 +171,7 @@ impl Crust {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use crate::config::{Config, SerialisableCeritificate};
     use std::net::SocketAddr;
     use std::str::FromStr;
     use std::sync::mpsc;
@@ -175,16 +184,20 @@ mod tests {
     }
 
     #[test]
-    fn connect_to_peer_and_make_ep_echo_service() {
+    fn connect_to_peer_and_make_ep_echo_service_and_send_msgs() {
         // TODO make these ports random and obtain them
         const CRUST0_PORT: u16 = 55003;
         const CRUST1_PORT: u16 = 56003;
 
         let (tx0, rx0) = mpsc::channel();
         let (mut crust0, crust0_cert_der) = {
+            let our_complete_cert = SerialisableCeritificate::default();
+            let cert_der = our_complete_cert.cert_der.clone();
+
             let mut cfg: Config = Default::default();
-            let cert_der = cfg.cert.cert_der.clone();
+            cfg.our_complete_cert = Some(our_complete_cert);
             cfg.port = Some(CRUST0_PORT);
+
             (Crust::with_config(tx0, cfg), cert_der)
         };
 
@@ -207,8 +220,16 @@ mod tests {
         crust0.start_listening();
         crust1.start_listening();
 
-        let msg_to_crust0 = vec![255, 255, 0];
-        let msg_to_crust0_clone = msg_to_crust0.clone();
+        // 50 MiB message
+        let big_msg_to_crust0 = vec![255; 50]; // * 1024]; // * 1024];
+        let big_msg_to_crust0_clone = big_msg_to_crust0.clone();
+
+        // very small messages
+        let small_msg0_to_crust0 = vec![255, 254, 253, 252];
+        let small_msg0_to_crust0_clone = small_msg0_to_crust0.clone();
+
+        let small_msg1_to_crust0 = vec![155, 154, 153, 152];
+        let small_msg1_to_crust0_clone = small_msg1_to_crust0.clone();
 
         let msg_to_crust1 = vec![120, 129, 2];
         let msg_to_crust1_clone = msg_to_crust1.clone();
@@ -224,17 +245,27 @@ mod tests {
                         e, e
                     ),
                 };
-                match rx0.recv() {
-                    Ok(Event::NewMessage { peer_addr, msg }) => {
-                        assert_eq!(peer_addr, crust1_addr);
-                        assert_eq!(msg, msg_to_crust0_clone);
-                    }
-                    Ok(x) => panic!("Expected Event::NewMessage - got {:?}", x),
-                    Err(e) => panic!(
-                        "Crust0 Expected Event::NewMessage; got error: {:?} {}",
-                        e, e
-                    ),
-                };
+                for i in 0..1 {
+                    match rx0.recv() {
+                        Ok(Event::NewMessage { peer_addr, msg }) => {
+                            assert_eq!(peer_addr, crust1_addr);
+                            // if i != 3 {
+                            if i != 0 {
+                                assert!(
+                                    msg == small_msg0_to_crust0_clone
+                                        || msg == small_msg1_to_crust0_clone
+                                );
+                            } else {
+                                assert_eq!(msg, big_msg_to_crust0_clone);
+                            }
+                        }
+                        Ok(x) => panic!("Expected Event::NewMessage - got {:?}", x),
+                        Err(e) => panic!(
+                            "Crust0 Expected Event::NewMessage; got error: {:?} {}",
+                            e, e
+                        ),
+                    };
+                }
             }));
         let j1 = unwrap!(std::thread::Builder::new()
             .name("Crust1-test-thread".to_string())
@@ -265,7 +296,9 @@ mod tests {
         let crust1_info = unwrap!(crust1.our_connection_info());
         assert_eq!(CRUST1_PORT, crust1_info.peer_addr.port());
 
-        crust1.send(crust0_info.clone(), msg_to_crust0);
+        crust1.send(crust0_info.clone(), big_msg_to_crust0);
+        //crust1.send(crust0_info.clone(), small_msg0_to_crust0);
+        //crust1.send(crust0_info, small_msg1_to_crust0);
         crust0.send(crust1_info.clone(), msg_to_crust1);
 
         unwrap!(j0.join());
