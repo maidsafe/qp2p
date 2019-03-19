@@ -37,14 +37,13 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
             c.quic_ep()
                 .connect_with(&peer_cfg, &peer_addr, "MaidSAFE.net")
                 .map_err(Error::from)
-                .and_then(move |new_client_conn_fut| {
+                .map(move |new_client_conn_fut| {
                     let leaf = new_client_conn_fut.then(move |new_client_conn_res| {
                         handle_new_connection_res(peer_addr, new_client_conn_res);
                         Ok(())
                     });
 
                     current_thread::spawn(leaf);
-                    Ok(())
                 })
         } else {
             Err(Error::DuplicateConnectionToPeer(peer_addr))

@@ -77,7 +77,7 @@ impl Crust {
                 .unwrap_or_else(Default::default);
             (
                 our_complete_cert.obtain_priv_key_and_cert(),
-                our_complete_cert
+                our_complete_cert,
             )
         };
 
@@ -104,7 +104,9 @@ impl Crust {
     /// being connected to OR for any other connection failure reasons.
     pub fn connect_to(&mut self, peer_info: CrustInfo) {
         self.el.post(move || {
-            let _r = connect::connect_to(peer_info, None);
+            if let Err(e) = connect::connect_to(peer_info, None) {
+                println!("Could not connect to the asked peer: {}", e);
+            }
         });
     }
 
@@ -119,6 +121,8 @@ impl Crust {
     }
 
     /// Get our connection info to give to others for them to connect to us
+    // FIXME calling this mutliple times just now could have it hanging as only one tx is
+    // registered and that replaces any previous tx registered. Fix by using a vec of txs
     pub fn our_connection_info(&mut self) -> R<CrustInfo> {
         if let Some(ref our_info) = self.our_info {
             return Ok(our_info.clone());

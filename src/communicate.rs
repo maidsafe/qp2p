@@ -108,10 +108,9 @@ pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R
     // let leaf = quinn::read_to_end(i_stream, 64 * 1024)
     let leaf = quinn::read_to_end(i_stream, 64 * 1024)
         .map_err(|e| println!("Error reading stream: {:?}", e))
-        .and_then(move |(_i_stream, raw)| {
+        .map(move |(_i_stream, raw)| {
             let wire_msg = unwrap!(bincode::deserialize(&*raw));
             handle_wire_msg(peer_addr, wire_msg);
-            Ok(())
         });
 
     current_thread::spawn(leaf);
