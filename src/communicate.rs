@@ -6,7 +6,7 @@ use crate::R;
 use crate::{connect, CrustInfo};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
-use tokio::prelude::Future;
+use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
 /// Send message to peer. If the peer is not connected, it will attempt to connect to it first
@@ -83,14 +83,14 @@ pub fn write_to_peer_connection(
     let m = unwrap!(bincode::serialize(wire_msg));
     let leaf = conn
         .open_uni()
-        .map_err(move |e| println!("Error opening write stream to peer {}: {:?}", peer_addr, e))
+        .map_err(move |e| handle_outgoing_err(peer_addr, e, "Open-Unidirectional"))
         .and_then(move |o_stream| {
             tokio::io::write_all(o_stream, m)
-                .map_err(|e| println!("Error writing to the stream: {:?}", e))
+                .map_err(move |e| handle_outgoing_err(peer_addr, e, "Write-All"))
         })
-        .and_then(|(o_stream, _)| {
+        .and_then(move |(o_stream, _)| {
             tokio::io::shutdown(o_stream)
-                .map_err(|e| println!("Error shutting down the stream: {:?}", e))
+                .map_err(move |e| handle_outgoing_err(peer_addr, e, "Shutdown"))
         })
         .map(|_| ());
 
@@ -98,7 +98,11 @@ pub fn write_to_peer_connection(
 }
 
 /// Read messages from peer
-pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<()> {
+pub fn read_from_peer(
+    peer_addr: SocketAddr,
+    quic_stream: quinn::NewStream,
+    terminator: tokio::sync::watch::Receiver<()>,
+) -> R<()> {
     let i_stream = match quic_stream {
         quinn::NewStream::Bi(_bi) => {
             return Err(Error::BiDirectionalStreamAttempted(peer_addr));
@@ -106,12 +110,21 @@ pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R
         quinn::NewStream::Uni(uni) => uni,
     };
 
+    let terminator_leaf = terminator
+        .map_err(|e| println!("Incoming-children terminator fired with error: {}", e))
+        .for_each(|()| {
+            println!("Incoming-children terminator fired");
+            Err(())
+        });
+
     let leaf = quinn::read_to_end(i_stream, ctx(|c| c.max_msg_size_allowed))
         .map_err(|e| println!("Error reading stream: {:?}", e))
         .map(move |(_i_stream, raw)| {
             let wire_msg = unwrap!(bincode::deserialize(&*raw));
             handle_wire_msg(peer_addr, wire_msg);
-        });
+        })
+        .select(terminator_leaf)
+        .then(|_| Ok(()));
 
     current_thread::spawn(leaf);
 
@@ -215,6 +228,33 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
                 peer_addr, e
             );
             //TODO drop the connection but probably not for duplicate connects
+            //FIXME This should ideally be dropped by the connect_to function itself. Currently bad
+            //certificate error gets returned immediately. Fix that.
+            //So the connection destruction should be:
+            //0. If connect fails and this is done in the `connect` module itself
+            //1. Read fails and this is done by the listener module after it gets the error - but
+            //   should be done here instead in communicate module as there are read errors
+            //   listener doesn't know about
+            //2. Write fails which is done by this module at the time of write
+            ctx_mut(|c| {
+                let mut conn = unwrap!(
+                    c.connections.remove(&peer_addr),
+                    "Logic Error - cannot have been reverse connecting to an unknown peer"
+                );
+                if let FromPeer::Established {
+                    ref q_conn,
+                    ref mut incoming_streams_terminator,
+                    ref mut children_streams_terminator,
+                    ..
+                } = conn.from_peer
+                {
+                    // TODO make close reasons better
+                    q_conn.close(0, &[0; 0]);
+                    // TODO improve on the unwrap here
+                    let _ = unwrap!(incoming_streams_terminator.take()).send(());
+                    let _ = children_streams_terminator.broadcast(());
+                }
+            })
         }
     }
 }
@@ -238,3 +278,11 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAdd
         }
     }
 }
+
+fn handle_outgoing_err<E: std::fmt::Display>(peer_addr: SocketAddr, e: E, details: &str) {
+    println!("ERROR in write to {}: {}. {}", peer_addr, e, details);
+    // TODO destroy all connections on error
+}
+
+// FIXME call this
+// fn handle_incoming_err<E: std::fmt::Display>(peer_addr: SocketAddr, e: E, details: &str) {}
