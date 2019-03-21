@@ -168,7 +168,6 @@ impl ToPeer {
         }
     }
 
-    #[allow(unused)]
     pub fn is_established(&self) -> bool {
         if let ToPeer::Established { .. } = *self {
             true
@@ -230,7 +229,6 @@ impl FromPeer {
         }
     }
 
-    #[allow(unused)]
     pub fn is_established(&self) -> bool {
         if let FromPeer::Established { .. } = *self {
             true
