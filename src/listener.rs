@@ -21,12 +21,12 @@ pub fn listen(incoming_connections: quinn::Incoming) {
                     .connections
                     .entry(peer_addr)
                     .or_insert_with(|| Connection::new(peer_addr, event_tx));
-                let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-                let (tx_child, rx_child) = tokio::sync::watch::channel::<()>(());
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                let (tx_child, rx_child) = tokio::sync::watch::channel(());
                 if conn.from_peer.is_no_connection() {
                     conn.from_peer = FromPeer::Established {
                         q_conn,
-                        incoming_streams_terminator: Some(tx),
+                        incoming_streams_terminator: tx,
                         children_streams_terminator: tx_child,
                         pending_reads: Default::default(),
                     };

@@ -209,7 +209,8 @@ pub enum FromPeer {
         q_conn: quinn::Connection,
         // Remove this work around when the upstream is able to terminate the incoming streams
         // future when q_conn is closed/dropped
-        incoming_streams_terminator: Option<tokio::sync::oneshot::Sender<()>>,
+        // No need to fire these - just dropping them should be sufficient
+        incoming_streams_terminator: tokio::sync::oneshot::Sender<()>,
         children_streams_terminator: tokio::sync::watch::Sender<()>,
         pending_reads: VecDeque<WireMsg>,
     },

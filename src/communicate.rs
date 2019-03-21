@@ -113,8 +113,9 @@ pub fn read_from_peer(
     let terminator_leaf = terminator
         .map_err(|e| println!("Incoming-children terminator fired with error: {}", e))
         .for_each(|()| {
-            println!("Incoming-children terminator fired");
-            Err(())
+            // Since this will always fire upon first creation of the receiver, do nothing
+            // This is a property of tokio::sync::watch::Receiver
+            Ok(())
         });
 
     let leaf = quinn::read_to_end(i_stream, ctx(|c| c.max_msg_size_allowed))
@@ -237,22 +238,17 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
             //   listener doesn't know about
             //2. Write fails which is done by this module at the time of write
             ctx_mut(|c| {
-                let mut conn = unwrap!(
+                let conn = unwrap!(
                     c.connections.remove(&peer_addr),
                     "Logic Error - cannot have been reverse connecting to an unknown peer"
                 );
                 if let FromPeer::Established {
                     ref q_conn,
-                    ref mut incoming_streams_terminator,
-                    ref mut children_streams_terminator,
                     ..
                 } = conn.from_peer
                 {
                     // TODO make close reasons better
                     q_conn.close(0, &[0; 0]);
-                    // TODO improve on the unwrap here
-                    let _ = unwrap!(incoming_streams_terminator.take()).send(());
-                    let _ = children_streams_terminator.broadcast(());
                 }
             })
         }
