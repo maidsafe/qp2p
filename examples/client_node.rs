@@ -6,6 +6,4 @@ use common::Rpc;
 
 use using_quinn::{Config, Crust, CrustInfo, Event};
 
-fn main() {
-
-}
+fn main() {}

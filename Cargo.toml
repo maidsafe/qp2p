@@ -8,8 +8,13 @@ edition = "2018"
 quinn = { path = "../quinn/quinn" }
 tokio = "*"
 unwrap = "*"
-bincode = "*"
+bincode = "1.1.2"
 serde = "*"
 serde_derive = "*"
 quick-error = "*"
 rcgen = "*"
+
+[dev-dependencies]
+log = "0.4.6"
+env_logger = "0.6.1"
+serde_derive = "1.0.89"
