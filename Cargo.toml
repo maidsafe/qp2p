@@ -13,3 +13,9 @@ serde = "*"
 serde_derive = "*"
 quick-error = "*"
 rcgen = "*"
+
+[dev-dependencies]
+serde_json = "*"
+clap = "*"
+rustyline = "*"
+unwrap = "1.2.1"
