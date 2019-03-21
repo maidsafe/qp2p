@@ -2,7 +2,7 @@ use crate::config::SerialisableCeritificate;
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
@@ -118,15 +118,12 @@ impl Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        // TODO Improve this further by noting down if we intitated the connection OR if we fired
-        // connect success to the user. Onle in these cases fire the failure.
-        if !self.to_peer.is_no_connection() {
-            if let Err(e) = self.event_tx.send(Event::ConnectionFailure {
+        if self.to_peer.is_established() && self.from_peer.is_established() {
+            // No need to log this as this will fire even when the crust handle is dropped and at
+            // that point there might be no one listening so sender will error out
+            let _ = self.event_tx.send(Event::ConnectionFailure {
                 peer_addr: self.peer_addr,
-            }) {
-                // TODO log this as trace as this will happen frequently when the user drops itself
-                println!("Error informing ConnectionFailure: {:?}", e);
-            }
+            });
         }
     }
 }
@@ -145,7 +142,7 @@ pub enum ToPeer {
     NoConnection,
     Initiated {
         peer_cert_der: Vec<u8>,
-        pending_sends: VecDeque<WireMsg>,
+        pending_sends: Vec<WireMsg>,
     },
     Established {
         peer_cert_der: Vec<u8>,
@@ -203,6 +200,14 @@ impl fmt::Debug for ToPeer {
     }
 }
 
+impl Drop for ToPeer {
+    fn drop(&mut self) {
+        if let ToPeer::Established { ref q_conn, .. } = *self {
+            q_conn.close(0, &[0; 0]);
+        }
+    }
+}
+
 pub enum FromPeer {
     NoConnection,
     Established {
@@ -212,7 +217,7 @@ pub enum FromPeer {
         // No need to fire these - just dropping them should be sufficient
         incoming_streams_terminator: tokio::sync::oneshot::Sender<()>,
         children_streams_terminator: tokio::sync::watch::Sender<()>,
-        pending_reads: VecDeque<WireMsg>,
+        pending_reads: Vec<WireMsg>,
     },
 }
 
@@ -252,6 +257,14 @@ impl fmt::Debug for FromPeer {
                 "FromPeer::Established with {} pending reads",
                 pending_reads.len()
             ),
+        }
+    }
+}
+
+impl Drop for FromPeer {
+    fn drop(&mut self) {
+        if let FromPeer::Established { ref q_conn, .. } = *self {
+            q_conn.close(0, &[0; 0]);
         }
     }
 }

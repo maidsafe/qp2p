@@ -1,8 +1,17 @@
+use std::io;
 use std::net::SocketAddr;
 
 quick_error! {
     #[derive(Debug)]
      pub enum Error {
+         IoError(e: io::Error) {
+             display("IO Error: {}", e)
+             from()
+         }
+         ReadError(e: quinn::ReadError) {
+             display("Read Error: {}", e)
+             from()
+         }
          BiDirectionalStreamAttempted(peer_addr: SocketAddr) {
              display("Bi-directional stream attempted by peer {}", peer_addr)
          }

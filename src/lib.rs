@@ -124,6 +124,8 @@ impl Crust {
     pub fn disconnect_from(&mut self, peer_addr: SocketAddr) {
         self.el.post(move || {
             ctx_mut(|c| {
+                // TODO test if closing quinn::Connection destroys all `write_all` streams. If
+                // there's bug upstream then our writer might not be resolved until a long time
                 if c.connections.remove(&peer_addr).is_none() {
                     println!("Asked to disconnect from an unknown peer");
                 }
@@ -271,15 +273,10 @@ mod tests {
         let j0 = unwrap!(std::thread::Builder::new()
             .name("Crust0-test-thread".to_string())
             .spawn(move || {
-                while let Ok(ev) = rx0.recv() {
-                    println!("Crust0 got: Event: {:?}", ev);
-                }
-                if true {
-                    return;
-                }
-
                 match rx0.recv() {
-                    Ok(Event::ConnectedTo { peer_addr }) => assert_eq!(peer_addr, crust1_addr),
+                    Ok(Event::ConnectedTo { crust_info }) => {
+                        assert_eq!(crust_info.peer_addr, crust1_addr)
+                    }
                     Ok(x) => panic!("Expected Event::ConnectedTo - got {:?}", x),
                     Err(e) => panic!(
                         "Crust0 Expected Event::ConnectedTo; got error: {:?} {}",
@@ -316,11 +313,10 @@ mod tests {
         let j1 = unwrap!(std::thread::Builder::new()
             .name("Crust1-test-thread".to_string())
             .spawn(move || {
-                if true {
-                    return;
-                }
                 match rx1.recv() {
-                    Ok(Event::ConnectedTo { peer_addr }) => assert_eq!(peer_addr, crust0_addr),
+                    Ok(Event::ConnectedTo { crust_info }) => {
+                        assert_eq!(crust_info.peer_addr, crust0_addr)
+                    }
                     Ok(x) => panic!("Expected Event::ConnectedTo - got {:?}", x),
                     Err(e) => panic!(
                         "Crust0 Expected Event::ConnectedTo; got error: {:?} {}",

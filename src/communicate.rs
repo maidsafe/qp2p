@@ -29,7 +29,7 @@ pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
                     println!("TODO Certificate we have for the peer already doesn't match with the \
                     one given - we should disconnect to such peers - something fishy going on.");
                 }
-                pending_sends.push_back(msg);
+                pending_sends.push(msg);
                 None
             }
             ToPeer::Established { ref q_conn, .. } => {
@@ -83,14 +83,17 @@ pub fn write_to_peer_connection(
     let m = unwrap!(bincode::serialize(wire_msg));
     let leaf = conn
         .open_uni()
-        .map_err(move |e| handle_outgoing_err(peer_addr, e, "Open-Unidirectional"))
+        .map_err(move |e| {
+            handle_communication_err(peer_addr, &From::from(e), "Open-Unidirectional")
+        })
         .and_then(move |o_stream| {
             tokio::io::write_all(o_stream, m)
-                .map_err(move |e| handle_outgoing_err(peer_addr, e, "Write-All"))
+                .map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Write-All"))
         })
         .and_then(move |(o_stream, _)| {
-            tokio::io::shutdown(o_stream)
-                .map_err(move |e| handle_outgoing_err(peer_addr, e, "Shutdown"))
+            tokio::io::shutdown(o_stream).map_err(move |e| {
+                handle_communication_err(peer_addr, &From::from(e), "Shutdown-after-write")
+            })
         })
         .map(|_| ());
 
@@ -105,7 +108,9 @@ pub fn read_from_peer(
 ) -> R<()> {
     let i_stream = match quic_stream {
         quinn::NewStream::Bi(_bi) => {
-            return Err(Error::BiDirectionalStreamAttempted(peer_addr));
+            let e = Error::BiDirectionalStreamAttempted(peer_addr);
+            handle_communication_err(peer_addr, &e, "Receiving Stream");
+            return Err(e);
         }
         quinn::NewStream::Uni(uni) => uni,
     };
@@ -119,8 +124,9 @@ pub fn read_from_peer(
         });
 
     let leaf = quinn::read_to_end(i_stream, ctx(|c| c.max_msg_size_allowed))
-        .map_err(|e| println!("Error reading stream: {:?}", e))
+        .map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
         .map(move |(_i_stream, raw)| {
+            // TODO don't unwrap deserialisation failure in production
             let wire_msg = unwrap!(bincode::deserialize(&*raw));
             handle_wire_msg(peer_addr, wire_msg);
         })
@@ -142,6 +148,9 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                 // and then if you get a message on it you might still end up here without an entry
                 // for the peer in your connection map. Fix by finding out the best way to drop the
                 // incoming stream - probably use a select (on future) or something.
+                //  NOTE: Even select might not help you if there are streams that are queued. The
+                //  selector might select the stream before it selects the `terminator_leaf` so the
+                //  actual fix needs to be done upstream
                 let conn = unwrap!(
                     c.connections.get_mut(&peer_addr),
                     "Logic Error - can't \
@@ -154,7 +163,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                         ..
                     } => match conn.to_peer {
                         ToPeer::NoConnection | ToPeer::Initiated { .. } => {
-                            pending_reads.push_back(wire_msg);
+                            pending_reads.push(wire_msg);
                         }
                         ToPeer::Established { ref q_conn, .. } => dispatch_wire_msg(
                             peer_addr,
@@ -224,33 +233,9 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
     if reverse_connect_to_peer {
         if let Err(e) = connect::connect_to(peer_info, None) {
             println!(
-                "Dropping incoming connection as we could not reverse connect to peer \
-                 {}: {:?}",
+                "ERROR: Could not reverse connect to peer {}: {}",
                 peer_addr, e
             );
-            //TODO drop the connection but probably not for duplicate connects
-            //FIXME This should ideally be dropped by the connect_to function itself. Currently bad
-            //certificate error gets returned immediately. Fix that.
-            //So the connection destruction should be:
-            //0. If connect fails and this is done in the `connect` module itself
-            //1. Read fails and this is done by the listener module after it gets the error - but
-            //   should be done here instead in communicate module as there are read errors
-            //   listener doesn't know about
-            //2. Write fails which is done by this module at the time of write
-            ctx_mut(|c| {
-                let conn = unwrap!(
-                    c.connections.remove(&peer_addr),
-                    "Logic Error - cannot have been reverse connecting to an unknown peer"
-                );
-                if let FromPeer::Established {
-                    ref q_conn,
-                    ..
-                } = conn.from_peer
-                {
-                    // TODO make close reasons better
-                    q_conn.close(0, &[0; 0]);
-                }
-            })
         }
     }
 }
@@ -275,10 +260,16 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAdd
     }
 }
 
-fn handle_outgoing_err<E: std::fmt::Display>(peer_addr: SocketAddr, e: E, details: &str) {
-    println!("ERROR in write to {}: {}. {}", peer_addr, e, details);
-    // TODO destroy all connections on error
+fn handle_communication_err(peer_addr: SocketAddr, e: &Error, details: &str) {
+    println!(
+        "ERROR in communication with peer {}: {:?} - {}. Details: {}",
+        peer_addr, e, e, details
+    );
+    ctx_mut(|c| {
+        if c.connections.remove(&peer_addr).is_some() {
+            if let Err(e) = c.event_tx.send(Event::ConnectionFailure { peer_addr }) {
+                println!("Could not fire event to the user: {}", e);
+            }
+        }
+    })
 }
-
-// FIXME call this
-// fn handle_incoming_err<E: std::fmt::Display>(peer_addr: SocketAddr, e: E, details: &str) {}
