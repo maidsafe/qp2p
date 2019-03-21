@@ -73,6 +73,8 @@ pub struct Context {
     pub our_ext_addr_tx: Option<Sender<SocketAddr>>,
     pub our_complete_cert: SerialisableCeritificate,
     pub max_msg_size_allowed: usize,
+    pub idle_timeout: u64,
+    pub keep_alive_interval: u32,
     quic_ep: quinn::Endpoint,
 }
 
@@ -81,6 +83,8 @@ impl Context {
         event_tx: Sender<Event>,
         our_complete_cert: SerialisableCeritificate,
         max_msg_size_allowed: usize,
+        idle_timeout: u64,
+        keep_alive_interval: u32,
         quic_ep: quinn::Endpoint,
     ) -> Self {
         Self {
@@ -89,6 +93,8 @@ impl Context {
             our_ext_addr_tx: Default::default(),
             our_complete_cert,
             max_msg_size_allowed,
+            idle_timeout,
+            keep_alive_interval,
             quic_ep,
         }
     }

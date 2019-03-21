@@ -14,6 +14,7 @@ use context::{ctx, ctx_mut, initialise_ctx, Context};
 use event_loop::EventLoop;
 use std::net::SocketAddr;
 use std::sync::mpsc::{self, Sender};
+use std::sync::Arc;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
@@ -32,6 +33,18 @@ pub type R<T> = Result<T, Error>;
 /// Default maximum allowed message size. We'll error out on any bigger messages and probably
 /// shutdown the connection. This value can be overridden via the `Config` option.
 pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
+/// Default interval within which if we hear nothing from the peer we declare it offline to us.
+///
+/// This is based on average time in which routers would close the UDP mapping to the peer if they
+/// see no conversation between them.
+///
+/// The value is in seconds.
+pub const DEFAULT_IDLE_TIMEOUT: u64 = 30; // 30secs
+/// Default Interval to send keep-alives if we are idling so that the peer does not disconnect from
+/// us declaring us offline. If none is supplied we'll default to the documented constant.
+///
+/// The value is in seconds.
+pub const DEFAULT_KEEP_ALIVE_INTERVAL: u32 = 10; // 10secs
 
 /// Main Crust instance to communicate with Crust
 pub struct Crust {
@@ -76,6 +89,11 @@ impl Crust {
             .max_msg_size_allowed
             .map(|size| size as usize)
             .unwrap_or(DEFAULT_MAX_ALLOWED_MSG_SIZE);
+        let idle_timeout = self.cfg.idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
+        let keep_alive_interval = self
+            .cfg
+            .keep_alive_interval
+            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL);
 
         let tx = self.event_tx.clone();
 
@@ -92,17 +110,33 @@ impl Crust {
         };
 
         self.el.post(move || {
-            let server_cfg = Default::default();
-            let mut server_cfg_builder = quinn::ServerConfigBuilder::new(server_cfg);
-            unwrap!(server_cfg_builder
-                .certificate(quinn::CertificateChain::from_certs(vec![cert]), key));
+            let our_cfg = Default::default();
+            let mut our_cfg_builder = quinn::ServerConfigBuilder::new(our_cfg);
+            unwrap!(
+                our_cfg_builder.certificate(quinn::CertificateChain::from_certs(vec![cert]), key)
+            );
+            let mut our_cfg = our_cfg_builder.build();
+            {
+                let transport_config = unwrap!(Arc::get_mut(&mut our_cfg.transport_config));
+                // TODO test that this is sent only over the uni-stream to the peer not on the uni
+                // stream from the peer
+                transport_config.idle_timeout = idle_timeout;
+                transport_config.keep_alive_interval = keep_alive_interval;
+            }
 
             let mut ep_builder = quinn::Endpoint::new();
-            ep_builder.listen(server_cfg_builder.build());
+            ep_builder.listen(our_cfg);
             let (ep, dr, incoming_connections) =
                 unwrap!(ep_builder.bind(&format!("127.0.0.1:{}", port)));
 
-            let ctx = Context::new(tx, our_complete_cert, max_msg_size_allowed, ep);
+            let ctx = Context::new(
+                tx,
+                our_complete_cert,
+                max_msg_size_allowed,
+                idle_timeout,
+                keep_alive_interval,
+                ep,
+            );
             initialise_ctx(ctx);
 
             current_thread::spawn(dr.map_err(|e| println!("Error in quinn Driver: {:?}", e)));

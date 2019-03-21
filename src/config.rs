@@ -11,6 +11,16 @@ pub struct Config {
     /// we'll error out probably shutting down the connection to the peer. If none supplied we'll
     /// default to the documented constant.
     pub max_msg_size_allowed: Option<u32>,
+    /// If we hear nothing from the peer in the given interval we declare it offline to us. If none
+    /// supplied we'll default to the documented constant.
+    ///
+    /// The interval is in seconds. A value of 0 disables this feature.
+    pub idle_timeout: Option<u64>,
+    /// Interval to send keep-alives if we are idling so that the peer does not disconnect from us
+    /// declaring us offline. If none is supplied we'll default to the documented constant.
+    ///
+    /// The interval is in seconds. A value of 0 disables this feature.
+    pub keep_alive_interval: Option<u32>,
     /// Path to our TLS Certificate. This file must contain `SerialisableCeritificate` as content
     pub our_complete_cert: Option<SerialisableCeritificate>,
 }
@@ -26,6 +36,8 @@ impl Config {
             hard_coded_contacts: Default::default(),
             port: Default::default(),
             max_msg_size_allowed: Default::default(),
+            idle_timeout: Default::default(),
+            keep_alive_interval: Default::default(),
             our_complete_cert: Some(Default::default()),
         }
     }

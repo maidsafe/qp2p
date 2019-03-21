@@ -1,10 +1,11 @@
-use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
+use crate::context::{ctx, ctx_mut, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
 use crate::{communicate, CrustInfo, R};
 use std::mem;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
@@ -20,7 +21,14 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
             handle_connect_err(peer_addr, &e);
             return Err(e);
         }
-        peer_cfg_builder.build()
+        let mut peer_cfg = peer_cfg_builder.build();
+        let transport_config = unwrap!(Arc::get_mut(&mut peer_cfg.transport));
+        // TODO test that this is sent only over the uni-stream to the peer not on the uni
+        // stream from the peer
+        transport_config.idle_timeout = ctx(|c| c.idle_timeout);
+        transport_config.keep_alive_interval = ctx(|c| c.keep_alive_interval);
+
+        peer_cfg
     };
 
     let r = ctx_mut(|c| {
