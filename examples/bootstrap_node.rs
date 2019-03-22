@@ -26,7 +26,10 @@ use env_logger;
 use serde_json;
 use std::collections::HashMap;
 use std::sync::mpsc::channel;
-use std::{io, net::Ipv4Addr};
+use std::{
+    io,
+    net::{Ipv4Addr, SocketAddr},
+};
 
 #[derive(Serialize, Deserialize)]
 struct BootstrapNodeConfig {
@@ -66,6 +69,7 @@ fn main() -> Result<(), io::Error> {
                 Config {
                     our_complete_cert: Some(our_complete_cert),
                     port: Some(bootstrap_node_config.port),
+                    ip: Some(bootstrap_node_config.ip),
                     ..Default::default()
                 },
             ),
@@ -76,9 +80,8 @@ fn main() -> Result<(), io::Error> {
 
     info!("Crust started on port {}", bootstrap_node_config.port);
 
-    // TODO(povilas): make our_connection_info use IGD crate when no stun servers configured
     let our_conn_info = CrustInfo {
-        peer_addr: unwrap!(format!("127.0.0.1:{}", bootstrap_node_config.port).parse()),
+        peer_addr: SocketAddr::from((bootstrap_node_config.ip, bootstrap_node_config.port)),
         peer_cert_der: our_cert_der,
     };
 
