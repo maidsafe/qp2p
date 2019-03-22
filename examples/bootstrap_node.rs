@@ -21,6 +21,7 @@ use using_quinn::{Config, Crust, Event};
 
 use bincode;
 use env_logger;
+use serde_json;
 use std::collections::HashMap;
 use std::sync::mpsc::channel;
 
@@ -38,7 +39,13 @@ fn main() {
     );
     crust.start_listening();
     info!("Crust started");
-    // TODO(povilas): print listener DER certificate to stdout
+
+    // TODO(povilas): make our_connection_info use IGD crate when no stun servers configured
+    let our_conn_info = unwrap!(crust.our_connection_info());
+    println!(
+        "Our connection info:\n{}\n",
+        unwrap!(serde_json::to_string(&our_conn_info)),
+    );
 
     // TODO(povilas): have an argument for this
     let expected_connections = 3;
