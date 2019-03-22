@@ -130,10 +130,12 @@ fn main() {
                         .and_then(|idx| idx.parse().or(Err("Invalid index argument")))
                         .and_then(|idx| peerlist.get(idx).ok_or("Index out of bounds"))
                         .and_then(|peer| {
-                            Ok(crust.send(
+                            // FIXME: I've unwrapped this due to API changes - pls handle
+                            // appropriately
+                            Ok(unwrap!(crust.send(
                                 peer.clone(),
                                 args.collect::<Vec<_>>().join(" ").as_bytes().to_owned(),
-                            ))
+                            )))
                         }),
                     "quit" | "exit" => break 'outer,
                     "help" => Ok(println!(
@@ -157,10 +159,7 @@ fn main() {
 }
 
 fn print_ourinfo(crust: &mut Crust) {
-    let ourinfo = match crust
-        .our_global_connection_info()
-        .or(crust.our_localhost_connection_info())
-    {
+    let ourinfo = match crust.our_connection_info() {
         Ok(ourinfo) => ourinfo,
         Err(e) => {
             println!("Error getting ourinfo: {}", e);
