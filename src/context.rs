@@ -1,4 +1,4 @@
-use crate::config::SerialisableCeritificate;
+use crate::config::SerialisableCertificate;
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
 use std::cell::RefCell;
@@ -71,7 +71,7 @@ pub struct Context {
     pub event_tx: Sender<Event>,
     pub connections: HashMap<SocketAddr, Connection>,
     pub our_ext_addr_tx: Option<Sender<SocketAddr>>,
-    pub our_complete_cert: SerialisableCeritificate,
+    pub our_complete_cert: SerialisableCertificate,
     pub max_msg_size_allowed: usize,
     pub idle_timeout: u64,
     pub keep_alive_interval: u32,
@@ -81,7 +81,7 @@ pub struct Context {
 impl Context {
     pub fn new(
         event_tx: Sender<Event>,
-        our_complete_cert: SerialisableCeritificate,
+        our_complete_cert: SerialisableCertificate,
         max_msg_size_allowed: usize,
         idle_timeout: u64,
         keep_alive_interval: u32,
