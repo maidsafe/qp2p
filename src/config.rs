@@ -1,4 +1,5 @@
 use crate::CrustInfo;
+use std::net::Ipv4Addr;
 
 /// Crust configurations
 #[derive(Default, Serialize, Deserialize)]
@@ -7,6 +8,8 @@ pub struct Config {
     pub hard_coded_contacts: Vec<CrustInfo>,
     /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
     pub port: Option<u16>,
+    /// IP address for the listener. If none supplied we'll use the default address (0.0.0.0).
+    pub ip: Option<Ipv4Addr>,
     /// This is the maximum message size we'll allow the peer to send to us. Any bigger message and
     /// we'll error out probably shutting down the connection to the peer. If none supplied we'll
     /// default to the documented constant.
@@ -35,6 +38,7 @@ impl Config {
         Self {
             hard_coded_contacts: Default::default(),
             port: Default::default(),
+            ip: Default::default(),
             max_msg_size_allowed: Default::default(),
             idle_timeout: Default::default(),
             keep_alive_interval: Default::default(),
