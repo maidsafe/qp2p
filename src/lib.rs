@@ -12,7 +12,7 @@ pub use event::Event;
 use crate::wire_msg::WireMsg;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use event_loop::EventLoop;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
 use tokio::prelude::Future;
@@ -86,6 +86,7 @@ impl Crust {
     /// very limited functionaity will be available.
     pub fn start_listening(&mut self) {
         let port = self.cfg.port.unwrap_or(0);
+        let ip = self.cfg.ip.unwrap_or_else(|| Ipv4Addr::new(0, 0, 0, 0));
         let max_msg_size_allowed = self
             .cfg
             .max_msg_size_allowed
@@ -128,8 +129,7 @@ impl Crust {
 
             let mut ep_builder = quinn::Endpoint::new();
             ep_builder.listen(our_cfg);
-            let (ep, dr, incoming_connections) =
-                unwrap!(ep_builder.bind(&format!("127.0.0.1:{}", port)));
+            let (ep, dr, incoming_connections) = unwrap!(ep_builder.bind(&(ip, port)));
 
             let ctx = Context::new(
                 tx,
@@ -283,7 +283,7 @@ mod tests {
     fn local_port() {
         let (tx0, _rx0) = mpsc::channel();
         let (mut crust0, crust0_cert_der) = {
-            let our_complete_cert = SerialisableCeritificate::default();
+            let our_complete_cert = SerialisableCertificate::default();
             let cert_der = our_complete_cert.cert_der.clone();
 
             let mut cfg: Config = Default::default();
