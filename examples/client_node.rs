@@ -41,6 +41,8 @@ struct ClientNode {
     our_cert: Vec<u8>,
     sent_messages: usize,
     received_messages: usize,
+    /// Message to send
+    msg: Vec<u8>,
 }
 
 fn main() {
@@ -63,9 +65,12 @@ impl ClientNode {
                 ..Default::default()
             },
         );
+        let msg = random_data_with_hash(1024 * 1024);
+        assert!(hash_correct(&msg));
         Self {
             crust,
             bootstrap_node_info,
+            msg,
             event_rx: Some(event_rx),
             client_nodes: Default::default(),
             our_cert: Default::default(),
@@ -106,9 +111,7 @@ impl ClientNode {
         if peer == self.bootstrap_node_info {
             info!("Connected to bootstrap node. Waiting for other node contacts...");
         } else if self.client_nodes.contains(&peer) {
-            let msg = random_data_with_hash(1024 * 1024 * 10);
-            assert!(hash_correct(&msg));
-            self.crust.send(peer, msg);
+            self.crust.send(peer, self.msg.clone());
             self.sent_messages += 1;
         }
     }
