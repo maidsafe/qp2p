@@ -5,7 +5,7 @@ extern crate serde_derive;
 #[macro_use]
 extern crate unwrap;
 
-pub use config::{Config, SerialisableCeritificate};
+pub use config::{Config, SerialisableCertificate};
 pub use error::Error;
 pub use event::Event;
 
@@ -274,7 +274,7 @@ impl Crust {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, SerialisableCeritificate};
+    use crate::config::{Config, SerialisableCertificate};
     use std::net::SocketAddr;
     use std::str::FromStr;
     use std::sync::mpsc;
@@ -348,7 +348,7 @@ mod tests {
     fn test_multistreaming(should_connect: bool, crust0_port: u16, crust1_port: u16) {
         let (tx0, rx0) = mpsc::channel();
         let (mut crust0, crust0_cert_der) = {
-            let our_complete_cert = SerialisableCeritificate::default();
+            let our_complete_cert = SerialisableCertificate::default();
             let cert_der = our_complete_cert.cert_der.clone();
 
             let mut cfg: Config = Default::default();
@@ -359,7 +359,7 @@ mod tests {
         };
 
         let crust0_info = CrustInfo {
-            peer_addr: unwrap!(SocketAddr::from_str(&format!("127.0.0.1:{}", crust0_port))),
+            peer_addr: unwrap!(format!("127.0.0.1:{}", crust0_port).parse()),
             peer_cert_der: crust0_cert_der,
         };
         let crust0_addr = crust0_info.peer_addr;

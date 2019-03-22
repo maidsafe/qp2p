@@ -21,8 +21,8 @@ pub struct Config {
     ///
     /// The interval is in seconds. A value of 0 disables this feature.
     pub keep_alive_interval: Option<u32>,
-    /// Path to our TLS Certificate. This file must contain `SerialisableCeritificate` as content
-    pub our_complete_cert: Option<SerialisableCeritificate>,
+    /// Path to our TLS Certificate. This file must contain `SerialisableCertificate` as content
+    pub our_complete_cert: Option<SerialisableCertificate>,
 }
 
 impl Config {
@@ -46,12 +46,12 @@ impl Config {
 /// To be used to read and write our certificate and private key to disk esp. as a part of our
 /// configuration file
 #[derive(Serialize, Deserialize, Clone)]
-pub struct SerialisableCeritificate {
+pub struct SerialisableCertificate {
     pub cert_der: Vec<u8>,
     pub key_der: Vec<u8>,
 }
 
-impl SerialisableCeritificate {
+impl SerialisableCertificate {
     // TODO do proper error handling
     pub fn obtain_priv_key_and_cert(&self) -> (quinn::PrivateKey, quinn::Certificate) {
         (
@@ -61,7 +61,7 @@ impl SerialisableCeritificate {
     }
 }
 
-impl Default for SerialisableCeritificate {
+impl Default for SerialisableCertificate {
     fn default() -> Self {
         let cert = rcgen::generate_simple_self_signed(vec!["MaidSAFE.net".to_string()]);
 
