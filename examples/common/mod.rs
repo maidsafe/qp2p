@@ -1,3 +1,4 @@
+use serde_derive::{Deserialize, Serialize};
 use using_quinn::CrustInfo;
 
 /// Remote procedure call for our examples to communicate.
