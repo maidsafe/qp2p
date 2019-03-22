@@ -55,7 +55,7 @@ pub struct Crust {
 }
 
 /// Crust information for peers to connect to each other
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct CrustInfo {
     pub peer_addr: SocketAddr,
     pub peer_cert_der: Vec<u8>,
