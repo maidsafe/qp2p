@@ -31,10 +31,16 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
 };
 
+/// Configuration for the bootstrap node
 #[derive(Serialize, Deserialize)]
-struct BootstrapNodeConfig {
+pub struct BootstrapNodeConfig {
+    /// IP address that the bootstrap node should listen on
     ip: Ipv4Addr,
+    /// Port that the bootstrap node should listen on
     port: u16,
+    /// A number of expected connections.
+    /// Once this number is reached, we'll send a list of all connections to every connected peer.
+    expected_conns: usize,
 }
 
 impl Default for BootstrapNodeConfig {
@@ -42,6 +48,7 @@ impl Default for BootstrapNodeConfig {
         BootstrapNodeConfig {
             ip: unwrap!("127.0.0.1".parse()),
             port: 5000,
+            expected_conns: 3,
         }
     }
 }
@@ -91,8 +98,7 @@ fn main() -> Result<(), io::Error> {
         unwrap!(serde_json::to_string(&our_conn_info)),
     );
 
-    // TODO(povilas): have an argument for this
-    let expected_connections = 3;
+    let expected_connections = bootstrap_node_config.expected_conns;
     let mut connected_peers = HashMap::new();
     let mut test_triggered = false;
 
