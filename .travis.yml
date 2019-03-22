@@ -1,0 +1,22 @@
+env:
+  global:
+    - RUST_BACKTRACE=1
+    - PATH=$PATH:$HOME/.cargo/bin
+os:
+  - linux
+  - osx
+  - windows
+language: rust
+sudo: false
+cache:
+  cargo: true
+before_script:
+  - if ! cargo prune --version | grep -q "0.2.0"; then
+      cargo install cargo-prune --vers="0.2.0" --force;
+    fi
+  - rustup component add rustfmt clippy
+script:
+  - cargo fmt -- --check &&
+    cargo test --verbose --release
+before_cache:
+  - cargo prune
