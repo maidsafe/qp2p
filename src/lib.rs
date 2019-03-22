@@ -12,7 +12,7 @@ pub use event::Event;
 use crate::wire_msg::WireMsg;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use event_loop::EventLoop;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
 use tokio::prelude::Future;
@@ -50,7 +50,8 @@ pub const DEFAULT_KEEP_ALIVE_INTERVAL: u32 = 10; // 10secs
 pub struct Crust {
     event_tx: Sender<Event>,
     cfg: Config,
-    our_info: Option<CrustInfo>,
+    our_global_info: Option<CrustInfo>,
+    our_localhost_connection_info: Option<CrustInfo>,
     el: EventLoop,
 }
 
@@ -73,7 +74,8 @@ impl Crust {
         Self {
             event_tx,
             cfg,
-            our_info: None,
+            our_global_info: None,
+            our_localhost_connection_info: None,
             el,
         }
     }
@@ -180,22 +182,53 @@ impl Crust {
     /// Get our connection info to give to others for them to connect to us
     // FIXME calling this mutliple times just now could have it hanging as only one tx is
     // registered and that replaces any previous tx registered. Fix by using a vec of txs
-    pub fn our_connection_info(&mut self) -> R<CrustInfo> {
-        if let Some(ref our_info) = self.our_info {
-            return Ok(our_info.clone());
+    pub fn our_global_connection_info(&mut self) -> R<CrustInfo> {
+        if let Some(ref our_global_info) = self.our_global_info {
+            return Ok(our_global_info.clone());
         }
 
         let our_ext_addr = self.query_ip_echo_service()?;
         let our_cert_der = self.our_certificate_der();
 
-        let our_info = CrustInfo {
+        let our_global_info = CrustInfo {
             peer_addr: our_ext_addr,
             peer_cert_der: our_cert_der,
         };
 
-        self.our_info = Some(our_info.clone());
+        self.our_global_info = Some(our_global_info.clone());
 
-        Ok(our_info)
+        Ok(our_global_info)
+    }
+
+    /// Get the `CrustInfo` with actual port we are locally bound to.
+    ///
+    /// This is our localhost info and useful for running in the context of the localhost, mainly
+    /// for testing. The port should be the same as the given port in the configuration file or if
+    /// none supplied there it will return the OS allocated random port to which we bound ourselves
+    /// to.
+    pub fn our_localhost_connection_info(&mut self) -> R<CrustInfo> {
+        if let Some(ref our_localhost_connection_info) = self.our_localhost_connection_info {
+            return Ok(our_localhost_connection_info.clone());
+        }
+
+        let (tx, rx) = mpsc::channel();
+
+        self.el.post(move || {
+            let our_local_addr_res = ctx(|c| c.quic_ep().local_addr());
+            unwrap!(tx.send(our_local_addr_res));
+        });
+
+        let our_local_addr = unwrap!(rx.recv())?;
+        let our_cert_der = self.our_certificate_der();
+
+        let our_localhost_connection_info = CrustInfo {
+            peer_addr: our_local_addr,
+            peer_cert_der: our_cert_der,
+        };
+
+        self.our_localhost_connection_info = Some(our_localhost_connection_info.clone());
+
+        Ok(our_localhost_connection_info)
     }
 
     fn our_certificate_der(&mut self) -> Vec<u8> {
@@ -213,7 +246,17 @@ impl Crust {
         let (tx, rx) = mpsc::channel();
         // FIXME: For the purpose of simplicity we are asking only one peer just now. In production
         // ask multiple until one answers OR we exhaust the list
-        let echo_server_info = if let Some(peer_info) = self.cfg.hard_coded_contacts.first() {
+        let echo_server_info = if let Some(peer_info) =
+            self.cfg.hard_coded_contacts.iter().find(|contact| {
+                let ip = contact.peer_addr.ip();
+
+                cfg!(test)
+                    || if let IpAddr::V4(v4) = contact.peer_addr.ip() {
+                        !v4.is_private() && !v4.is_link_local() && !v4.is_loopback()
+                    } else {
+                        !ip.is_loopback()
+                    }
+            }) {
             peer_info.clone()
         } else {
             return Err(Error::NoEndpointEchoServerFound);
@@ -235,6 +278,47 @@ mod tests {
     use std::net::SocketAddr;
     use std::str::FromStr;
     use std::sync::mpsc;
+
+    #[test]
+    fn local_port() {
+        let (tx0, _rx0) = mpsc::channel();
+        let (mut crust0, crust0_cert_der) = {
+            let our_complete_cert = SerialisableCeritificate::default();
+            let cert_der = our_complete_cert.cert_der.clone();
+
+            let mut cfg: Config = Default::default();
+            cfg.our_complete_cert = Some(our_complete_cert);
+
+            (Crust::with_config(tx0, cfg), cert_der)
+        };
+        crust0.start_listening();
+
+        let crust0_port = unwrap!(crust0.our_localhost_connection_info())
+            .peer_addr
+            .port();
+
+        let crust0_info = CrustInfo {
+            peer_addr: unwrap!(SocketAddr::from_str(&format!("127.0.0.1:{}", crust0_port))),
+            peer_cert_der: crust0_cert_der,
+        };
+
+        let (tx1, _rx1) = mpsc::channel();
+        let mut crust1 = {
+            let mut cfg: Config = Default::default();
+            cfg.hard_coded_contacts.push(crust0_info.clone());
+            Crust::with_config(tx1, cfg)
+        };
+        crust1.start_listening();
+
+        let crust1_port = unwrap!(crust1.our_localhost_connection_info())
+            .peer_addr
+            .port();
+        let crust1_echoed_port = unwrap!(crust1.our_global_connection_info())
+            .peer_addr
+            .port();
+
+        assert_eq!(crust1_port, crust1_echoed_port);
+    }
 
     #[test]
     fn dropping_crust_handle_gracefully_shutsdown_event_loop() {
@@ -377,7 +461,7 @@ mod tests {
             crust1.connect_to(crust0_info.clone());
         }
 
-        let crust1_info = unwrap!(crust1.our_connection_info());
+        let crust1_info = unwrap!(crust1.our_global_connection_info());
         assert_eq!(crust1_port, crust1_info.peer_addr.port());
 
         // Send the biggest message first and we'll assert that it arrives last hence not blocking
