@@ -1,4 +1,3 @@
-use crate::config::AllowedNetwork;
 use std::io;
 use std::net::SocketAddr;
 
@@ -35,12 +34,8 @@ quick_error! {
          DuplicateConnectionToPeer(peer_addr: SocketAddr) {
              display("Duplicate connection attempted to peer {}", peer_addr)
          }
-         NoEndpointEchoServerFound(allowed: AllowedNetwork) {
-             display("There's no endpoint echo server to ask. Current network configuration: {}",
-                     allowed)
-         }
-         InvalidNetworkConfig(allowed: AllowedNetwork) {
-             display("Invalid network configuration - {}", allowed)
+         NoEndpointEchoServerFound {
+             display("There's no endpoint echo server to ask. Current network configuration")
          }
      }
 }

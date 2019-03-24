@@ -5,7 +5,7 @@ extern crate serde_derive;
 #[macro_use]
 extern crate unwrap;
 
-pub use config::{AllowedNetwork, Config, SerialisableCertificate};
+pub use config::{Config, SerialisableCertificate};
 pub use error::Error;
 pub use event::Event;
 
@@ -84,7 +84,10 @@ impl Crust {
     /// very limited functionaity will be available.
     pub fn start_listening(&mut self) {
         let port = self.cfg.port.unwrap_or(0);
-        let ip = self.cfg.ip.unwrap_or_else(|| Ipv4Addr::new(0, 0, 0, 0));
+        let ip = self
+            .cfg
+            .ip
+            .unwrap_or_else(|| IpAddr::V4(Ipv4Addr::UNSPECIFIED));
         let max_msg_size_allowed = self
             .cfg
             .max_msg_size_allowed
@@ -146,9 +149,7 @@ impl Crust {
 
     /// Connect to the given peer. This will error out if the peer is already in the process of
     /// being connected to OR for any other connection failure reasons.
-    pub fn connect_to(&mut self, peer_info: CrustInfo) -> R<()> {
-        self.cfg.allowed_network.addr_allowed(peer_info.peer_addr)?;
-
+    pub fn connect_to(&mut self, peer_info: CrustInfo) {
         self.el.post(move || {
             if let Err(e) = connect::connect_to(peer_info, None) {
                 println!(
@@ -157,8 +158,6 @@ impl Crust {
                 );
             }
         });
-
-        Ok(())
     }
 
     /// Disconnect from the given peer
@@ -179,20 +178,17 @@ impl Crust {
     /// If the peer is not connected, it will attempt to connect to it first
     /// and then send the message. This can be called multiple times while the peer is still being
     /// connected to - all the sends will be buffered until the peer is connected to.
-    pub fn send(&mut self, peer_info: CrustInfo, msg: Vec<u8>) -> R<()> {
-        self.cfg.allowed_network.addr_allowed(peer_info.peer_addr)?;
-
+    pub fn send(&mut self, peer_info: CrustInfo, msg: Vec<u8>) {
         self.el
             .post(move || communicate::try_write_to_peer(peer_info, WireMsg::UserMsg(msg)));
-
-        Ok(())
     }
 
     /// Get our connection info to give to others for them to connect to us
     ///
-    /// Will use hard coded contacts to ask for our endpoint. If no hard coded contacts are
-    /// supplied then if the `AllowedNetwork` is configured to `LocalhostOnly` it'll return our
-    /// localhost endpoint.
+    /// Will use hard coded contacts to ask for our endpoint. If no contact is given then we'll
+    /// simply build our connection info by querying the underlying bound socket for our address.
+    /// Note that if such an obtained address is of unspecified category we will ignore that as
+    /// such an address cannot be reached and hence not useful.
     // FIXME calling this mutliple times concurrently just now could have it hanging as only one tx
     // is registered and that replaces any previous tx registered. Fix by using a vec of txs
     pub fn our_connection_info(&mut self) -> R<CrustInfo> {
@@ -202,18 +198,17 @@ impl Crust {
 
         let our_addr = match self.query_ip_echo_service() {
             Ok(addr) => addr,
-            Err(e @ Error::NoEndpointEchoServerFound(_)) => {
-                if let AllowedNetwork::LocalhostOnly = self.cfg.allowed_network {
-                    let (tx, rx) = mpsc::channel();
-                    self.el.post(move || {
-                        let local_addr_res = ctx(|c| c.quic_ep().local_addr());
-                        unwrap!(tx.send(local_addr_res));
-                    });
-                    let port = unwrap!(rx.recv())?.port();
-                    let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-                    SocketAddr::new(ip, port)
-                } else {
+            Err(e @ Error::NoEndpointEchoServerFound) => {
+                let (tx, rx) = mpsc::channel();
+                self.el.post(move || {
+                    let local_addr_res = ctx(|c| c.quic_ep().local_addr());
+                    unwrap!(tx.send(local_addr_res));
+                });
+                let addr = unwrap!(rx.recv())?;
+                if addr.ip().is_unspecified() {
                     return Err(e);
+                } else {
+                    addr
                 }
             }
             Err(e) => return Err(e),
@@ -245,16 +240,10 @@ impl Crust {
     fn query_ip_echo_service(&mut self) -> R<SocketAddr> {
         // FIXME: For the purpose of simplicity we are asking only one peer just now. In production
         // ask multiple until one answers OR we exhaust the list
-        let echo_server_info = if let Some(peer_info) =
-            self.cfg.hard_coded_contacts.iter().find(|contact| {
-                self.cfg
-                    .allowed_network
-                    .addr_allowed(contact.peer_addr)
-                    .is_ok()
-            }) {
+        let echo_server_info = if let Some(peer_info) = self.cfg.hard_coded_contacts.first() {
             peer_info.clone()
         } else {
-            return Err(Error::NoEndpointEchoServerFound(self.cfg.allowed_network));
+            return Err(Error::NoEndpointEchoServerFound);
         };
 
         let (tx, rx) = mpsc::channel();
@@ -282,12 +271,12 @@ mod tests {
 
     #[test]
     fn echo_service() {
-        let (mut crust0, _rx) = new_random_crust_for_unit_test(Default::default());
+        let (mut crust0, _rx) = new_random_crust_for_unit_test(false, Default::default());
 
         // Confirm there's no echo service available for us
         match crust0.query_ip_echo_service() {
             Ok(_) => panic!("Without Hard Coded Contacts, echo service should not be possible"),
-            Err(Error::NoEndpointEchoServerFound(_)) => (),
+            Err(Error::NoEndpointEchoServerFound) => (),
             Err(e) => panic!("{:?} - {}", e, e),
         }
 
@@ -295,7 +284,7 @@ mod tests {
         let crust0_info = unwrap!(crust0.our_connection_info());
         let crust0_port = crust0_info.peer_addr.port();
 
-        let (mut crust1, _rx) = new_random_crust_for_unit_test(vec![crust0_info.clone()]);
+        let (mut crust1, _rx) = new_random_crust_for_unit_test(true, vec![crust0_info.clone()]);
 
         // Echo service is availabe through crust0
         let crust1_port = unwrap!(crust1.query_ip_echo_service()).port();
@@ -303,53 +292,14 @@ mod tests {
 
         assert_ne!(crust0_port, crust1_port);
         assert_eq!(crust1_port, crust1_info.peer_addr.port());
-
-        // Misconfigured Crust for localhost testing
-        let mut crust_bad = {
-            let (tx, rx) = mpsc::channel();
-            std::mem::forget(rx);
-            let mut cfg = Config::with_default_cert();
-            cfg.hard_coded_contacts.push(crust0_info);
-            Crust::with_config(tx, cfg)
-        };
-        crust_bad.start_listening();
-
-        match crust_bad.our_connection_info() {
-            Err(Error::NoEndpointEchoServerFound(AllowedNetwork::GlobalOnly)) => (),
-            Ok(_) => panic!("Should have failed due to network misconfiguration"),
-            Err(e) => panic!("Unexpected error: {:?} - {}", e, e),
-        }
     }
 
     #[test]
-    fn multistreaming_and_no_head_of_queue_blocking_with_prior_connect() {
-        test_multistreaming(true);
-    }
-
-    #[test]
-    fn multistreaming_and_no_head_of_queue_blocking_without_prior_connect() {
-        test_multistreaming(false);
-    }
-
-    fn new_random_crust_for_unit_test(contacts: Vec<CrustInfo>) -> (Crust, Receiver<Event>) {
-        let (tx, rx) = mpsc::channel();
-        let mut crust = {
-            let mut cfg = Config::with_default_cert();
-            cfg.allowed_network = AllowedNetwork::LocalhostOnly;
-            cfg.hard_coded_contacts = contacts;
-            Crust::with_config(tx, cfg)
-        };
-
-        crust.start_listening();
-
-        (crust, rx)
-    }
-
-    fn test_multistreaming(should_connect: bool) {
-        let (mut crust0, rx0) = new_random_crust_for_unit_test(Default::default());
+    fn multistreaming_and_no_head_of_queue_blocking() {
+        let (mut crust0, rx0) = new_random_crust_for_unit_test(false, Default::default());
         let crust0_info = unwrap!(crust0.our_connection_info());
 
-        let (mut crust1, rx1) = new_random_crust_for_unit_test(vec![crust0_info.clone()]);
+        let (mut crust1, rx1) = new_random_crust_for_unit_test(true, vec![crust0_info.clone()]);
         let crust1_info = unwrap!(crust1.our_connection_info());
 
         let crust0_addr = crust0_info.peer_addr;
@@ -435,22 +385,37 @@ mod tests {
                 };
             }));
 
-        if should_connect {
-            unwrap!(crust1.connect_to(crust0_info.clone()));
-        }
-
         // Send the biggest message first and we'll assert that it arrives last hence not blocking
         // the rest of smaller messages sent after it
-        unwrap!(crust1.send(crust0_info.clone(), big_msg_to_crust0));
-        unwrap!(crust1.send(crust0_info.clone(), small_msg0_to_crust0));
+        crust1.send(crust0_info.clone(), big_msg_to_crust0);
+        crust1.send(crust0_info.clone(), small_msg0_to_crust0);
         // Even after a delay the following small message should arrive before the 1st sent big
         // message
         std::thread::sleep(std::time::Duration::from_millis(100));
-        unwrap!(crust1.send(crust0_info, small_msg1_to_crust0));
+        crust1.send(crust0_info, small_msg1_to_crust0);
 
-        unwrap!(crust0.send(crust1_info, msg_to_crust1));
+        crust0.send(crust1_info, msg_to_crust1);
 
         unwrap!(j0.join());
         unwrap!(j1.join());
+    }
+
+    fn new_random_crust_for_unit_test(
+        is_addr_unspecified: bool,
+        contacts: Vec<CrustInfo>,
+    ) -> (Crust, Receiver<Event>) {
+        let (tx, rx) = mpsc::channel();
+        let mut crust = {
+            let mut cfg = Config::with_default_cert();
+            cfg.hard_coded_contacts = contacts;
+            if !is_addr_unspecified {
+                cfg.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+            }
+            Crust::with_config(tx, cfg)
+        };
+
+        crust.start_listening();
+
+        (crust, rx)
     }
 }

@@ -129,13 +129,13 @@ fn main() {
                         .ok_or("Missing index argument")
                         .and_then(|idx| idx.parse().or(Err("Invalid index argument")))
                         .and_then(|idx| peerlist.get(idx).ok_or("Index out of bounds"))
-                        .and_then(|peer| {
+                        .map(|peer| {
                             // FIXME: I've unwrapped this due to API changes - pls handle
                             // appropriately
-                            Ok(unwrap!(crust.send(
+                            crust.send(
                                 peer.clone(),
                                 args.collect::<Vec<_>>().join(" ").as_bytes().to_owned(),
-                            )))
+                            )
                         }),
                     "quit" | "exit" => break 'outer,
                     "help" => Ok(println!(
