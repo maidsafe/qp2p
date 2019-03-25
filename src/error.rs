@@ -37,5 +37,9 @@ quick_error! {
          NoEndpointEchoServerFound {
              display("There's no endpoint echo server to ask. Current network configuration")
          }
+         OneShotRx(e: tokio::sync::oneshot::error::RecvError) {
+             display("Oneshot Receiver error: {}", e)
+             from()
+         }
      }
 }

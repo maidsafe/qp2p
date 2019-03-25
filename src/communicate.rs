@@ -6,6 +6,7 @@ use crate::R;
 use crate::{connect, CrustInfo};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
+use std::thread;
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
@@ -125,10 +126,20 @@ pub fn read_from_peer(
 
     let leaf = quinn::read_to_end(i_stream, ctx(|c| c.max_msg_size_allowed))
         .map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
-        .map(move |(_i_stream, raw)| {
-            // TODO don't unwrap deserialisation failure in production
-            let wire_msg = unwrap!(bincode::deserialize(&*raw));
-            handle_wire_msg(peer_addr, wire_msg);
+        .and_then(move |(_i_stream, raw)| {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            // TODO Improve this else peer might be able to make us spawn many threads
+            let _j = unwrap!(thread::Builder::new()
+                .name("Deserialisation-thread".to_string())
+                .spawn(move || {
+                    // TODO don't unwrap deserialisation failure in production
+                    let wire_msg = unwrap!(bincode::deserialize(&*raw));
+                    if let Err(e) = tx.send(wire_msg) {
+                        println!("Unable to inform the deserialised message: {:?}", e);
+                    }
+                }));
+            rx.map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
+                .map(move |wire_msg| handle_wire_msg(peer_addr, wire_msg))
         })
         .select(terminator_leaf)
         .then(|_| Ok(()));

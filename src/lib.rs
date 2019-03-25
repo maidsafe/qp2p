@@ -284,7 +284,7 @@ mod tests {
         let crust0_info = unwrap!(crust0.our_connection_info());
         let crust0_port = crust0_info.peer_addr.port();
 
-        let (mut crust1, _rx) = new_random_crust_for_unit_test(true, vec![crust0_info.clone()]);
+        let (mut crust1, rx1) = new_random_crust_for_unit_test(true, vec![crust0_info.clone()]);
 
         // Echo service is availabe through crust0
         let crust1_port = unwrap!(crust1.query_ip_echo_service()).port();
@@ -292,6 +292,28 @@ mod tests {
 
         assert_ne!(crust0_port, crust1_port);
         assert_eq!(crust1_port, crust1_info.peer_addr.port());
+
+        let (mut crust2, _rx) = new_random_crust_for_unit_test(true, vec![crust0_info.clone()]);
+        let crust2_info = unwrap!(crust2.our_connection_info());
+
+        // The two crust can now send data to each other
+        // Drain the receiver first
+        while let Ok(_) = rx1.try_recv() {}
+
+        let data = vec![12, 13, 14, 253];
+        crust2.send(crust1_info, data.clone());
+
+        match unwrap!(rx1.recv()) {
+            Event::ConnectedTo { crust_info } => assert_eq!(crust_info, crust2_info),
+            x => panic!("Received unexpected event: {:?}", x),
+        }
+        match unwrap!(rx1.recv()) {
+            Event::NewMessage { peer_addr, msg } => {
+                assert_eq!(peer_addr, crust2_info.peer_addr);
+                assert_eq!(msg, data);
+            }
+            x => panic!("Received unexpected event: {:?}", x),
+        }
     }
 
     #[test]
@@ -305,8 +327,8 @@ mod tests {
         let crust0_addr = crust0_info.peer_addr;
         let crust1_addr = crust1_info.peer_addr;
 
-        // 10 MiB message
-        let big_msg_to_crust0 = vec![255; 10 * 1024 * 1024];
+        // 400 MiB message
+        let big_msg_to_crust0 = vec![255; 400 * 1024 * 1024];
         let big_msg_to_crust0_clone = big_msg_to_crust0.clone();
 
         // very small messages

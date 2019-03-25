@@ -104,19 +104,27 @@ fn handle_new_connection_res(
         };
 
         let q_conn = new_peer_conn.connection;
-        let is_from_peer_established = match conn.from_peer {
+        match conn.from_peer {
             FromPeer::NoConnection => {
                 communicate::write_to_peer_connection(
                     peer_addr,
                     &q_conn,
                     &WireMsg::CertificateDer(c.our_complete_cert.cert_der.clone()),
                 );
-                false
             }
             FromPeer::Established {
                 ref mut pending_reads,
                 ..
             } => {
+                let crust_info = CrustInfo {
+                    peer_addr,
+                    peer_cert_der: peer_cert_der.clone(),
+                };
+
+                if let Err(e) = c.event_tx.send(Event::ConnectedTo { crust_info }) {
+                    println!("Could not fire event: {:?}", e);
+                }
+
                 for pending_read in pending_reads.drain(..) {
                     communicate::dispatch_wire_msg(
                         peer_addr,
@@ -126,29 +134,17 @@ fn handle_new_connection_res(
                         pending_read,
                     );
                 }
-                true
             }
-        };
+        }
 
         for pending_send in &pending_sends {
             communicate::write_to_peer_connection(peer_addr, &q_conn, pending_send);
         }
 
         conn.to_peer = ToPeer::Established {
-            peer_cert_der: peer_cert_der.clone(),
+            peer_cert_der,
             q_conn,
         };
-
-        if is_from_peer_established {
-            let crust_info = CrustInfo {
-                peer_addr,
-                peer_cert_der,
-            };
-
-            if let Err(e) = c.event_tx.send(Event::ConnectedTo { crust_info }) {
-                println!("Could not fire event: {:?}", e);
-            }
-        }
     })
 }
 
