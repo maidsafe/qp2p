@@ -82,10 +82,17 @@ fn handle_new_connection_res(
     println!("Successfully connected to peer: {}", peer_addr);
 
     ctx_mut(|c| {
-        let conn = unwrap!(
-            c.connections.get_mut(&peer_addr),
-            "Logic Error in bookkeeping - Report a bug!"
-        );
+        let conn = match c.connections.get_mut(&peer_addr) {
+            Some(conn) => conn,
+            None => {
+                println!(
+                    "Made a successful connection to a peer we are no longer interested in or \
+                     the peer had its connection to us servered which made us forget this peer: {}",
+                    peer_addr
+                );
+                return;
+            }
+        };
 
         let mut to_peer_prev = mem::replace(&mut conn.to_peer, Default::default());
         let (peer_cert_der, pending_sends) = match to_peer_prev {
@@ -109,7 +116,7 @@ fn handle_new_connection_res(
                 communicate::write_to_peer_connection(
                     peer_addr,
                     &q_conn,
-                    &WireMsg::CertificateDer(c.our_complete_cert.cert_der.clone()),
+                    WireMsg::CertificateDer(c.our_complete_cert.cert_der.clone()),
                 );
             }
             FromPeer::Established {
@@ -137,7 +144,7 @@ fn handle_new_connection_res(
             }
         }
 
-        for pending_send in &pending_sends {
+        for pending_send in pending_sends {
             communicate::write_to_peer_connection(peer_addr, &q_conn, pending_send);
         }
 

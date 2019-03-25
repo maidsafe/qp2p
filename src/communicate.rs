@@ -34,7 +34,7 @@ pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
                 None
             }
             ToPeer::Established { ref q_conn, .. } => {
-                write_to_peer_connection(peer_info.peer_addr, q_conn, &msg);
+                write_to_peer_connection(peer_info.peer_addr, q_conn, msg);
                 None
             }
         }
@@ -54,7 +54,7 @@ pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
 /// This will fail if we don't have a connection to the peer or if the peer is in an invalid state
 /// to be sent a message to.
 #[allow(unused)]
-pub fn write_to_peer(peer_addr: SocketAddr, msg: &WireMsg) {
+pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
     ctx(|c| {
         let conn = match c.connections.get(&peer_addr) {
             Some(conn) => conn,
@@ -79,17 +79,33 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: &WireMsg) {
 pub fn write_to_peer_connection(
     peer_addr: SocketAddr,
     conn: &quinn::Connection,
-    wire_msg: &WireMsg,
+    wire_msg: WireMsg,
 ) {
-    let m = unwrap!(bincode::serialize(wire_msg));
     let leaf = conn
         .open_uni()
         .map_err(move |e| {
             handle_communication_err(peer_addr, &From::from(e), "Open-Unidirectional")
         })
         .and_then(move |o_stream| {
-            tokio::io::write_all(o_stream, m)
-                .map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Write-All"))
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            // TODO can we do better to not have many daemon threads ? Maybe use one such
+            // background thread ?
+            let _j = unwrap!(thread::Builder::new()
+                .name("Serialisation-thread".to_string())
+                .spawn(move || {
+                    let raw = unwrap!(bincode::serialize(&wire_msg));
+                    if let Err(e) = tx.send(raw) {
+                        println!("Unable to inform the serialised message: {:?}", e);
+                    }
+                }));
+            rx.map_err(move |e| {
+                handle_communication_err(peer_addr, &From::from(e), "Serialisation-rx")
+            })
+            .and_then(move |raw| {
+                tokio::io::write_all(o_stream, raw).map_err(move |e| {
+                    handle_communication_err(peer_addr, &From::from(e), "Write-All")
+                })
+            })
         })
         .and_then(move |(o_stream, _)| {
             tokio::io::shutdown(o_stream).map_err(move |e| {
@@ -128,7 +144,8 @@ pub fn read_from_peer(
         .map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
         .and_then(move |(_i_stream, raw)| {
             let (tx, rx) = tokio::sync::oneshot::channel();
-            // TODO Improve this else peer might be able to make us spawn many threads
+            // TODO Improve this else peer might be able to make us spawn many threads. Maybe have
+            // one such background thread - check serialisation thread too, for writes.
             let _j = unwrap!(thread::Builder::new()
                 .name("Deserialisation-thread".to_string())
                 .spawn(move || {
@@ -138,8 +155,10 @@ pub fn read_from_peer(
                         println!("Unable to inform the deserialised message: {:?}", e);
                     }
                 }));
-            rx.map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
-                .map(move |wire_msg| handle_wire_msg(peer_addr, wire_msg))
+            rx.map_err(move |e| {
+                handle_communication_err(peer_addr, &From::from(e), "Deserialisation-rx")
+            })
+            .map(move |wire_msg| handle_wire_msg(peer_addr, wire_msg))
         })
         .select(terminator_leaf)
         .then(|_| Ok(()));
@@ -162,11 +181,15 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                 //  NOTE: Even select might not help you if there are streams that are queued. The
                 //  selector might select the stream before it selects the `terminator_leaf` so the
                 //  actual fix needs to be done upstream
-                let conn = unwrap!(
-                    c.connections.get_mut(&peer_addr),
-                    "Logic Error - can't \
-                     get incoming from someone we don't know"
-                );
+                let conn = match c.connections.get_mut(&peer_addr) {
+                    Some(conn) => conn,
+                    None => {
+                        println!("Rxd wire-message from someone we don't know. Probably it was a \
+                        pending stream when we dropped the peer connection. Ignoring this message \
+                        from peer: {}", peer_addr);
+                        return;
+                    }
+                };
 
                 match conn.from_peer {
                     FromPeer::Established {
@@ -218,10 +241,22 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
     };
 
     let reverse_connect_to_peer = ctx_mut(|c| {
-        let conn = unwrap!(
-            c.connections.get_mut(&peer_addr),
-            "Logic Error - cannot rx from unknown peer"
-        );
+        // FIXME: Dropping the connection most probably will not drop the incoming stream
+        // and then if you get a message on it you might still end up here without an entry
+        // for the peer in your connection map. Fix by finding out the best way to drop the
+        // incoming stream - probably use a select (on future) or something.
+        //  NOTE: Even select might not help you if there are streams that are queued. The
+        //  selector might select the stream before it selects the `terminator_leaf` so the
+        //  actual fix needs to be done upstream
+        let conn = match c.connections.get_mut(&peer_addr) {
+            Some(conn) => conn,
+            None => {
+                println!("Rxd certificate from someone we don't know. Probably it was a pending \
+                stream when we dropped the peer connection. Ignoring this message from peer: {}",
+                peer_addr);
+                return false;
+            }
+        };
 
         match conn.to_peer {
             ToPeer::NoConnection => true,
@@ -260,7 +295,7 @@ fn handle_user_msg(peer_addr: SocketAddr, event_tx: &Sender<Event>, msg: Vec<u8>
 
 fn handle_echo_req(peer_addr: SocketAddr, q_conn: &quinn::Connection) {
     let msg = WireMsg::EndpointEchoResp(peer_addr);
-    write_to_peer_connection(peer_addr, q_conn, &msg);
+    write_to_peer_connection(peer_addr, q_conn, msg);
 }
 
 fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAddr>>) {
