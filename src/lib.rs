@@ -305,8 +305,8 @@ mod tests {
         let crust0_addr = crust0_info.peer_addr;
         let crust1_addr = crust1_info.peer_addr;
 
-        // 400 MiB message
-        let big_msg_to_crust0 = vec![255; 400 * 1024 * 1024];
+        // 10 MiB message
+        let big_msg_to_crust0 = vec![255; 10 * 1024 * 1024];
         let big_msg_to_crust0_clone = big_msg_to_crust0.clone();
 
         // very small messages
