@@ -28,7 +28,7 @@ use std::collections::HashMap;
 use std::sync::mpsc::channel;
 use std::{
     io,
-    net::{Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
 /// Configuration for the bootstrap node
@@ -60,9 +60,10 @@ fn main() -> Result<(), io::Error> {
     let cfg_file_handler = FileHandler::<BootstrapNodeConfig>::new("bootstrap.config", true)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-    let bootstrap_node_config = cfg_file_handler
-        .read_file()
-        .unwrap_or_else(|_e| BootstrapNodeConfig::default());
+    let bootstrap_node_config = cfg_file_handler.read_file().unwrap_or_else(|_e| {
+        info!("Using default bootstrap node config.");
+        BootstrapNodeConfig::default()
+    });
 
     // Initialise Crust
     let (ev_tx, ev_rx) = channel();
@@ -76,7 +77,7 @@ fn main() -> Result<(), io::Error> {
                 Config {
                     our_complete_cert: Some(our_complete_cert),
                     port: Some(bootstrap_node_config.port),
-                    ip: Some(bootstrap_node_config.ip),
+                    ip: Some(IpAddr::V4(bootstrap_node_config.ip)),
                     ..Default::default()
                 },
             ),
