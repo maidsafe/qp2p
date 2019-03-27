@@ -10,6 +10,6 @@ do
   let i++
 
   echo "Running client $i ($ip) ..."
-  tmux new-window -t deploy:$i -n "client$i"
-  tmux send-keys -t deploy:$i "./deploy.sh $cfg $ip" C-m
+  tmux new-window -t deploy:$i -n "$i-$ip"
+  tmux send-keys -t deploy:$i "./deploy.sh '$cfg' $ip" C-m
 done
