@@ -71,10 +71,11 @@ impl ClientNode {
             Config {
                 port: Some(0),
                 hard_coded_contacts: vec![bootstrap_node_info.clone()],
+                idle_timeout: Some(120),
                 ..Default::default()
             },
         );
-        let msg = random_data_with_hash(1024 * 1024);
+        let msg = random_data_with_hash(4 * 1024);
         assert!(hash_correct(&msg));
         Self {
             crust,
@@ -93,8 +94,7 @@ impl ClientNode {
         self.crust.start_listening();
         info!("Crust started");
 
-        let our_conn_info = unwrap!(self.crust.our_connection_info());
-        self.our_cert = our_conn_info.peer_cert_der;
+        self.our_cert = self.crust.our_certificate_der();
 
         // this dummy send will trigger connection
         self.crust
