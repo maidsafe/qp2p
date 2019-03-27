@@ -233,7 +233,7 @@ impl Crust {
         Ok(our_info)
     }
 
-    fn our_certificate_der(&mut self) -> Vec<u8> {
+    pub fn our_certificate_der(&mut self) -> Vec<u8> {
         let (tx, rx) = mpsc::channel();
 
         self.el.post(move || {
