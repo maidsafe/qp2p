@@ -10,6 +10,6 @@ droplet_ip=$1
 cargo build --release --example bootstrap_node
 
 # replace the IP address in the config and write it to the droplet
-cat bootstrap.config | jq -c ".ip = \"$droplet_ip\"" | ssh $droplet_ip "cat >/home/qa/bootstrap.config"
-scp ./target/release/examples/bootstrap_node $droplet_ip:/home/qa/
-ssh $droplet_ip "nohup /home/qa/bootstrap_node & tail -f nohup.out"
+cat bootstrap.config | jq -c ".ip = \"$droplet_ip\"" | ssh -o "StrictHostKeyChecking no" qa@$droplet_ip "cat >/home/qa/bootstrap.config"
+rsync -avz -e "ssh -o StrictHostKeyChecking=no" --progress ./target/release/examples/bootstrap_node qa@$droplet_ip:/home/qa/
+ssh -o "StrictHostKeyChecking no" qa@$droplet_ip "pkill bootstrap_node ; export RUST_LOG=bootstrap_node=trace ; /home/qa/bootstrap_node"
