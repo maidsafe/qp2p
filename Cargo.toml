@@ -5,7 +5,7 @@ authors = ["ustulation <ustulation@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-quinn = { git = "https://github.com/djc/quinn", rev = "cada5cc" }
+quinn = { git = "https://github.com/djc/quinn", rev = "d36d015" }
 tokio = "*"
 unwrap = "*"
 bincode = "1.1.2"

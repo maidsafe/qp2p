@@ -1,7 +1,9 @@
 use crate::communicate;
 use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
+use crate::error::Error;
 use crate::event::Event;
 use crate::CrustInfo;
+use std::net::SocketAddr;
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
@@ -22,8 +24,11 @@ fn handle_new_conn(new_conn: quinn::NewConnection) {
     // send in their certificate - have a delay and then log and forget them
     let q_conn = new_conn.connection;
     let incoming_streams = new_conn.incoming;
-
     let peer_addr = q_conn.remote_address();
+
+    current_thread::spawn(new_conn.driver.map_err(move |e| {
+        handle_connection_err(peer_addr, &From::from(e), "Connection driver failed");
+    }));
 
     // TODO make this a simple bool once the upstream bug is resolved and we don't need
     // this tx,rx workaround
@@ -81,11 +86,7 @@ fn handle_new_conn(new_conn: quinn::NewConnection) {
 
     let leaf = incoming_streams
         .map_err(move |e| {
-            println!(
-                "Incoming-streams from peer {} closed due to: {:?} - {}",
-                peer_addr, e, e
-            );
-            let _ = ctx_mut(|c| c.connections.remove(&peer_addr));
+            handle_connection_err(peer_addr, &From::from(e), "Incoming streams failed");
         })
         .for_each(move |quic_stream| {
             communicate::read_from_peer(peer_addr, quic_stream, rx_child.clone()).map_err(|e| {
@@ -99,4 +100,13 @@ fn handle_new_conn(new_conn: quinn::NewConnection) {
         .then(move |_| Ok(()));
 
     current_thread::spawn(leaf);
+}
+
+/// Removes failed connection from connection list to prevent from any type of memory leaks.
+fn handle_connection_err(peer_addr: SocketAddr, e: &Error, details: &str) {
+    println!(
+        "Incoming connection with peer {} errored: {:?} - {}. Details: {}",
+        peer_addr, e, e, details
+    );
+    let _ = ctx_mut(|c| c.connections.remove(&peer_addr));
 }
