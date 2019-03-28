@@ -306,6 +306,7 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAdd
     }
 }
 
+/// When connection fails, remove it to prevent memory leaks.
 fn handle_communication_err(peer_addr: SocketAddr, e: &Error, details: &str) {
     println!(
         "ERROR in communication with peer {}: {:?} - {}. Details: {}",

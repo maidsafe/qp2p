@@ -72,15 +72,21 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
 
 fn handle_new_connection_res(
     peer_addr: SocketAddr,
-    new_peer_conn_res: Result<quinn::NewClientConnection, quinn::ConnectionError>,
+    new_peer_conn_res: Result<quinn::NewConnection, quinn::ConnectionError>,
 ) {
     let new_peer_conn = match new_peer_conn_res {
         Ok(new_peer_conn) => new_peer_conn,
         Err(e) => return handle_connect_err(peer_addr, &From::from(e)),
     };
+    current_thread::spawn(
+        new_peer_conn
+            .driver
+            .map_err(move |e| handle_connect_err(peer_addr, &From::from(e))),
+    );
 
     println!("Successfully connected to peer: {}", peer_addr);
 
+    let q_conn = new_peer_conn.connection;
     ctx_mut(|c| {
         let conn = match c.connections.get_mut(&peer_addr) {
             Some(conn) => conn,
@@ -110,7 +116,6 @@ fn handle_new_connection_res(
             ),
         };
 
-        let q_conn = new_peer_conn.connection;
         match conn.from_peer {
             FromPeer::NoConnection => {
                 communicate::write_to_peer_connection(
