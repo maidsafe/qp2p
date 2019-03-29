@@ -312,11 +312,5 @@ fn handle_communication_err(peer_addr: SocketAddr, e: &Error, details: &str) {
         "ERROR in communication with peer {}: {:?} - {}. Details: {}",
         peer_addr, e, e, details
     );
-    ctx_mut(|c| {
-        if c.connections.remove(&peer_addr).is_some() {
-            if let Err(e) = c.event_tx.send(Event::ConnectionFailure { peer_addr }) {
-                println!("Could not fire event to the user: {}", e);
-            }
-        }
-    })
+    let _ = ctx_mut(|c| c.connections.remove(&peer_addr));
 }
