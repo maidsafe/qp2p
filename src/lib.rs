@@ -124,8 +124,8 @@ impl Crust {
                 let transport_config = unwrap!(Arc::get_mut(&mut our_cfg.transport_config));
                 // TODO test that this is sent only over the uni-stream to the peer not on the uni
                 // stream from the peer
-                transport_config.idle_timeout = idle_timeout;
-                transport_config.keep_alive_interval = keep_alive_interval;
+                transport_config.idle_timeout = idle_timeout * 1000;
+                transport_config.keep_alive_interval = keep_alive_interval * 1000;
             }
 
             let mut ep_builder = quinn::Endpoint::new();

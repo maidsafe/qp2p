@@ -208,7 +208,7 @@ impl fmt::Debug for ToPeer {
 impl Drop for ToPeer {
     fn drop(&mut self) {
         if let ToPeer::Established { ref q_conn, .. } = *self {
-            q_conn.close(0, &[0; 0]);
+            q_conn.clone().close(0, &[]);
         }
     }
 }
@@ -268,7 +268,7 @@ impl fmt::Debug for FromPeer {
 impl Drop for FromPeer {
     fn drop(&mut self) {
         if let FromPeer::Established { ref q_conn, .. } = *self {
-            q_conn.close(0, &[0; 0]);
+            q_conn.clone().close(0, &[]);
         }
     }
 }

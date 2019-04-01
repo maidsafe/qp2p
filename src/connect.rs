@@ -25,8 +25,8 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
         let transport_config = unwrap!(Arc::get_mut(&mut peer_cfg.transport));
         // TODO test that this is sent only over the uni-stream to the peer not on the uni
         // stream from the peer
-        transport_config.idle_timeout = ctx(|c| c.idle_timeout);
-        transport_config.keep_alive_interval = ctx(|c| c.keep_alive_interval);
+        transport_config.idle_timeout = ctx(|c| c.idle_timeout) * 1000;
+        transport_config.keep_alive_interval = ctx(|c| c.keep_alive_interval) * 1000;
 
         peer_cfg
     };
