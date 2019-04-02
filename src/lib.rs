@@ -130,7 +130,7 @@ impl Crust {
 
             let mut ep_builder = quinn::Endpoint::new();
             ep_builder.listen(our_cfg);
-            let (ep, dr, incoming_connections) = unwrap!(ep_builder.bind(&(ip, port)));
+            let (dr, ep, incoming_connections) = unwrap!(ep_builder.bind(&(ip, port)));
 
             let ctx = Context::new(
                 tx,

@@ -11,22 +11,24 @@ use tokio::runtime::current_thread;
 pub fn listen(incoming_connections: quinn::Incoming) {
     let leaf = incoming_connections
         .map_err(|()| println!("ERROR: Listener errored out"))
-        .for_each(move |new_conn| {
-            handle_new_conn(new_conn);
+        .for_each(move |(conn_driver, q_conn, incoming)| {
+            handle_new_conn(conn_driver, q_conn, incoming);
             Ok(())
         });
 
     current_thread::spawn(leaf);
 }
 
-fn handle_new_conn(new_conn: quinn::NewConnection) {
+fn handle_new_conn(
+    conn_driver: quinn::ConnectionDriver,
+    q_conn: quinn::Connection,
+    incoming_streams: quinn::IncomingStreams,
+) {
     // FIXME: If we don't have a connection to the peer yet, don't wait indefinitely for them to
     // send in their certificate - have a delay and then log and forget them
-    let q_conn = new_conn.connection;
-    let incoming_streams = new_conn.incoming;
     let peer_addr = q_conn.remote_address();
 
-    current_thread::spawn(new_conn.driver.map_err(move |e| {
+    current_thread::spawn(conn_driver.map_err(move |e| {
         handle_connection_err(peer_addr, &From::from(e), "Connection driver failed");
     }));
 
