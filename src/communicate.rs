@@ -7,7 +7,7 @@ use crate::{connect, CrustInfo};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
 use std::thread;
-use tokio::prelude::{Future, Stream};
+use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
 /// Send message to peer. If the peer is not connected, it will attempt to connect to it first
@@ -118,11 +118,7 @@ pub fn write_to_peer_connection(
 }
 
 /// Read messages from peer
-pub fn read_from_peer(
-    peer_addr: SocketAddr,
-    quic_stream: quinn::NewStream,
-    terminator: tokio::sync::watch::Receiver<()>,
-) -> R<()> {
+pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<()> {
     let i_stream = match quic_stream {
         quinn::NewStream::Bi(_bi) => {
             let e = Error::BiDirectionalStreamAttempted(peer_addr);
@@ -131,14 +127,6 @@ pub fn read_from_peer(
         }
         quinn::NewStream::Uni(uni) => uni,
     };
-
-    let terminator_leaf = terminator
-        .map_err(|e| println!("Incoming-children terminator fired with error: {}", e))
-        .for_each(|()| {
-            // Since this will always fire upon first creation of the receiver, do nothing
-            // This is a property of tokio::sync::watch::Receiver
-            Ok(())
-        });
 
     let leaf = quinn::read_to_end(i_stream, ctx(|c| c.max_msg_size_allowed))
         .map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
@@ -159,9 +147,7 @@ pub fn read_from_peer(
                 handle_communication_err(peer_addr, &From::from(e), "Deserialisation-rx")
             })
             .map(move |wire_msg| handle_wire_msg(peer_addr, wire_msg))
-        })
-        .select(terminator_leaf)
-        .then(|_| Ok(()));
+        });
 
     current_thread::spawn(leaf);
 
@@ -174,13 +160,6 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
         WireMsg::CertificateDer(cert) => handle_rx_cert(peer_addr, cert),
         wire_msg => {
             ctx_mut(|c| {
-                // FIXME: Dropping the connection most probably will not drop the incoming stream
-                // and then if you get a message on it you might still end up here without an entry
-                // for the peer in your connection map. Fix by finding out the best way to drop the
-                // incoming stream - probably use a select (on future) or something.
-                //  NOTE: Even select might not help you if there are streams that are queued. The
-                //  selector might select the stream before it selects the `terminator_leaf` so the
-                //  actual fix needs to be done upstream
                 let conn = match c.connections.get_mut(&peer_addr) {
                     Some(conn) => conn,
                     None => {
