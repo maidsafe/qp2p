@@ -73,8 +73,8 @@ pub struct Context {
     pub our_ext_addr_tx: Option<Sender<SocketAddr>>,
     pub our_complete_cert: SerialisableCertificate,
     pub max_msg_size_allowed: usize,
-    pub idle_timeout: u64,
-    pub keep_alive_interval: u32,
+    pub idle_timeout_msec: u64,
+    pub keep_alive_interval_msec: u32,
     quic_ep: quinn::Endpoint,
 }
 
@@ -83,8 +83,8 @@ impl Context {
         event_tx: Sender<Event>,
         our_complete_cert: SerialisableCertificate,
         max_msg_size_allowed: usize,
-        idle_timeout: u64,
-        keep_alive_interval: u32,
+        idle_timeout_msec: u64,
+        keep_alive_interval_msec: u32,
         quic_ep: quinn::Endpoint,
     ) -> Self {
         Self {
@@ -93,8 +93,8 @@ impl Context {
             our_ext_addr_tx: Default::default(),
             our_complete_cert,
             max_msg_size_allowed,
-            idle_timeout,
-            keep_alive_interval,
+            idle_timeout_msec,
+            keep_alive_interval_msec,
             quic_ep,
         }
     }
@@ -208,7 +208,7 @@ impl fmt::Debug for ToPeer {
 impl Drop for ToPeer {
     fn drop(&mut self) {
         if let ToPeer::Established { ref q_conn, .. } = *self {
-            q_conn.close(0, &[0; 0]);
+            q_conn.clone().close(0, &[]);
         }
     }
 }
@@ -268,7 +268,7 @@ impl fmt::Debug for FromPeer {
 impl Drop for FromPeer {
     fn drop(&mut self) {
         if let FromPeer::Established { ref q_conn, .. } = *self {
-            q_conn.close(0, &[0; 0]);
+            q_conn.clone().close(0, &[]);
         }
     }
 }

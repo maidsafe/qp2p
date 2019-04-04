@@ -17,13 +17,13 @@ pub struct Config {
     /// If we hear nothing from the peer in the given interval we declare it offline to us. If none
     /// supplied we'll default to the documented constant.
     ///
-    /// The interval is in seconds. A value of 0 disables this feature.
-    pub idle_timeout: Option<u64>,
+    /// The interval is in milliseconds. A value of 0 disables this feature.
+    pub idle_timeout_msec: Option<u64>,
     /// Interval to send keep-alives if we are idling so that the peer does not disconnect from us
     /// declaring us offline. If none is supplied we'll default to the documented constant.
     ///
-    /// The interval is in seconds. A value of 0 disables this feature.
-    pub keep_alive_interval: Option<u32>,
+    /// The interval is in milliseconds. A value of 0 disables this feature.
+    pub keep_alive_interval_msec: Option<u32>,
     /// Path to our TLS Certificate. This file must contain `SerialisableCertificate` as content
     pub our_complete_cert: Option<SerialisableCertificate>,
 }
@@ -40,8 +40,8 @@ impl Config {
             port: Default::default(),
             ip: Default::default(),
             max_msg_size_allowed: Default::default(),
-            idle_timeout: Default::default(),
-            keep_alive_interval: Default::default(),
+            idle_timeout_msec: Default::default(),
+            keep_alive_interval_msec: Default::default(),
             our_complete_cert: Some(Default::default()),
         }
     }
