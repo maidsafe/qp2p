@@ -38,13 +38,13 @@ pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
 /// This is based on average time in which routers would close the UDP mapping to the peer if they
 /// see no conversation between them.
 ///
-/// The value is in seconds.
-pub const DEFAULT_IDLE_TIMEOUT: u64 = 30; // 30secs
+/// The value is in milliseconds.
+pub const DEFAULT_IDLE_TIMEOUT_MSEC: u64 = 30_000; // 30secs
 /// Default Interval to send keep-alives if we are idling so that the peer does not disconnect from
 /// us declaring us offline. If none is supplied we'll default to the documented constant.
 ///
-/// The value is in seconds.
-pub const DEFAULT_KEEP_ALIVE_INTERVAL: u32 = 10; // 10secs
+/// The value is in milliseconds.
+pub const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 10_000; // 10secs
 
 /// Main Crust instance to communicate with Crust
 pub struct Crust {
@@ -93,11 +93,14 @@ impl Crust {
             .max_msg_size_allowed
             .map(|size| size as usize)
             .unwrap_or(DEFAULT_MAX_ALLOWED_MSG_SIZE);
-        let idle_timeout = self.cfg.idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
+        let idle_timeout = self
+            .cfg
+            .idle_timeout_msec
+            .unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
         let keep_alive_interval = self
             .cfg
-            .keep_alive_interval
-            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL);
+            .keep_alive_interval_msec
+            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
 
         let tx = self.event_tx.clone();
 
@@ -124,8 +127,8 @@ impl Crust {
                 let transport_config = unwrap!(Arc::get_mut(&mut our_cfg.transport_config));
                 // TODO test that this is sent only over the uni-stream to the peer not on the uni
                 // stream from the peer
-                transport_config.idle_timeout = idle_timeout * 1000;
-                transport_config.keep_alive_interval = keep_alive_interval * 1000;
+                transport_config.idle_timeout = idle_timeout;
+                transport_config.keep_alive_interval = keep_alive_interval;
             }
 
             let mut ep_builder = quinn::Endpoint::new();
