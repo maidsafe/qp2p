@@ -13,7 +13,7 @@ pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSE
 use crate::wire_msg::WireMsg;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use event_loop::EventLoop;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::mpsc::{self, Sender};
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
@@ -34,6 +34,9 @@ pub type R<T> = Result<T, Error>;
 /// Default maximum allowed message size. We'll error out on any bigger messages and probably
 /// shutdown the connection. This value can be overridden via the `Config` option.
 pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
+/// In the absence of a port supplied by the user via the config we will first try using this
+/// before using a random port.
+pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 
 /// Main Crust instance to communicate with Crust
 pub struct Crust {
@@ -72,7 +75,11 @@ impl Crust {
     /// It is necessary to call this to initialise Crust context within the event loop. Otherwise
     /// very limited functionaity will be available.
     pub fn start_listening(&mut self) {
-        let port = self.cfg.port.unwrap_or(0);
+        let (port, is_user_supplied) = self
+            .cfg
+            .port
+            .map(|p| (p, true))
+            .unwrap_or((DEFAULT_PORT_TO_TRY, false));
         let ip = self
             .cfg
             .ip
@@ -115,7 +122,24 @@ impl Crust {
 
             let mut ep_builder = quinn::Endpoint::new();
             ep_builder.listen(our_cfg);
-            let (dr, ep, incoming_connections) = unwrap!(ep_builder.bind(&(ip, port)));
+            let (dr, ep, incoming_connections) = {
+                match UdpSocket::bind(&(ip, port)) {
+                    Ok(udp) => unwrap!(ep_builder.from_socket(udp)),
+                    Err(e) => {
+                        if is_user_supplied {
+                            panic!(
+                                "Could not bind to the user supplied port: {}! Error: {:?}- {}",
+                                port, e, e
+                            );
+                        }
+                        println!(
+                            "Failed to bind to port: {}. Trying random port.",
+                            DEFAULT_PORT_TO_TRY
+                        );
+                        unwrap!(ep_builder.bind(&(ip, 0)))
+                    }
+                }
+            };
 
             let ctx = Context::new(
                 tx,
