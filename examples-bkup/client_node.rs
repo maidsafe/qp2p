@@ -31,7 +31,7 @@ use crc::crc32;
 use env_logger;
 use rand::{self, RngCore};
 use serde_json;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::mpsc::{channel, Receiver};
 
@@ -50,9 +50,15 @@ struct ClientNode {
     our_cert: Vec<u8>,
     sent_messages: usize,
     received_messages: usize,
-    /// Message to send
-    msg: Vec<u8>,
+    /// Large message to send
+    large_msg: Vec<u8>,
+    /// Smaller message to send
+    small_msg: Vec<u8>,
+    peer_states: HashMap<SocketAddr, bool>,
 }
+
+const LARGE_MSG_SIZE: usize = 20 * 1024 * 1024; // 20 MB
+const SMALL_MSG_SIZE: usize = 16 * 1024; // 16 KB
 
 fn main() {
     env_logger::init();
@@ -71,19 +77,26 @@ impl ClientNode {
             Config {
                 port: Some(0),
                 hard_coded_contacts: vec![bootstrap_node_info.clone()],
-                idle_timeout: Some(120),
+                idle_timeout_msec: Some(0),
                 ..Default::default()
             },
         );
-        let msg = random_data_with_hash(4 * 1024);
-        assert!(hash_correct(&msg));
+
+        let large_msg = random_data_with_hash(LARGE_MSG_SIZE);
+        assert!(hash_correct(&large_msg));
+
+        let small_msg = random_data_with_hash(SMALL_MSG_SIZE);
+        assert!(hash_correct(&small_msg));
+
         Self {
             crust,
             bootstrap_node_info,
-            msg,
+            large_msg,
+            small_msg,
             event_rx: Some(event_rx),
             client_nodes: Default::default(),
             our_cert: Default::default(),
+            peer_states: Default::default(),
             sent_messages: 0,
             received_messages: 0,
         }
@@ -120,7 +133,8 @@ impl ClientNode {
         if peer == self.bootstrap_node_info {
             info!("Connected to bootstrap node. Waiting for other node contacts...");
         } else if self.client_nodes.contains(&peer) {
-            self.crust.send(peer, self.msg.clone());
+            self.crust.send(peer.clone(), self.large_msg.clone());
+            self.crust.send(peer, self.small_msg.clone());
             self.sent_messages += 1;
         }
     }
@@ -132,14 +146,37 @@ impl ClientNode {
                 Rpc::StartTest(peers) => self.connect_to_peers(peers),
             }
         } else {
-            debug!("Message received: {}", msg.len());
-            assert!(hash_correct(&msg));
-            self.received_messages += 1;
+            let small_msg_rcvd = self.peer_states.entry(peer_addr).or_insert(false);
 
-            if self.received_messages == self.client_nodes.len()
-                && self.sent_messages == self.client_nodes.len()
-            {
-                println!("Done. All checks passed");
+            debug!("[{}] Message received: {}", peer_addr, msg.len());
+            assert!(hash_correct(&msg));
+
+            let payload_size = msg.len() - 4; // without the hash
+
+            if payload_size == LARGE_MSG_SIZE {
+                if !*small_msg_rcvd {
+                    error!("[{}] Large message received before small", peer_addr);
+                } else {
+                    self.received_messages += 1;
+                    debug!(
+                        "Recv: {}/{}, Sent: {}/{}",
+                        self.received_messages,
+                        self.client_nodes.len(),
+                        self.sent_messages,
+                        self.client_nodes.len()
+                    );
+
+                    if self.received_messages == self.client_nodes.len()
+                        && self.sent_messages == self.client_nodes.len()
+                    {
+                        info!("Done. All checks passed");
+                    }
+                }
+            } else if payload_size == SMALL_MSG_SIZE {
+                if *small_msg_rcvd {
+                    error!("[{}] Small message received twice", peer_addr);
+                }
+                *small_msg_rcvd = true;
             }
         }
     }
