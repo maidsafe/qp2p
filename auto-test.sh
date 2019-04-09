@@ -9,5 +9,5 @@ for i in {1..50}
 do
   echo "Running client $i ..."
   tmux new-window -t crust:$i -n "client$i"
-  tmux send-keys -t crust:$i "./target/release/examples/client_node -b '$1'" C-m
+  tmux send-keys -t crust:$i "RUST_BACKTRACE=1 ./target/release/examples/client_node -b '$1'" C-m
 done
