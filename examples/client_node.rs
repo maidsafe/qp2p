@@ -22,11 +22,10 @@ extern crate log;
 extern crate unwrap;
 
 mod common;
-use common::Rpc;
 
-use using_quinn::{Config, Crust, CrustInfo, Event};
-
+use bytes::Bytes;
 use clap::{self, App, Arg};
+use common::Rpc;
 use crc::crc32;
 use env_logger;
 use rand::{self, RngCore};
@@ -34,26 +33,27 @@ use serde_json;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::mpsc::{channel, Receiver};
+use using_quinn::{Config, Crust, Event, NodeInfo, Peer};
 
 #[derive(Debug)]
 struct CliArgs {
-    bootstrap_node_info: CrustInfo,
+    bootstrap_node_info: NodeInfo,
 }
 
 struct ClientNode {
     crust: Crust,
-    bootstrap_node_info: CrustInfo,
+    bootstrap_node_info: NodeInfo,
     /// It's optional just to fight the borrow checker.
     event_rx: Option<Receiver<Event>>,
     /// Other nodes we will be communicating with.
-    client_nodes: HashSet<CrustInfo>,
+    client_nodes: HashSet<NodeInfo>,
     our_cert: Vec<u8>,
     sent_messages: usize,
     received_messages: usize,
     /// Large message to send
-    large_msg: Vec<u8>,
+    large_msg: Bytes,
     /// Smaller message to send
-    small_msg: Vec<u8>,
+    small_msg: Bytes,
     peer_states: HashMap<SocketAddr, bool>,
 }
 
@@ -70,7 +70,7 @@ fn main() {
 }
 
 impl ClientNode {
-    fn new(bootstrap_node_info: CrustInfo) -> Self {
+    fn new(bootstrap_node_info: NodeInfo) -> Self {
         let (event_tx, event_rx) = channel();
         let crust = Crust::with_config(
             event_tx,
@@ -82,10 +82,10 @@ impl ClientNode {
             },
         );
 
-        let large_msg = random_data_with_hash(LARGE_MSG_SIZE);
+        let large_msg = Bytes::from(random_data_with_hash(LARGE_MSG_SIZE));
         assert!(hash_correct(&large_msg));
 
-        let small_msg = random_data_with_hash(SMALL_MSG_SIZE);
+        let small_msg = Bytes::from(random_data_with_hash(SMALL_MSG_SIZE));
         assert!(hash_correct(&small_msg));
 
         Self {
@@ -110,8 +110,10 @@ impl ClientNode {
         self.our_cert = self.crust.our_certificate_der();
 
         // this dummy send will trigger connection
-        self.crust
-            .send(self.bootstrap_node_info.clone(), vec![1, 2, 3]);
+        let bootstrap_node = Peer::Node {
+            node_info: self.bootstrap_node_info.clone(),
+        };
+        self.crust.send(bootstrap_node, Bytes::from(vec![1, 2, 3]));
 
         self.poll_crust_events();
     }
@@ -120,26 +122,30 @@ impl ClientNode {
         let event_rx = unwrap!(self.event_rx.take());
         for event in event_rx.iter() {
             match event {
-                Event::ConnectedTo { crust_info } => self.on_connect(crust_info),
+                Event::ConnectedTo { peer } => self.on_connect(peer),
                 Event::NewMessage { peer_addr, msg } => self.on_msg_receive(peer_addr, msg),
                 event => warn!("Unexpected event: {:?}", event),
             }
         }
     }
 
-    fn on_connect(&mut self, peer: CrustInfo) {
-        info!("Connected with: {}", peer.peer_addr);
+    fn on_connect(&mut self, peer: Peer) {
+        let peer_info = match &peer {
+            Peer::Node { node_info } => node_info.clone(),
+            Peer::Client { .. } => panic!("In this example only Node peers are expected"),
+        };
+        info!("Connected with: {}", peer_info.peer_addr);
 
-        if peer == self.bootstrap_node_info {
+        if peer_info == self.bootstrap_node_info {
             info!("Connected to bootstrap node. Waiting for other node contacts...");
-        } else if self.client_nodes.contains(&peer) {
+        } else if self.client_nodes.contains(&peer_info) {
             self.crust.send(peer.clone(), self.large_msg.clone());
             self.crust.send(peer, self.small_msg.clone());
             self.sent_messages += 1;
         }
     }
 
-    fn on_msg_receive(&mut self, peer_addr: SocketAddr, msg: Vec<u8>) {
+    fn on_msg_receive(&mut self, peer_addr: SocketAddr, msg: Bytes) {
         if self.response_from_bootstrap_node(&peer_addr) {
             let msg: Rpc = unwrap!(bincode::deserialize(&msg));
             match msg {
@@ -181,8 +187,12 @@ impl ClientNode {
         }
     }
 
-    fn connect_to_peers(&mut self, peers: Vec<CrustInfo>) {
-        for conn_info in peers {
+    fn connect_to_peers(&mut self, peers: Vec<Peer>) {
+        for peer in peers {
+            let conn_info = match &peer {
+                Peer::Node { node_info } => node_info.clone(),
+                Peer::Client { .. } => panic!("In this example only Node peers are expected"),
+            };
             if conn_info.peer_cert_der != self.our_cert {
                 self.crust.connect_to(conn_info.clone());
                 self.client_nodes.insert(conn_info);

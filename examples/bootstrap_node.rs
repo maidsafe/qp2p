@@ -16,7 +16,6 @@
 //! $ RUST_LOG=bootstrap_node=info cargo run --example bootstrap_node
 //! ```
 
-extern crate config_file_handler;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -27,9 +26,10 @@ extern crate serde_derive;
 mod common;
 use common::Rpc;
 
-use using_quinn::{Config, Crust, CrustInfo, Event, SerialisableCertificate};
+use using_quinn::{Config, Crust, Event, NodeInfo, Peer, SerialisableCertificate};
 
 use bincode;
+use bytes::Bytes;
 use config_file_handler::FileHandler;
 use env_logger;
 use serde_json;
@@ -97,7 +97,7 @@ fn main() -> Result<(), io::Error> {
 
     info!("Crust started on port {}", bootstrap_node_config.port);
 
-    let our_conn_info = CrustInfo {
+    let our_conn_info = NodeInfo {
         peer_addr: SocketAddr::from((bootstrap_node_config.ip, bootstrap_node_config.port)),
         peer_cert_der: our_cert_der,
     };
@@ -114,16 +114,21 @@ fn main() -> Result<(), io::Error> {
 
     for event in ev_rx.iter() {
         match event {
-            Event::ConnectedTo { crust_info } => {
-                let _ = connected_peers.insert(crust_info.peer_addr, crust_info);
+            Event::ConnectedTo { peer } => {
+                let peer_addr = match &peer {
+                    Peer::Node { node_info } => node_info.peer_addr,
+                    Peer::Client { .. } => panic!("In this example only Node peers are expected"),
+                };
+                let _ = connected_peers.insert(peer_addr, peer);
                 if connected_peers.len() == expected_connections && !test_triggered {
                     info!(
                         "{} connections collected, triggering the test",
                         expected_connections
                     );
                     let contacts: Vec<_> = connected_peers.values().cloned().collect();
-                    let msg = unwrap!(bincode::serialize(&Rpc::StartTest(contacts)));
+                    let msg = Bytes::from(unwrap!(bincode::serialize(&Rpc::StartTest(contacts))));
                     for peer in connected_peers.values() {
+                        // crust.send(Peer::Node { node_info: peer.clone() }, msg.clone());
                         crust.send(peer.clone(), msg.clone());
                     }
                     test_triggered = true;
