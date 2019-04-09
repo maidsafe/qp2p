@@ -12,7 +12,9 @@
 #[macro_use]
 extern crate unwrap;
 
+use std::net::{IpAddr};
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use bytes::Bytes;
@@ -23,7 +25,6 @@ use rustyline::Editor;
 use serde_json;
 
 use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
-use std::sync::{Arc, Mutex};
 
 struct PeerList {
     peers: Vec<Peer>,
@@ -65,31 +66,26 @@ impl PeerList {
     }
 }
 
+#[derive(Debug)]
+struct CliArgs {
+    port: Option<u16>,
+    our_ip: Option<IpAddr>,
+}
+
 fn main() {
-    let matches = App::new("chat")
-        .arg(
-            Arg::with_name("listening_port")
-                .short("p")
-                .value_name("PORT")
-                .takes_value(true)
-                .validator(|v| v.parse::<u16>().and(Ok(())).or(Err("Invalid port".into()))),
-        )
-        .get_matches();
-
-    let port = matches
-        .value_of("listening_port")
-        .and_then(|v| v.parse().ok());
-
+    let cli_args = parse_cli_args();
     let (ev_tx, ev_rx) = channel();
 
     let mut qp2p = unwrap!(Builder::new(ev_tx)
         .with_config(Config {
-            port,
+            port: cli_args.port,
+            ip: cli_args.our_ip,
             ..Default::default()
         },)
         .build());
 
-    println!("QuicP2p started");
+    print_logo();
+    println!("Type 'help' to get started.");
 
     let peerlist = Arc::new(Mutex::new(PeerList::new()));
     let peerlist2 = peerlist.clone();
@@ -183,5 +179,58 @@ fn print_ourinfo(qp2p: &mut QuicP2p) {
     println!(
         "Our info:\n\n{}\n",
         serde_json::to_string(&ourinfo).unwrap()
+    );
+}
+
+fn parse_cli_args() -> CliArgs {
+    let matches = App::new("Simple chat app built on Crust")
+        .about(
+            "This chat app connects two machines directly without intermediate servers and allows \
+             to exchange messages securely. All the messages are end to end encrypted.",
+        )
+        .arg(
+            Arg::with_name("listening_port")
+                .help(
+                    "Optional server Crust will be listening for incoming connections ON. If \
+                     unspecified, random port will be used.",
+                )
+                .short("p")
+                .value_name("PORT")
+                .takes_value(true)
+                .validator(|v| v.parse::<u16>().and(Ok(())).or(Err("Invalid port".into()))),
+        )
+        .arg(
+            Arg::with_name("our_ip")
+                .help(
+                    "Our IP address to use when constructing our connection info. If unspecified \
+                     , Crust will try to use bootstrap node to determine our IP.",
+                )
+                .short("a")
+                .long("our-ip")
+                .value_name("OUR_IP")
+                .takes_value(true),
+        )
+        .get_matches();
+
+    let port = matches
+        .value_of("listening_port")
+        .and_then(|v| v.parse().ok());
+    let our_ip = matches.value_of("our_ip").map(|addr| unwrap!(addr.parse()));
+
+    CliArgs { port, our_ip }
+}
+
+fn print_logo() {
+    println!(
+        r#"
+
+             _                  ____                _           _
+  __ _ _   _(_) ___        _ __|___ \ _ __      ___| |__   __ _| |_
+ / _` | | | | |/ __| ____ | '_ \ __) | '_ \    / __| '_ \ / _` | __|
+| (_| | |_| | | (__ |____|| |_) / __/| |_) |  | (__| | | | (_| | |_
+ \__, |\__,_|_|\___|      | .__/_____| .__/    \___|_| |_|\__,_|\__|
+    |_|                   |_|        |_|
+
+  "#
     );
 }
