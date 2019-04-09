@@ -233,7 +233,7 @@ impl Peer {
         Ok(our_info)
     }
 
-    pub fn our_certificate_der(&mut self) -> Vec<u8> {
+    fn our_certificate_der(&mut self) -> Vec<u8> {
         let (tx, rx) = mpsc::channel();
 
         self.el.post(move || {
