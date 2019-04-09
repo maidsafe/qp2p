@@ -1,22 +1,23 @@
 //! Basic chat like example that demonstrates how to connect with peers and exchange data.
 
+extern crate bytes;
 #[macro_use]
 extern crate unwrap;
 
-use std::sync::mpsc::channel;
-use std::thread;
-
+use bytes::Bytes;
 use clap::{App, Arg};
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use serde_json;
+use std::sync::mpsc::channel;
+use std::thread;
 
 use std::sync::{Arc, Mutex};
-use using_quinn::{Config, Crust, CrustInfo, Event};
+use using_quinn::{Config, Event, Peer, PeerInfo};
 
 struct PeerList {
-    peers: Vec<CrustInfo>,
+    peers: Vec<PeerInfo>,
 }
 
 impl PeerList {
@@ -30,13 +31,13 @@ impl PeerList {
             .map_err(|_| "Error parsing JSON")
     }
 
-    fn insert(&mut self, peer: CrustInfo) {
+    fn insert(&mut self, peer: PeerInfo) {
         if !self.peers.contains(&peer) {
             self.peers.push(peer)
         }
     }
 
-    fn remove(&mut self, peer_idx: usize) -> Result<CrustInfo, &str> {
+    fn remove(&mut self, peer_idx: usize) -> Result<PeerInfo, &str> {
         if peer_idx < self.peers.len() {
             Ok(self.peers.remove(peer_idx))
         } else {
@@ -44,7 +45,7 @@ impl PeerList {
         }
     }
 
-    fn get(&self, peer_idx: usize) -> Option<&CrustInfo> {
+    fn get(&self, peer_idx: usize) -> Option<&PeerInfo> {
         self.peers.get(peer_idx)
     }
 
@@ -72,7 +73,7 @@ fn main() {
 
     let (ev_tx, ev_rx) = channel();
 
-    let mut crust = Crust::with_config(
+    let mut peer = Peer::with_config(
         ev_tx,
         Config {
             port,
@@ -80,9 +81,9 @@ fn main() {
         },
     );
 
-    crust.start_listening();
+    peer.start_listening();
 
-    println!("Crust started");
+    println!("Peer started");
 
     let peerlist = Arc::new(Mutex::new(PeerList::new()));
     let peerlist2 = peerlist.clone();
@@ -91,9 +92,13 @@ fn main() {
         let peerlist = peerlist2;
         for event in ev_rx.iter() {
             match event {
-                Event::ConnectedTo { crust_info } => peerlist.lock().unwrap().insert(crust_info),
+                Event::ConnectedTo { peer_info } => peerlist.lock().unwrap().insert(peer_info),
                 Event::NewMessage { peer_addr, msg } => {
-                    println!("[{}] {}", peer_addr, unwrap!(String::from_utf8(msg)));
+                    println!(
+                        "[{}] {}",
+                        peer_addr,
+                        unwrap!(String::from_utf8(msg.to_vec()))
+                    );
                 }
                 event => println!("{:?}", event),
             }
@@ -113,7 +118,7 @@ fn main() {
                 };
                 let mut peerlist = peerlist.lock().unwrap();
                 let result = match cmd {
-                    "ourinfo" => Ok(print_ourinfo(&mut crust)),
+                    "ourinfo" => Ok(print_ourinfo(&mut peer)),
                     "addpeer" => peerlist
                         .insert_from_json(&args.collect::<Vec<_>>().join(" "))
                         .and(Ok(())),
@@ -129,12 +134,14 @@ fn main() {
                         .ok_or("Missing index argument")
                         .and_then(|idx| idx.parse().or(Err("Invalid index argument")))
                         .and_then(|idx| peerlist.get(idx).ok_or("Index out of bounds"))
-                        .map(|peer| {
+                        .map(|p| {
                             // FIXME: I've unwrapped this due to API changes - pls handle
                             // appropriately
-                            crust.send(
-                                peer.clone(),
-                                args.collect::<Vec<_>>().join(" ").as_bytes().to_owned(),
+                            peer.send(
+                                p.clone(),
+                                Bytes::from(
+                                    args.collect::<Vec<_>>().join(" ").as_bytes().to_owned(),
+                                ),
                             )
                         }),
                     "quit" | "exit" => break 'outer,
@@ -154,12 +161,12 @@ fn main() {
         }
     }
 
-    drop(crust);
+    drop(peer);
     rx_thread.join().unwrap();
 }
 
-fn print_ourinfo(crust: &mut Crust) {
-    let ourinfo = match crust.our_connection_info() {
+fn print_ourinfo(peer: &mut Peer) {
+    let ourinfo = match peer.our_connection_info() {
         Ok(ourinfo) => ourinfo,
         Err(e) => {
             println!("Error getting ourinfo: {}", e);

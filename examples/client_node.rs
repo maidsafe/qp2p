@@ -25,20 +25,20 @@ use serde_json;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::mpsc::{channel, Receiver};
-use using_quinn::{Config, Crust, CrustInfo, Event};
+use using_quinn::{Config, Event, Peer, PeerInfo};
 
 #[derive(Debug)]
 struct CliArgs {
-    bootstrap_node_info: CrustInfo,
+    bootstrap_node_info: PeerInfo,
 }
 
 struct ClientNode {
-    crust: Crust,
-    bootstrap_node_info: CrustInfo,
+    peer: Peer,
+    bootstrap_node_info: PeerInfo,
     /// It's optional just to fight the borrow checker.
     event_rx: Option<Receiver<Event>>,
     /// Other nodes we will be communicating with.
-    client_nodes: HashSet<CrustInfo>,
+    client_nodes: HashSet<PeerInfo>,
     our_cert: Vec<u8>,
     sent_messages: usize,
     received_messages: usize,
@@ -62,9 +62,9 @@ fn main() {
 }
 
 impl ClientNode {
-    fn new(bootstrap_node_info: CrustInfo) -> Self {
+    fn new(bootstrap_node_info: PeerInfo) -> Self {
         let (event_tx, event_rx) = channel();
-        let crust = Crust::with_config(
+        let peer = Peer::with_config(
             event_tx,
             Config {
                 port: Some(0),
@@ -81,7 +81,7 @@ impl ClientNode {
         assert!(hash_correct(&small_msg));
 
         Self {
-            crust,
+            peer,
             bootstrap_node_info,
             large_msg,
             small_msg,
@@ -94,39 +94,39 @@ impl ClientNode {
         }
     }
 
-    /// Blocks and reacts to crust events.
+    /// Blocks and reacts to peer events.
     fn run(&mut self) {
-        self.crust.start_listening();
-        info!("Crust started");
+        self.peer.start_listening();
+        info!("Peer started");
 
-        self.our_cert = self.crust.our_certificate_der();
+        self.our_cert = self.peer.our_certificate_der();
 
         // this dummy send will trigger connection
-        self.crust
+        self.peer
             .send(self.bootstrap_node_info.clone(), Bytes::from(vec![1, 2, 3]));
 
-        self.poll_crust_events();
+        self.poll_peer_events();
     }
 
-    fn poll_crust_events(&mut self) {
+    fn poll_peer_events(&mut self) {
         let event_rx = unwrap!(self.event_rx.take());
         for event in event_rx.iter() {
             match event {
-                Event::ConnectedTo { crust_info } => self.on_connect(crust_info),
+                Event::ConnectedTo { peer_info } => self.on_connect(peer_info),
                 Event::NewMessage { peer_addr, msg } => self.on_msg_receive(peer_addr, msg),
                 event => warn!("Unexpected event: {:?}", event),
             }
         }
     }
 
-    fn on_connect(&mut self, peer: CrustInfo) {
+    fn on_connect(&mut self, peer: PeerInfo) {
         info!("Connected with: {}", peer.peer_addr);
 
         if peer == self.bootstrap_node_info {
             info!("Connected to bootstrap node. Waiting for other node contacts...");
         } else if self.client_nodes.contains(&peer) {
-            self.crust.send(peer.clone(), self.large_msg.clone());
-            self.crust.send(peer, self.small_msg.clone());
+            self.peer.send(peer.clone(), self.large_msg.clone());
+            self.peer.send(peer, self.small_msg.clone());
             self.sent_messages += 1;
         }
     }
@@ -173,10 +173,10 @@ impl ClientNode {
         }
     }
 
-    fn connect_to_peers(&mut self, peers: Vec<CrustInfo>) {
+    fn connect_to_peers(&mut self, peers: Vec<PeerInfo>) {
         for conn_info in peers {
             if conn_info.peer_cert_der != self.our_cert {
-                self.crust.connect_to(conn_info.clone());
+                self.peer.connect_to(conn_info.clone());
                 self.client_nodes.insert(conn_info);
             }
         }
@@ -188,7 +188,7 @@ impl ClientNode {
 }
 
 fn parse_cli_args() -> Result<CliArgs, clap::Error> {
-    let matches = App::new("Crust client node example")
+    let matches = App::new("Peer client node example")
         .about(
             "Client node will be connecting to bootstrap node from which it will receive contacts
             of other client nodes. Then this node will connect with all other client nodes and

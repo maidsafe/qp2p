@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
 use crate::R;
-use crate::{connect, CrustInfo};
+use crate::{connect, PeerInfo};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
 use tokio::prelude::Future;
@@ -11,7 +11,7 @@ use tokio::runtime::current_thread;
 
 /// Send message to peer. If the peer is not connected, it will attempt to connect to it first
 /// and then send the message
-pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
+pub fn try_write_to_peer(peer_info: PeerInfo, msg: WireMsg) {
     let connect_and_send = ctx_mut(|c| {
         let peer_addr = peer_info.peer_addr;
         let event_tx = c.event_tx.clone();
@@ -183,7 +183,7 @@ pub fn dispatch_wire_msg(
 }
 
 fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
-    let peer_info = CrustInfo {
+    let peer_info = PeerInfo {
         peer_addr,
         peer_cert_der,
     };

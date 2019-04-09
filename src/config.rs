@@ -1,11 +1,11 @@
-use crate::CrustInfo;
+use crate::PeerInfo;
 use std::net::IpAddr;
 
-/// Crust configurations
+/// Configuration parameters
 #[derive(Default, Serialize, Deserialize)]
 pub struct Config {
     /// Hard Coded contacts
-    pub hard_coded_contacts: Vec<CrustInfo>,
+    pub hard_coded_contacts: Vec<PeerInfo>,
     /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
     pub port: Option<u16>,
     /// IP address for the listener. If none supplied we'll use the default address (0.0.0.0).

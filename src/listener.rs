@@ -2,7 +2,7 @@ use crate::communicate;
 use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
-use crate::CrustInfo;
+use crate::PeerInfo;
 use std::net::SocketAddr;
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
@@ -48,12 +48,12 @@ fn handle_new_conn(
                 ref peer_cert_der, ..
             } = conn.to_peer
             {
-                let crust_info = CrustInfo {
+                let peer_info = PeerInfo {
                     peer_addr,
                     peer_cert_der: peer_cert_der.clone(),
                 };
 
-                if let Err(e) = c.event_tx.send(Event::ConnectedTo { crust_info }) {
+                if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer_info }) {
                     println!("ERROR in informing user about a new peer: {:?} - {}", e, e);
                 }
             }

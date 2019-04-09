@@ -125,7 +125,7 @@ impl Connection {
 impl Drop for Connection {
     fn drop(&mut self) {
         if self.to_peer.is_established() && self.from_peer.is_established() {
-            // No need to log this as this will fire even when the crust handle is dropped and at
+            // No need to log this as this will fire even when the peer handle is dropped and at
             // that point there might be no one listening so sender will error out
             let _ = self.event_tx.send(Event::ConnectionFailure {
                 peer_addr: self.peer_addr,

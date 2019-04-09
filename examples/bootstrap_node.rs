@@ -19,7 +19,7 @@ extern crate serde_derive;
 mod common;
 use common::Rpc;
 
-use using_quinn::{Config, Crust, CrustInfo, Event, SerialisableCertificate};
+use using_quinn::{Config, Event, Peer, PeerInfo, SerialisableCertificate};
 
 use bincode;
 use bytes::Bytes;
@@ -67,14 +67,14 @@ fn main() -> Result<(), io::Error> {
         BootstrapNodeConfig::default()
     });
 
-    // Initialise Crust
+    // Initialise Peer
     let (ev_tx, ev_rx) = channel();
 
-    let (mut crust, our_cert_der) = {
+    let (mut peer, our_cert_der) = {
         let our_complete_cert = SerialisableCertificate::default();
         let cert_der = our_complete_cert.cert_der.clone();
         (
-            Crust::with_config(
+            Peer::with_config(
                 ev_tx,
                 Config {
                     our_complete_cert: Some(our_complete_cert),
@@ -86,16 +86,18 @@ fn main() -> Result<(), io::Error> {
             cert_der,
         )
     };
-    crust.start_listening();
+    peer.start_listening();
 
-    info!("Crust started on port {}", bootstrap_node_config.port);
+    info!(
+        "Bootstrap node started on port {}",
+        bootstrap_node_config.port
+    );
 
-    let our_conn_info = CrustInfo {
+    let our_conn_info = PeerInfo {
         peer_addr: SocketAddr::from((bootstrap_node_config.ip, bootstrap_node_config.port)),
         peer_cert_der: our_cert_der,
     };
 
-    // let our_conn_info = unwrap!(crust.our_connection_info());
     println!(
         "Our connection info:\n{}\n",
         unwrap!(serde_json::to_string(&our_conn_info)),
@@ -107,8 +109,8 @@ fn main() -> Result<(), io::Error> {
 
     for event in ev_rx.iter() {
         match event {
-            Event::ConnectedTo { crust_info } => {
-                let _ = connected_peers.insert(crust_info.peer_addr, crust_info);
+            Event::ConnectedTo { peer_info } => {
+                let _ = connected_peers.insert(peer_info.peer_addr, peer_info);
                 if connected_peers.len() == expected_connections && !test_triggered {
                     info!(
                         "{} connections collected, triggering the test",
@@ -116,8 +118,8 @@ fn main() -> Result<(), io::Error> {
                     );
                     let contacts: Vec<_> = connected_peers.values().cloned().collect();
                     let msg = Bytes::from(unwrap!(bincode::serialize(&Rpc::StartTest(contacts))));
-                    for peer in connected_peers.values() {
-                        crust.send(peer.clone(), msg.clone());
+                    for p in connected_peers.values() {
+                        peer.send(p.clone(), msg.clone());
                     }
                     test_triggered = true;
                 } else if connected_peers.len() >= expected_connections {

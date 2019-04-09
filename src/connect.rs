@@ -3,14 +3,14 @@ use crate::error::Error;
 use crate::event::Event;
 use crate::peer_config;
 use crate::wire_msg::WireMsg;
-use crate::{communicate, CrustInfo, R};
+use crate::{communicate, PeerInfo, R};
 use std::mem;
 use std::net::SocketAddr;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
 /// Connect to the give peer
-pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> R<()> {
+pub fn connect_to(peer_info: PeerInfo, send_after_connect: Option<WireMsg>) -> R<()> {
     let peer_addr = peer_info.peer_addr;
 
     let peer_cfg = match peer_config::new_client_cfg(&peer_info.peer_cert_der) {
@@ -122,12 +122,12 @@ fn handle_new_connection_res(
                 ref mut pending_reads,
                 ..
             } => {
-                let crust_info = CrustInfo {
+                let peer_info = PeerInfo {
                     peer_addr,
                     peer_cert_der: peer_cert_der.clone(),
                 };
 
-                if let Err(e) = c.event_tx.send(Event::ConnectedTo { crust_info }) {
+                if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer_info }) {
                     println!("Could not fire event: {:?}", e);
                 }
 
