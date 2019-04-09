@@ -15,7 +15,7 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
     let peer_addr = peer_info.peer_addr;
 
     let peer_cfg = {
-        let mut peer_cfg_builder = quinn::ClientConfigBuilder::new();
+        let mut peer_cfg_builder = quinn::ClientConfigBuilder::default();
         if let Err(e) = peer_cfg_builder.add_certificate_authority(peer_cert) {
             let e = From::from(e);
             handle_connect_err(peer_addr, &e);
@@ -48,7 +48,7 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
             };
             let peer_addr = peer_addr;
             c.quic_ep()
-                .connect_with(&peer_cfg, &peer_addr, "MaidSAFE.net")
+                .connect_with(peer_cfg, &peer_addr, "MaidSAFE.net")
                 .map_err(Error::from)
                 .map(move |new_client_conn_fut| {
                     let leaf = new_client_conn_fut.then(move |new_peer_conn_res| {

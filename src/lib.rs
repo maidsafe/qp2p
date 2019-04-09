@@ -124,7 +124,7 @@ impl Crust {
             );
             let mut our_cfg = our_cfg_builder.build();
             {
-                let transport_config = unwrap!(Arc::get_mut(&mut our_cfg.transport_config));
+                let transport_config = unwrap!(Arc::get_mut(&mut our_cfg.transport));
                 // TODO test that this is sent only over the uni-stream to the peer not on the uni
                 // stream from the peer
                 transport_config.idle_timeout = idle_timeout;
