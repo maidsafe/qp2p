@@ -7,17 +7,17 @@
 //! "127.0.0.1:5000","peer_cert_der":[48,130,..]}'
 //! ```
 
+extern crate bytes;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate unwrap;
 
 mod common;
-use common::Rpc;
 
-use using_quinn::{Config, Crust, CrustInfo, Event};
-
+use bytes::Bytes;
 use clap::{self, App, Arg};
+use common::Rpc;
 use crc::crc32;
 use env_logger;
 use rand::{self, RngCore};
@@ -25,6 +25,7 @@ use serde_json;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::mpsc::{channel, Receiver};
+use using_quinn::{Config, Crust, CrustInfo, Event};
 
 #[derive(Debug)]
 struct CliArgs {
@@ -42,9 +43,9 @@ struct ClientNode {
     sent_messages: usize,
     received_messages: usize,
     /// Large message to send
-    large_msg: Vec<u8>,
+    large_msg: Bytes,
     /// Smaller message to send
-    small_msg: Vec<u8>,
+    small_msg: Bytes,
     peer_states: HashMap<SocketAddr, bool>,
 }
 
@@ -73,10 +74,10 @@ impl ClientNode {
             },
         );
 
-        let large_msg = random_data_with_hash(LARGE_MSG_SIZE);
+        let large_msg = Bytes::from(random_data_with_hash(LARGE_MSG_SIZE));
         assert!(hash_correct(&large_msg));
 
-        let small_msg = random_data_with_hash(SMALL_MSG_SIZE);
+        let small_msg = Bytes::from(random_data_with_hash(SMALL_MSG_SIZE));
         assert!(hash_correct(&small_msg));
 
         Self {
@@ -102,7 +103,7 @@ impl ClientNode {
 
         // this dummy send will trigger connection
         self.crust
-            .send(self.bootstrap_node_info.clone(), vec![1, 2, 3]);
+            .send(self.bootstrap_node_info.clone(), Bytes::from(vec![1, 2, 3]));
 
         self.poll_crust_events();
     }
@@ -130,7 +131,7 @@ impl ClientNode {
         }
     }
 
-    fn on_msg_receive(&mut self, peer_addr: SocketAddr, msg: Vec<u8>) {
+    fn on_msg_receive(&mut self, peer_addr: SocketAddr, msg: Bytes) {
         if self.response_from_bootstrap_node(&peer_addr) {
             let msg: Rpc = unwrap!(bincode::deserialize(&msg));
             match msg {

@@ -7,6 +7,7 @@
 //! $ RUST_LOG=bootstrap_node=info cargo run --example bootstrap_node
 //! ```
 
+extern crate bytes;
 extern crate config_file_handler;
 #[macro_use]
 extern crate log;
@@ -21,6 +22,7 @@ use common::Rpc;
 use using_quinn::{Config, Crust, CrustInfo, Event, SerialisableCertificate};
 
 use bincode;
+use bytes::Bytes;
 use config_file_handler::FileHandler;
 use env_logger;
 use serde_json;
@@ -113,7 +115,7 @@ fn main() -> Result<(), io::Error> {
                         expected_connections
                     );
                     let contacts: Vec<_> = connected_peers.values().cloned().collect();
-                    let msg = unwrap!(bincode::serialize(&Rpc::StartTest(contacts)));
+                    let msg = Bytes::from(unwrap!(bincode::serialize(&Rpc::StartTest(contacts))));
                     for peer in connected_peers.values() {
                         crust.send(peer.clone(), msg.clone());
                     }

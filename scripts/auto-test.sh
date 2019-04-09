@@ -8,7 +8,7 @@ export RUST_LOG=client_node=info
 tmux kill-session -t crust
 tmux new-session -s crust -d
 
-for i in {1..50}
+for i in {1..20}
 do
   echo "Running client $i ..."
   tmux new-window -t crust:$i -n "client$i"
