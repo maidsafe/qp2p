@@ -15,6 +15,7 @@ extern crate unwrap;
 use std::sync::mpsc::channel;
 use std::thread;
 
+use bytes::Bytes;
 use clap::{App, Arg};
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
@@ -22,10 +23,10 @@ use rustyline::Editor;
 use serde_json;
 
 use std::sync::{Arc, Mutex};
-use using_quinn::{Config, Crust, CrustInfo, Event};
+use using_quinn::{Config, Crust, Event, Peer};
 
 struct PeerList {
-    peers: Vec<CrustInfo>,
+    peers: Vec<Peer>,
 }
 
 impl PeerList {
@@ -39,13 +40,13 @@ impl PeerList {
             .map_err(|_| "Error parsing JSON")
     }
 
-    fn insert(&mut self, peer: CrustInfo) {
+    fn insert(&mut self, peer: Peer) {
         if !self.peers.contains(&peer) {
             self.peers.push(peer)
         }
     }
 
-    fn remove(&mut self, peer_idx: usize) -> Result<CrustInfo, &str> {
+    fn remove(&mut self, peer_idx: usize) -> Result<Peer, &str> {
         if peer_idx < self.peers.len() {
             Ok(self.peers.remove(peer_idx))
         } else {
@@ -53,13 +54,13 @@ impl PeerList {
         }
     }
 
-    fn get(&self, peer_idx: usize) -> Option<&CrustInfo> {
+    fn get(&self, peer_idx: usize) -> Option<&Peer> {
         self.peers.get(peer_idx)
     }
 
     fn list(&self) {
         for (idx, peer) in self.peers.iter().enumerate() {
-            println!("{:3}: {}", idx, peer.peer_addr);
+            println!("{:3}: {}", idx, peer.peer_addr());
         }
     }
 }
@@ -100,9 +101,13 @@ fn main() {
         let peerlist = peerlist2;
         for event in ev_rx.iter() {
             match event {
-                Event::ConnectedTo { crust_info } => peerlist.lock().unwrap().insert(crust_info),
+                Event::ConnectedTo { peer } => peerlist.lock().unwrap().insert(peer),
                 Event::NewMessage { peer_addr, msg } => {
-                    println!("[{}] {}", peer_addr, unwrap!(String::from_utf8(msg)));
+                    println!(
+                        "[{}] {}",
+                        peer_addr,
+                        unwrap!(String::from_utf8(msg.to_vec()))
+                    );
                 }
                 event => println!("{:?}", event),
             }
@@ -143,7 +148,9 @@ fn main() {
                             // appropriately
                             crust.send(
                                 peer.clone(),
-                                args.collect::<Vec<_>>().join(" ").as_bytes().to_owned(),
+                                Bytes::from(
+                                    args.collect::<Vec<_>>().join(" ").as_bytes().to_owned(),
+                                ),
                             )
                         }),
                     "quit" | "exit" => break 'outer,
