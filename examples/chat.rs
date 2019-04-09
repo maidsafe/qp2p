@@ -12,13 +12,14 @@
 #[macro_use]
 extern crate unwrap;
 
-use std::net::{IpAddr};
-use std::sync::mpsc::channel;
+use std::net::IpAddr;
+use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::thread::{self, JoinHandle};
 
 use bytes::Bytes;
 use clap::{App, Arg};
+use rand::{self, RngCore};
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -88,24 +89,7 @@ fn main() {
     println!("Type 'help' to get started.");
 
     let peerlist = Arc::new(Mutex::new(PeerList::new()));
-    let peerlist2 = peerlist.clone();
-
-    let rx_thread = thread::spawn(move || {
-        let peerlist = peerlist2;
-        for event in ev_rx.iter() {
-            match event {
-                Event::ConnectedTo { peer } => peerlist.lock().unwrap().insert(peer),
-                Event::NewMessage { peer_addr, msg } => {
-                    println!(
-                        "[{}] {}",
-                        peer_addr,
-                        unwrap!(String::from_utf8(msg.to_vec()))
-                    );
-                }
-                event => println!("{:?}", event),
-            }
-        }
-    });
+    let rx_thread = handle_qp2p_events(ev_rx, peerlist.clone());
 
     let mut rl = Editor::<()>::new();
     rl.set_auto_add_history(true);
@@ -131,21 +115,8 @@ fn main() {
                         .and_then(|idx| idx.parse().or(Err("Invalid index argument")))
                         .and_then(|idx| peerlist.remove(idx))
                         .and(Ok(())),
-                    "send" => args
-                        .next()
-                        .ok_or("Missing index argument")
-                        .and_then(|idx| idx.parse().or(Err("Invalid index argument")))
-                        .and_then(|idx| peerlist.get(idx).ok_or("Index out of bounds"))
-                        .map(|peer| {
-                            // FIXME: I've unwrapped this due to API changes - pls handle
-                            // appropriately
-                            qp2p.send(
-                                peer.clone(),
-                                Bytes::from(
-                                    args.collect::<Vec<_>>().join(" ").as_bytes().to_owned(),
-                                ),
-                            )
-                        }),
+                    "send" => on_cmd_send(&mut args, &peerlist, &mut qp2p),
+                    "sendrand" => on_cmd_send_rand(&mut args, &peerlist, &mut qp2p),
                     "quit" | "exit" => break 'outer,
                     "help" => Ok(println!(
                         "Commands: ourinfo, addpeer, listpeers, delpeer, send, quit, exit, help"
@@ -167,9 +138,72 @@ fn main() {
     rx_thread.join().unwrap();
 }
 
+fn on_cmd_send<'a>(
+    mut args: impl Iterator<Item = &'a str>,
+    peer_list: &PeerList,
+    qp2p: &mut QuicP2p,
+) -> Result<(), &'static str> {
+    args.next()
+        .ok_or("Missing index argument")
+        .and_then(|idx| idx.parse().or(Err("Invalid index argument")))
+        .and_then(|idx| peer_list.get(idx).ok_or("Index out of bounds"))
+        .map(|peer| {
+            let msg = Bytes::from(args.collect::<Vec<_>>().join(" ").as_bytes());
+            qp2p.send(peer.clone(), msg);
+        })
+}
+
+/// Sends random data of given size to given peer.
+/// Usage: "sendrand <peer_index> <bytes>
+fn on_cmd_send_rand<'a>(
+    mut args: impl Iterator<Item = &'a str>,
+    peer_list: &PeerList,
+    qp2p: &mut QuicP2p,
+) -> Result<(), &'static str> {
+    args.next()
+        .ok_or("Missing index argument")
+        .and_then(|idx| idx.parse().or(Err("Invalid index argument")))
+        .and_then(|idx| peer_list.get(idx).ok_or("Index out of bounds"))
+        .and_then(|peer| {
+            args.next()
+                .ok_or("Missing bytes count")
+                .and_then(|bytes| bytes.parse().or(Err("Invalid bytes count argument")))
+                .map(|bytes_to_send| (peer, bytes_to_send))
+        })
+        .map(|(peer, bytes_to_send)| {
+            let data = Bytes::from(random_vec(bytes_to_send));
+            qp2p.send(peer.clone(), data)
+        })
+}
+
+fn handle_qp2p_events(
+    event_rx: Receiver<Event>,
+    peer_list: Arc<Mutex<PeerList>>,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        for event in event_rx.iter() {
+            match event {
+                Event::ConnectedTo { peer } => unwrap!(peer_list.lock()).insert(peer),
+                Event::NewMessage { peer_addr, msg } => {
+                    if msg.len() > 512 {
+                        println!("[{}] received bytes: {}", peer_addr, msg.len());
+                    } else {
+                        println!(
+                            "[{}] {}",
+                            peer_addr,
+                            unwrap!(String::from_utf8(msg.to_vec()))
+                        );
+                    }
+                }
+                event => println!("Unexpected Crust event: {:?}", event),
+            }
+        }
+    })
+}
+
 fn print_ourinfo(qp2p: &mut QuicP2p) {
-    let ourinfo = match qp2p.our_connection_info() {
-        Ok(ourinfo) => ourinfo,
+    let ourinfo: Peer = match qp2p.our_connection_info() {
+        Ok(ourinfo) => ourinfo.into(),
         Err(e) => {
             println!("Error getting ourinfo: {}", e);
             return;
@@ -233,4 +267,12 @@ fn print_logo() {
 
   "#
     );
+}
+
+#[allow(unsafe_code)]
+fn random_vec(size: usize) -> Vec<u8> {
+    let mut ret = Vec::with_capacity(size);
+    unsafe { ret.set_len(size) };
+    rand::thread_rng().fill_bytes(&mut ret[..]);
+    ret
 }
