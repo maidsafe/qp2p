@@ -6,7 +6,6 @@ use crate::R;
 use crate::{connect, CrustInfo};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
-use std::thread;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
@@ -87,27 +86,10 @@ pub fn write_to_peer_connection(
             handle_communication_err(peer_addr, &From::from(e), "Open-Unidirectional")
         })
         .and_then(move |o_stream| {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            // TODO can we do better to not have many daemon threads ? Maybe use one such
-            // background thread ?
-            let _j = unwrap!(thread::Builder::new()
-                .name("Serialisation-thread".to_string())
-                .spawn(move || {
-                    let raw = unwrap!(bincode::serialize(&wire_msg));
-                    if let Err(e) = tx.send(raw) {
-                        println!("Unable to inform the serialised message: {:?}", e);
-                    }
-                }));
-            rx.map_err(move |e| {
-                handle_communication_err(peer_addr, &From::from(e), "Serialisation-rx")
-            })
-            .and_then(move |raw| {
-                tokio::io::write_all(o_stream, raw).map_err(move |e| {
-                    handle_communication_err(peer_addr, &From::from(e), "Write-All")
-                })
-            })
+            tokio::io::write_all(o_stream, wire_msg.into())
+                .map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Write-All"))
         })
-        .and_then(move |(o_stream, _)| {
+        .and_then(move |(o_stream, _): (_, bytes::Bytes)| {
             tokio::io::shutdown(o_stream).map_err(move |e| {
                 handle_communication_err(peer_addr, &From::from(e), "Shutdown-after-write")
             })
@@ -131,22 +113,9 @@ pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R
     let leaf = quinn::read_to_end(i_stream, ctx(|c| c.max_msg_size_allowed))
         .map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
         .and_then(move |(_i_stream, raw)| {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            // TODO Improve this else peer might be able to make us spawn many threads. Maybe have
-            // one such background thread - check serialisation thread too, for writes.
-            let _j = unwrap!(thread::Builder::new()
-                .name("Deserialisation-thread".to_string())
-                .spawn(move || {
-                    // TODO don't unwrap deserialisation failure in production
-                    let wire_msg = unwrap!(bincode::deserialize(&*raw));
-                    if let Err(e) = tx.send(wire_msg) {
-                        println!("Unable to inform the deserialised message: {:?}", e);
-                    }
-                }));
-            rx.map_err(move |e| {
-                handle_communication_err(peer_addr, &From::from(e), "Deserialisation-rx")
-            })
-            .map(move |wire_msg| handle_wire_msg(peer_addr, wire_msg))
+            WireMsg::from_raw(raw.into())
+                .map_err(|e| handle_communication_err(peer_addr, &e, "Raw to WireMsg"))
+                .map(|wire_msg| handle_wire_msg(peer_addr, wire_msg))
         });
 
     current_thread::spawn(leaf);
@@ -265,7 +234,7 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
     }
 }
 
-fn handle_user_msg(peer_addr: SocketAddr, event_tx: &Sender<Event>, msg: Vec<u8>) {
+fn handle_user_msg(peer_addr: SocketAddr, event_tx: &Sender<Event>, msg: bytes::Bytes) {
     let new_msg = Event::NewMessage { peer_addr, msg };
     if let Err(e) = event_tx.send(new_msg) {
         println!("Could not dispatch incoming user message: {:?}", e);

@@ -45,5 +45,9 @@ quick_error! {
              display("TLE error: {}", e)
              from()
          }
+         BincodeError(e: bincode::Error) {
+             display("Bincode error: {}", e)
+             from()
+         }
      }
 }

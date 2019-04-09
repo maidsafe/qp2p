@@ -149,8 +149,6 @@ impl Crust {
     pub fn disconnect_from(&mut self, peer_addr: SocketAddr) {
         self.el.post(move || {
             ctx_mut(|c| {
-                // TODO test if closing quinn::Connection destroys all `write_all` streams. If
-                // there's bug upstream then our writer might not be resolved until a long time
                 if c.connections.remove(&peer_addr).is_none() {
                     println!("Asked to disconnect from an unknown peer");
                 }
@@ -163,7 +161,7 @@ impl Crust {
     /// If the peer is not connected, it will attempt to connect to it first
     /// and then send the message. This can be called multiple times while the peer is still being
     /// connected to - all the sends will be buffered until the peer is connected to.
-    pub fn send(&mut self, peer_info: CrustInfo, msg: Vec<u8>) {
+    pub fn send(&mut self, peer_info: CrustInfo, msg: bytes::Bytes) {
         self.el
             .post(move || communicate::try_write_to_peer(peer_info, WireMsg::UserMsg(msg)));
     }
@@ -285,7 +283,7 @@ mod tests {
         // Drain the receiver first
         while let Ok(_) = rx1.try_recv() {}
 
-        let data = vec![12, 13, 14, 253];
+        let data = bytes::Bytes::from(vec![12, 13, 14, 253]);
         crust2.send(crust1_info, data.clone());
 
         match unwrap!(rx1.recv()) {
@@ -313,17 +311,17 @@ mod tests {
         let crust1_addr = crust1_info.peer_addr;
 
         // 400 MiB message
-        let big_msg_to_crust0 = vec![255; 400 * 1024 * 1024];
+        let big_msg_to_crust0 = bytes::Bytes::from(vec![255; 400 * 1024 * 1024]);
         let big_msg_to_crust0_clone = big_msg_to_crust0.clone();
 
         // very small messages
-        let small_msg0_to_crust0 = vec![255, 254, 253, 252];
+        let small_msg0_to_crust0 = bytes::Bytes::from(vec![255, 254, 253, 252]);
         let small_msg0_to_crust0_clone = small_msg0_to_crust0.clone();
 
-        let small_msg1_to_crust0 = vec![155, 154, 153, 152];
+        let small_msg1_to_crust0 = bytes::Bytes::from(vec![155, 154, 153, 152]);
         let small_msg1_to_crust0_clone = small_msg1_to_crust0.clone();
 
-        let msg_to_crust1 = vec![120, 129, 2];
+        let msg_to_crust1 = bytes::Bytes::from(vec![120, 129, 2]);
         let msg_to_crust1_clone = msg_to_crust1.clone();
 
         let j0 = unwrap!(std::thread::Builder::new()
@@ -348,7 +346,7 @@ mod tests {
                                     msg == small_msg0_to_crust0_clone
                                         || msg == small_msg1_to_crust0_clone
                                 );
-                                println!("Smaller message {:?} rxd from {}", msg, peer_addr)
+                                println!("Smaller message {:?} rxd from {}", &*msg, peer_addr)
                             } else {
                                 assert_eq!(msg, big_msg_to_crust0_clone);
                                 println!(
