@@ -8,13 +8,13 @@ extern crate unwrap;
 pub use config::{Config, SerialisableCertificate};
 pub use error::Error;
 pub use event::Event;
+pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
 
 use crate::wire_msg::WireMsg;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use event_loop::EventLoop;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::mpsc::{self, Sender};
-use std::sync::Arc;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
@@ -26,6 +26,7 @@ mod error;
 mod event;
 mod event_loop;
 mod listener;
+mod peer_config;
 mod wire_msg;
 
 pub type R<T> = Result<T, Error>;
@@ -33,18 +34,6 @@ pub type R<T> = Result<T, Error>;
 /// Default maximum allowed message size. We'll error out on any bigger messages and probably
 /// shutdown the connection. This value can be overridden via the `Config` option.
 pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
-/// Default interval within which if we hear nothing from the peer we declare it offline to us.
-///
-/// This is based on average time in which routers would close the UDP mapping to the peer if they
-/// see no conversation between them.
-///
-/// The value is in milliseconds.
-pub const DEFAULT_IDLE_TIMEOUT_MSEC: u64 = 30_000; // 30secs
-/// Default Interval to send keep-alives if we are idling so that the peer does not disconnect from
-/// us declaring us offline. If none is supplied we'll default to the documented constant.
-///
-/// The value is in milliseconds.
-pub const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 10_000; // 10secs
 
 /// Main Crust instance to communicate with Crust
 pub struct Crust {
@@ -93,14 +82,14 @@ impl Crust {
             .max_msg_size_allowed
             .map(|size| size as usize)
             .unwrap_or(DEFAULT_MAX_ALLOWED_MSG_SIZE);
-        let idle_timeout = self
+        let idle_timeout_msec = self
             .cfg
             .idle_timeout_msec
-            .unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
-        let keep_alive_interval = self
+            .unwrap_or(peer_config::DEFAULT_IDLE_TIMEOUT_MSEC);
+        let keep_alive_interval_msec = self
             .cfg
             .keep_alive_interval_msec
-            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
+            .unwrap_or(peer_config::DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
 
         let tx = self.event_tx.clone();
 
@@ -117,19 +106,12 @@ impl Crust {
         };
 
         self.el.post(move || {
-            let our_cfg = Default::default();
-            let mut our_cfg_builder = quinn::ServerConfigBuilder::new(our_cfg);
-            unwrap!(
-                our_cfg_builder.certificate(quinn::CertificateChain::from_certs(vec![cert]), key)
-            );
-            let mut our_cfg = our_cfg_builder.build();
-            {
-                let transport_config = unwrap!(Arc::get_mut(&mut our_cfg.transport_config));
-                // TODO test that this is sent only over the uni-stream to the peer not on the uni
-                // stream from the peer
-                transport_config.idle_timeout = idle_timeout;
-                transport_config.keep_alive_interval = keep_alive_interval;
-            }
+            let our_cfg = unwrap!(peer_config::new_our_cfg(
+                idle_timeout_msec,
+                keep_alive_interval_msec,
+                cert,
+                key
+            ));
 
             let mut ep_builder = quinn::Endpoint::new();
             ep_builder.listen(our_cfg);
@@ -139,8 +121,8 @@ impl Crust {
                 tx,
                 our_complete_cert,
                 max_msg_size_allowed,
-                idle_timeout,
-                keep_alive_interval,
+                idle_timeout_msec,
+                keep_alive_interval_msec,
                 ep,
             );
             initialise_ctx(ctx);

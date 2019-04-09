@@ -29,11 +29,7 @@ fn handle_new_conn(
     let peer_addr = q_conn.remote_address();
 
     current_thread::spawn(conn_driver.map_err(move |e| {
-        handle_connection_err(
-            peer_addr,
-            &From::from(e),
-            "Driver failed",
-        );
+        handle_connection_err(peer_addr, &From::from(e), "Driver failed");
     }));
 
     let is_duplicate = ctx_mut(|c| {

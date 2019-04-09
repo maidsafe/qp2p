@@ -41,5 +41,9 @@ quick_error! {
              display("Oneshot Receiver error: {}", e)
              from()
          }
+         TLSError(e: rustls::TLSError) {
+             display("TLE error: {}", e)
+             from()
+         }
      }
 }

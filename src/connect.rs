@@ -1,34 +1,24 @@
-use crate::context::{ctx, ctx_mut, Connection, FromPeer, ToPeer};
+use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
+use crate::peer_config;
 use crate::wire_msg::WireMsg;
 use crate::{communicate, CrustInfo, R};
 use std::mem;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
 /// Connect to the give peer
 pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> R<()> {
-    let peer_cert = quinn::Certificate::from_der(&peer_info.peer_cert_der)?;
     let peer_addr = peer_info.peer_addr;
 
-    let peer_cfg = {
-        let mut peer_cfg_builder = quinn::ClientConfigBuilder::new();
-        if let Err(e) = peer_cfg_builder.add_certificate_authority(peer_cert) {
-            let e = From::from(e);
+    let peer_cfg = match peer_config::new_client_cfg(&peer_info.peer_cert_der) {
+        Ok(cfg) => cfg,
+        Err(e) => {
             handle_connect_err(peer_addr, &e);
             return Err(e);
         }
-        let mut peer_cfg = peer_cfg_builder.build();
-        let transport_config = unwrap!(Arc::get_mut(&mut peer_cfg.transport));
-        // TODO test that this is sent only over the uni-stream to the peer not on the uni
-        // stream from the peer
-        transport_config.idle_timeout = ctx(|c| c.idle_timeout_msec);
-        transport_config.keep_alive_interval = ctx(|c| c.keep_alive_interval_msec);
-
-        peer_cfg
     };
 
     let r = ctx_mut(|c| {
@@ -48,7 +38,7 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
             };
             let peer_addr = peer_addr;
             c.quic_ep()
-                .connect_with(&peer_cfg, &peer_addr, "MaidSAFE.net")
+                .connect_with(peer_cfg, &peer_addr, "MaidSAFE.net")
                 .map_err(Error::from)
                 .map(move |new_client_conn_fut| {
                     let leaf = new_client_conn_fut.then(move |new_peer_conn_res| {
