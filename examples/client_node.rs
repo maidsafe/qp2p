@@ -47,7 +47,7 @@ struct ClientNode {
     event_rx: Option<Receiver<Event>>,
     /// Other nodes we will be communicating with.
     client_nodes: HashSet<NodeInfo>,
-    our_cert: Vec<u8>,
+    our_ci: NodeInfo,
     sent_messages: usize,
     received_messages: usize,
     /// Large message to send
@@ -88,6 +88,9 @@ impl ClientNode {
         let small_msg = Bytes::from(random_data_with_hash(SMALL_MSG_SIZE));
         assert!(hash_correct(&small_msg));
 
+        crust.start_listening();
+        let our_ci = unwrap!(crust.our_connection_info());
+
         Self {
             crust,
             bootstrap_node_info,
@@ -95,7 +98,7 @@ impl ClientNode {
             small_msg,
             event_rx: Some(event_rx),
             client_nodes: Default::default(),
-            our_cert: Default::default(),
+            our_ci,
             peer_states: Default::default(),
             sent_messages: 0,
             received_messages: 0,
@@ -104,10 +107,7 @@ impl ClientNode {
 
     /// Blocks and reacts to crust events.
     fn run(&mut self) {
-        self.crust.start_listening();
-        info!("Crust started");
-
-        self.our_cert = self.crust.our_certificate_der();
+        info!("Peer started");
 
         // this dummy send will trigger connection
         let bootstrap_node = Peer::Node {
@@ -193,7 +193,7 @@ impl ClientNode {
                 Peer::Node { node_info } => node_info.clone(),
                 Peer::Client { .. } => panic!("In this example only Node peers are expected"),
             };
-            if conn_info.peer_cert_der != self.our_cert {
+            if conn_info != self.our_ci {
                 self.crust.connect_to(conn_info.clone());
                 self.client_nodes.insert(conn_info);
             }
