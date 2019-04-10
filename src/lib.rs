@@ -501,6 +501,7 @@ mod tests {
         let mut crust = {
             let mut cfg = Config::with_default_cert();
             cfg.hard_coded_contacts = contacts;
+            cfg.port = Some(0);
             if !is_addr_unspecified {
                 cfg.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
             }
