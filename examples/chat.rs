@@ -90,8 +90,7 @@ fn main() {
         },
     );
 
-    qp2p.start_listening();
-
+    unwrap!(qp2p.start_listening());
     println!("QuicP2p started");
 
     let peerlist = Arc::new(Mutex::new(PeerList::new()));

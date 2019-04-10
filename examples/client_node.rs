@@ -88,7 +88,7 @@ impl ClientNode {
         let small_msg = Bytes::from(random_data_with_hash(SMALL_MSG_SIZE));
         assert!(hash_correct(&small_msg));
 
-        qp2p.start_listening();
+        unwrap!(qp2p.start_listening());
         let our_ci = unwrap!(qp2p.our_connection_info());
 
         Self {

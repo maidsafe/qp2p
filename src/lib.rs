@@ -19,12 +19,15 @@ pub use error::Error;
 pub use event::Event;
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
 
+use crate::bootstrap_cache::BootstrapCache;
+use crate::dirs::Dirs;
 use crate::wire_msg::WireMsg;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
+use directories::ProjectDirs;
 use event_loop::EventLoop;
-use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::mpsc::{self, Sender};
+use std::{fmt, io};
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
@@ -129,7 +132,7 @@ impl QuicP2p {
     ///
     /// It is necessary to call this to initialise QuicP2p context within the event loop. Otherwise
     /// very limited functionaity will be available.
-    pub fn start_listening(&mut self) {
+    pub fn start_listening(&mut self) -> R<()> {
         let (port, is_user_supplied) = self
             .cfg
             .port
@@ -168,6 +171,7 @@ impl QuicP2p {
             )
         };
 
+        let (err_tx, err_rx) = mpsc::channel();
         self.el.post(move || {
             let our_cfg = unwrap!(peer_config::new_our_cfg(
                 idle_timeout_msec,
@@ -197,6 +201,13 @@ impl QuicP2p {
                 }
             };
 
+            let bootstrap_cache = match init_bootstrap_cache() {
+                Ok(cache) => cache,
+                Err(e) => {
+                    let _ = err_tx.send(Err(e));
+                    return;
+                }
+            };
             let ctx = Context::new(
                 tx,
                 our_complete_cert,
@@ -204,6 +215,7 @@ impl QuicP2p {
                 idle_timeout_msec,
                 keep_alive_interval_msec,
                 our_type,
+                bootstrap_cache,
                 ep,
             );
             initialise_ctx(ctx);
@@ -213,7 +225,14 @@ impl QuicP2p {
             if our_type != OurType::Client {
                 listener::listen(incoming_connections);
             }
+
+            let _ = err_tx.send(Ok(()));
         });
+
+        err_rx
+            .recv()
+            .map_err(Error::ChannelRecv)
+            .and_then(|res| res)
     }
 
     /// Connect to the given peer. This will error out if the peer is already in the process of
@@ -325,6 +344,15 @@ impl QuicP2p {
     }
 }
 
+/// Tries to determine the best location for bootstrap cache and constructs it.
+fn init_bootstrap_cache() -> R<BootstrapCache> {
+    let dirs = ProjectDirs::from("net", "MaidSafe", "quic-p2p")
+        .ok_or_else(|| io::ErrorKind::NotFound.into())
+        .map_err(Error::IoError)?;
+    let dirs = Dirs::Desktop(dirs);
+    BootstrapCache::try_new(&dirs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,7 +362,7 @@ mod tests {
     fn dropping_qp2p_handle_gracefully_shutsdown_event_loop() {
         let (tx, _rx) = mpsc::channel();
         let mut qp2p = QuicP2p::new(tx);
-        qp2p.start_listening();
+        unwrap!(qp2p.start_listening());
     }
 
     #[test]
@@ -510,7 +538,7 @@ mod tests {
             QuicP2p::with_config(tx, cfg)
         };
 
-        qp2p.start_listening();
+        unwrap!(qp2p.start_listening());
 
         (qp2p, rx)
     }
