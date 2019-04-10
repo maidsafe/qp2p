@@ -28,10 +28,12 @@ use std::sync::mpsc::{self, Sender};
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
+mod bootstrap_cache;
 mod communicate;
 mod config;
 mod connect;
 mod context;
+mod dirs;
 mod error;
 mod event;
 mod event_loop;
