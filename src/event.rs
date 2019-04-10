@@ -1,14 +1,15 @@
-use crate::CrustInfo;
+use crate::{utils, Peer};
 use std::fmt;
 use std::net::SocketAddr;
 
 /// Crust Events to the user
+#[derive(Debug)]
 pub enum Event {
     ConnectionFailure {
         peer_addr: SocketAddr,
     },
     ConnectedTo {
-        crust_info: CrustInfo,
+        peer: Peer,
     },
     NewMessage {
         peer_addr: SocketAddr,
@@ -19,21 +20,19 @@ pub enum Event {
     Finish,
 }
 
-impl fmt::Debug for Event {
+impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Event::ConnectionFailure { peer_addr } => {
-                write!(f, "Event::ConnectionFailure - {}", peer_addr)
-            }
-            Event::ConnectedTo { ref crust_info } => write!(
+            Event::NewMessage {
+                ref peer_addr,
+                ref msg,
+            } => write!(
                 f,
-                "Event::ConnectedTo - {}, {:?}",
-                crust_info.peer_addr, crust_info.peer_cert_der
+                "Event::NewMessage {{ peer_addr: {}, msg: {} }}",
+                peer_addr,
+                utils::bin_data_format(&*msg)
             ),
-            Event::NewMessage { ref peer_addr, .. } => {
-                write!(f, "Event::NewMessage - {}", peer_addr)
-            }
-            Event::Finish => write!(f, "Event::Finish"),
+            ref blah => write!(f, "{}", blah),
         }
     }
 }

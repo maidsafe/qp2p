@@ -1,9 +1,8 @@
 use crate::communicate;
 use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
-use crate::error::Error;
 use crate::event::Event;
-use crate::CrustInfo;
-use std::net::SocketAddr;
+use crate::utils;
+use crate::{NodeInfo, Peer};
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
@@ -29,7 +28,7 @@ fn handle_new_conn(
     let peer_addr = q_conn.remote_address();
 
     current_thread::spawn(conn_driver.map_err(move |e| {
-        handle_connection_err(peer_addr, &From::from(e), "Driver failed");
+        utils::handle_communication_err(peer_addr, &From::from(e), "Driver failed");
     }));
 
     let is_duplicate = ctx_mut(|c| {
@@ -48,12 +47,16 @@ fn handle_new_conn(
                 ref peer_cert_der, ..
             } = conn.to_peer
             {
-                let crust_info = CrustInfo {
+                let node_info = NodeInfo {
                     peer_addr,
                     peer_cert_der: peer_cert_der.clone(),
                 };
 
-                if let Err(e) = c.event_tx.send(Event::ConnectedTo { crust_info }) {
+                let peer = Peer::Node { node_info };
+
+                // TODO come back to all the connected-to events and see if we are handling all
+                // cases
+                if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
                     println!("ERROR in informing user about a new peer: {:?} - {}", e, e);
                 }
             }
@@ -69,27 +72,5 @@ fn handle_new_conn(
         return;
     }
 
-    let leaf = incoming_streams
-        .map_err(move |e| {
-            handle_connection_err(peer_addr, &From::from(e), "Incoming streams failed");
-        })
-        .for_each(move |quic_stream| {
-            communicate::read_from_peer(peer_addr, quic_stream).map_err(|e| {
-                println!(
-                    "Error in Incoming-streams while reading from peer {}: {:?} - {}.",
-                    peer_addr, e, e
-                )
-            })
-        });
-
-    current_thread::spawn(leaf);
-}
-
-/// Removes failed connection from connection list to prevent from any type of memory leaks.
-fn handle_connection_err(peer_addr: SocketAddr, e: &Error, details: &str) {
-    println!(
-        "Incoming connection with peer {} errored: {:?} - {}. Details: {}",
-        peer_addr, e, e, details
-    );
-    let _ = ctx_mut(|c| c.connections.remove(&peer_addr));
+    communicate::read_from_peer(peer_addr, incoming_streams);
 }

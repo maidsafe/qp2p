@@ -1,19 +1,25 @@
 use crate::context::{ctx, ctx_mut, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
-use crate::wire_msg::WireMsg;
-use crate::R;
-use crate::{connect, CrustInfo};
+use crate::utils;
+use crate::wire_msg::{Handshake, WireMsg};
+use crate::{connect, NodeInfo};
+use crate::{Peer, R};
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
-use tokio::prelude::Future;
+use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
 /// Send message to peer. If the peer is not connected, it will attempt to connect to it first
 /// and then send the message
-pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
+pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
+    let node_info = match peer {
+        Peer::Client { peer_addr } => return write_to_peer(peer_addr, msg),
+        Peer::Node { node_info } => node_info,
+    };
+
     let connect_and_send = ctx_mut(|c| {
-        let peer_addr = peer_info.peer_addr;
+        let peer_addr = node_info.peer_addr;
         let event_tx = c.event_tx.clone();
         let conn = c
             .connections
@@ -21,11 +27,15 @@ pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
             .or_insert_with(|| Connection::new(peer_addr, event_tx));
         match conn.to_peer {
             ToPeer::NoConnection => Some(msg),
+            ToPeer::NotNeeded => {
+                println!("TODO We normally can't get here - ignoring");
+                None
+            }
             ToPeer::Initiated {
                 ref peer_cert_der,
                 ref mut pending_sends,
             } => {
-                if *peer_cert_der != peer_info.peer_cert_der {
+                if *peer_cert_der != node_info.peer_cert_der {
                     println!("TODO Certificate we have for the peer already doesn't match with the \
                     one given - we should disconnect to such peers - something fishy going on.");
                 }
@@ -33,15 +43,15 @@ pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
                 None
             }
             ToPeer::Established { ref q_conn, .. } => {
-                write_to_peer_connection(peer_info.peer_addr, q_conn, msg);
+                write_to_peer_connection(node_info.peer_addr, q_conn, msg);
                 None
             }
         }
     });
 
     if connect_and_send.is_some() {
-        let peer_addr = peer_info.peer_addr;
-        if let Err(e) = connect::connect_to(peer_info, connect_and_send) {
+        let peer_addr = node_info.peer_addr;
+        if let Err(e) = connect::connect_to(node_info, connect_and_send) {
             println!(
                 "Unable to connect to peer {} to be able to send message: {:?}",
                 peer_addr, e
@@ -52,7 +62,6 @@ pub fn try_write_to_peer(peer_info: CrustInfo, msg: WireMsg) {
 
 /// This will fail if we don't have a connection to the peer or if the peer is in an invalid state
 /// to be sent a message to.
-#[allow(unused)]
 pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
     ctx(|c| {
         let conn = match c.connections.get(&peer_addr) {
@@ -60,17 +69,28 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
             None => return println!("Asked to communicate with an unknown peer: {}", peer_addr),
         };
 
-        let q_conn = match &conn.to_peer {
-            ToPeer::Established { ref q_conn, .. } => q_conn,
-            x => {
+        match &conn.to_peer {
+            ToPeer::NotNeeded => {
+                if let FromPeer::Established { ref q_conn, .. } = conn.from_peer {
+                    write_to_peer_connection(peer_addr, q_conn, msg);
+                } else {
+                    println!(
+                        "TODO We cannot communicate with someone we are not needing to connect to \
+                         and they are not connected to us just now. Peer: {}",
+                        peer_addr
+                    );
+                }
+            }
+            ToPeer::Established { ref q_conn, .. } => {
+                write_to_peer_connection(peer_addr, q_conn, msg)
+            }
+            ToPeer::NoConnection | ToPeer::Initiated { .. } => {
                 return println!(
                     "Peer {} is in invalid state {:?} to be communicated to",
-                    peer_addr, x
+                    peer_addr, conn.to_peer
                 );
             }
-        };
-
-        write_to_peer_connection(peer_addr, q_conn, msg);
+        }
     })
 }
 
@@ -83,15 +103,16 @@ pub fn write_to_peer_connection(
     let leaf = conn
         .open_uni()
         .map_err(move |e| {
-            handle_communication_err(peer_addr, &From::from(e), "Open-Unidirectional")
+            utils::handle_communication_err(peer_addr, &From::from(e), "Open-Unidirectional")
         })
         .and_then(move |o_stream| {
-            tokio::io::write_all(o_stream, wire_msg.into())
-                .map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Write-All"))
+            tokio::io::write_all(o_stream, wire_msg.into()).map_err(move |e| {
+                utils::handle_communication_err(peer_addr, &From::from(e), "Write-All")
+            })
         })
         .and_then(move |(o_stream, _): (_, bytes::Bytes)| {
             tokio::io::shutdown(o_stream).map_err(move |e| {
-                handle_communication_err(peer_addr, &From::from(e), "Shutdown-after-write")
+                utils::handle_communication_err(peer_addr, &From::from(e), "Shutdown-after-write")
             })
         })
         .map(|_| ());
@@ -99,22 +120,39 @@ pub fn write_to_peer_connection(
     current_thread::spawn(leaf);
 }
 
-/// Read messages from peer
-pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<()> {
+/// Listen for incoming streams containing peer messages and read them when available
+pub fn read_from_peer(peer_addr: SocketAddr, incoming_streams: quinn::IncomingStreams) {
+    let leaf = incoming_streams
+        .map_err(move |e| {
+            utils::handle_communication_err(peer_addr, &From::from(e), "Incoming streams failed");
+        })
+        .for_each(move |quic_stream| {
+            read_peer_stream(peer_addr, quic_stream).map_err(|e| {
+                println!(
+                    "Error in Incoming-streams while reading from peer {}: {:?} - {}.",
+                    peer_addr, e, e
+                )
+            })
+        });
+
+    current_thread::spawn(leaf);
+}
+
+fn read_peer_stream(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<()> {
     let i_stream = match quic_stream {
         quinn::NewStream::Bi(_bi) => {
             let e = Error::BiDirectionalStreamAttempted(peer_addr);
-            handle_communication_err(peer_addr, &e, "Receiving Stream");
+            utils::handle_communication_err(peer_addr, &e, "Receiving Stream");
             return Err(e);
         }
         quinn::NewStream::Uni(uni) => uni,
     };
 
     let leaf = quinn::read_to_end(i_stream, ctx(|c| c.max_msg_size_allowed))
-        .map_err(move |e| handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
+        .map_err(move |e| utils::handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
         .and_then(move |(_i_stream, raw)| {
             WireMsg::from_raw(raw.into())
-                .map_err(|e| handle_communication_err(peer_addr, &e, "Raw to WireMsg"))
+                .map_err(|e| utils::handle_communication_err(peer_addr, &e, "Raw to WireMsg"))
                 .map(|wire_msg| handle_wire_msg(peer_addr, wire_msg))
         });
 
@@ -126,7 +164,7 @@ pub fn read_from_peer(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R
 /// Handle wire messages from peer
 pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
     match wire_msg {
-        WireMsg::CertificateDer(cert) => handle_rx_cert(peer_addr, cert),
+        WireMsg::Handshake(h) => handle_rx_handshake(peer_addr, h),
         wire_msg => {
             ctx_mut(|c| {
                 let conn = match c.connections.get_mut(&peer_addr) {
@@ -140,13 +178,38 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                 };
 
                 match conn.from_peer {
+                    // TODO see if repetition can be reduced
+                    FromPeer::NotNeeded => match conn.to_peer {
+                        // Means we are a client
+                        ToPeer::NoConnection | ToPeer::NotNeeded | ToPeer::Initiated { .. } => {
+                            println!(
+                                "TODO Ignoring as we received something from some we are no \
+                                 longer connected to"
+                            );
+                        }
+                        ToPeer::Established { ref q_conn, .. } => dispatch_wire_msg(
+                            peer_addr,
+                            q_conn,
+                            c.our_ext_addr_tx.take(),
+                            &c.event_tx,
+                            wire_msg,
+                        ),
+                    },
                     FromPeer::Established {
+                        ref q_conn,
                         ref mut pending_reads,
-                        ..
                     } => match conn.to_peer {
                         ToPeer::NoConnection | ToPeer::Initiated { .. } => {
                             pending_reads.push(wire_msg);
                         }
+                        ToPeer::NotNeeded => dispatch_wire_msg(
+                            // Message from a client
+                            peer_addr,
+                            q_conn,
+                            c.our_ext_addr_tx.take(),
+                            &c.event_tx,
+                            wire_msg,
+                        ),
                         ToPeer::Established { ref q_conn, .. } => dispatch_wire_msg(
                             peer_addr,
                             q_conn,
@@ -178,12 +241,51 @@ pub fn dispatch_wire_msg(
         WireMsg::UserMsg(m) => handle_user_msg(peer_addr, event_tx, m),
         WireMsg::EndpointEchoReq => handle_echo_req(peer_addr, q_conn),
         WireMsg::EndpointEchoResp(our_addr) => handle_echo_resp(our_addr, inform_tx),
-        WireMsg::CertificateDer(_) => unreachable!("Should have been handled already"),
+        WireMsg::Handshake(_) => unreachable!("Should have been handled already"),
     }
 }
 
+fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
+    if let Handshake::Node { cert_der } = handshake {
+        return handle_rx_cert(peer_addr, cert_der);
+    }
+
+    // Handshake from a client
+    ctx_mut(|c| {
+        let conn = match c.connections.get_mut(&peer_addr) {
+            Some(conn) => conn,
+            None => {
+                println!("Rxd handshake from someone we don't know. Probably it was a pending \
+                stream when we dropped the peer connection. Ignoring this message from peer: {}",
+                peer_addr);
+                return;
+            }
+        };
+
+        match conn.to_peer {
+            ToPeer::NoConnection => (),
+            ToPeer::NotNeeded | ToPeer::Initiated { .. } | ToPeer::Established { .. } => {
+                // TODO consider booting this peer out
+                println!(
+                    "Illegal handshake message - we have {:?} for the peer",
+                    conn.to_peer
+                );
+                return;
+            }
+        }
+
+        conn.to_peer = ToPeer::NotNeeded;
+
+        let peer = Peer::Client { peer_addr };
+
+        if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
+            println!("ERROR in informing user about a new peer: {:?} - {}", e, e);
+        }
+    })
+}
+
 fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
-    let peer_info = CrustInfo {
+    let node_info = NodeInfo {
         peer_addr,
         peer_cert_der,
     };
@@ -208,13 +310,20 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
 
         match conn.to_peer {
             ToPeer::NoConnection => true,
+            ToPeer::NotNeeded => {
+                println!(
+                    "TODO received a Node handshake from someone who has introduced oneself \
+                     as a client before."
+                );
+                false
+            }
             ToPeer::Initiated {
                 ref peer_cert_der, ..
             }
             | ToPeer::Established {
                 ref peer_cert_der, ..
             } => {
-                if *peer_cert_der != peer_info.peer_cert_der {
+                if *peer_cert_der != node_info.peer_cert_der {
                     println!("TODO Certificate we have for the peer already doesn't match with \
                         the one given - we should disconnect to such peers - something fishy going \
                         on.");
@@ -225,7 +334,7 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
     });
 
     if reverse_connect_to_peer {
-        if let Err(e) = connect::connect_to(peer_info, None) {
+        if let Err(e) = connect::connect_to(node_info, None) {
             println!(
                 "ERROR: Could not reverse connect to peer {}: {}",
                 peer_addr, e
@@ -252,13 +361,4 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAdd
             println!("Error informing endpoint echo service response: {:?}", e);
         }
     }
-}
-
-/// When connection fails, remove it to prevent memory leaks.
-fn handle_communication_err(peer_addr: SocketAddr, e: &Error, details: &str) {
-    println!(
-        "ERROR in communication with peer {}: {:?} - {}. Details: {}",
-        peer_addr, e, e, details
-    );
-    let _ = ctx_mut(|c| c.connections.remove(&peer_addr));
 }

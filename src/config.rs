@@ -1,11 +1,11 @@
-use crate::CrustInfo;
+use crate::NodeInfo;
 use std::net::IpAddr;
 
 /// Crust configurations
 #[derive(Default, Serialize, Deserialize)]
 pub struct Config {
     /// Hard Coded contacts
-    pub hard_coded_contacts: Vec<CrustInfo>,
+    pub hard_coded_contacts: Vec<NodeInfo>,
     /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
     pub port: Option<u16>,
     /// IP address for the listener. If none supplied we'll use the default address (0.0.0.0).
@@ -26,6 +26,8 @@ pub struct Config {
     pub keep_alive_interval_msec: Option<u32>,
     /// Path to our TLS Certificate. This file must contain `SerialisableCertificate` as content
     pub our_complete_cert: Option<SerialisableCertificate>,
+    /// Specify if we are a client or a node
+    pub our_type: OurType,
 }
 
 impl Config {
@@ -36,13 +38,8 @@ impl Config {
 
     pub fn with_default_cert() -> Config {
         Self {
-            hard_coded_contacts: Default::default(),
-            port: Default::default(),
-            ip: Default::default(),
-            max_msg_size_allowed: Default::default(),
-            idle_timeout_msec: Default::default(),
-            keep_alive_interval_msec: Default::default(),
             our_complete_cert: Some(Default::default()),
+            ..Self::default()
         }
     }
 }
@@ -73,5 +70,20 @@ impl Default for SerialisableCertificate {
             cert_der: cert.serialize_der(),
             key_der: cert.serialize_private_key_der(),
         }
+    }
+}
+
+/// Whether we are a client or a node
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq)]
+pub enum OurType {
+    /// We are a client
+    Client,
+    /// We are a node
+    Node,
+}
+
+impl Default for OurType {
+    fn default() -> Self {
+        OurType::Node
     }
 }

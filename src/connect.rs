@@ -1,16 +1,17 @@
+use crate::config::OurType;
 use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
 use crate::peer_config;
-use crate::wire_msg::WireMsg;
-use crate::{communicate, CrustInfo, R};
+use crate::wire_msg::{Handshake, WireMsg};
+use crate::{communicate, NodeInfo, Peer, R};
 use std::mem;
 use std::net::SocketAddr;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
 /// Connect to the give peer
-pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> R<()> {
+pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R<()> {
     let peer_addr = peer_info.peer_addr;
 
     let peer_cfg = match peer_config::new_client_cfg(&peer_info.peer_cert_der) {
@@ -28,6 +29,13 @@ pub fn connect_to(peer_info: CrustInfo, send_after_connect: Option<WireMsg>) -> 
             .entry(peer_addr)
             .or_insert_with(|| Connection::new(peer_addr, event_tx));
         if conn.to_peer.is_no_connection() {
+            // TODO see if this can be the default from-peer for OurType::Client
+            if c.our_type == OurType::Client {
+                if !conn.from_peer.is_no_connection() {
+                    panic!("Logic Error - cannot expect Network to reverse connect to a client");
+                }
+                conn.from_peer = FromPeer::NotNeeded;
+            }
             let mut pending_sends: Vec<_> = Default::default();
             if let Some(pending_send) = send_after_connect {
                 pending_sends.push(pending_send);
@@ -71,8 +79,8 @@ fn handle_new_connection_res(
         quinn::ConnectionError,
     >,
 ) {
-    let (conn_driver, q_conn) = match new_peer_conn_res {
-        Ok((conn_driver, q_conn, _)) => (conn_driver, q_conn),
+    let (conn_driver, q_conn, incoming_streams) = match new_peer_conn_res {
+        Ok((conn_driver, q_conn, incoming_streams)) => (conn_driver, q_conn, incoming_streams),
         Err(e) => return handle_connect_err(peer_addr, &From::from(e)),
     };
     current_thread::spawn(
@@ -80,6 +88,8 @@ fn handle_new_connection_res(
     );
 
     println!("Successfully connected to peer: {}", peer_addr);
+
+    let mut should_read = false;
 
     ctx_mut(|c| {
         let conn = match c.connections.get_mut(&peer_addr) {
@@ -115,19 +125,41 @@ fn handle_new_connection_res(
                 communicate::write_to_peer_connection(
                     peer_addr,
                     &q_conn,
-                    WireMsg::CertificateDer(c.our_complete_cert.cert_der.clone()),
+                    WireMsg::Handshake(Handshake::Node {
+                        cert_der: c.our_complete_cert.cert_der.clone(),
+                    }),
                 );
+            }
+            FromPeer::NotNeeded => {
+                communicate::write_to_peer_connection(
+                    peer_addr,
+                    &q_conn,
+                    WireMsg::Handshake(Handshake::Client),
+                );
+
+                let node_info = NodeInfo {
+                    peer_addr,
+                    peer_cert_der: peer_cert_der.clone(),
+                };
+                let peer = Peer::Node { node_info };
+
+                if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
+                    println!("Could not fire event: {:?}", e);
+                }
+
+                should_read = true;
             }
             FromPeer::Established {
                 ref mut pending_reads,
                 ..
             } => {
-                let crust_info = CrustInfo {
+                let node_info = NodeInfo {
                     peer_addr,
                     peer_cert_der: peer_cert_der.clone(),
                 };
+                let peer = Peer::Node { node_info };
 
-                if let Err(e) = c.event_tx.send(Event::ConnectedTo { crust_info }) {
+                if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
                     println!("Could not fire event: {:?}", e);
                 }
 
@@ -151,7 +183,11 @@ fn handle_new_connection_res(
             peer_cert_der,
             q_conn,
         };
-    })
+    });
+
+    if should_read {
+        communicate::read_from_peer(peer_addr, incoming_streams);
+    }
 }
 
 fn handle_connect_err(peer_addr: SocketAddr, e: &Error) {

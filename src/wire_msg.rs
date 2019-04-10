@@ -1,4 +1,5 @@
-use crate::R;
+use crate::{utils, R};
+use std::fmt;
 use std::net::SocketAddr;
 
 const MAX_MESSAGE_SIZE_FOR_SERIALISATION: usize = 1024; // 1 KiB
@@ -6,7 +7,7 @@ const MAX_MESSAGE_SIZE_FOR_SERIALISATION: usize = 1024; // 1 KiB
 /// Final type serialised and sent on the wire by Crust
 #[derive(Serialize, Deserialize, Debug)]
 pub enum WireMsg {
-    CertificateDer(Vec<u8>),
+    Handshake(Handshake),
     EndpointEchoReq,
     EndpointEchoResp(SocketAddr),
     UserMsg(bytes::Bytes),
@@ -31,5 +32,44 @@ impl WireMsg {
         }
 
         Ok(bincode::deserialize(&raw)?)
+    }
+}
+
+impl fmt::Display for WireMsg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            WireMsg::UserMsg(ref m) => {
+                write!(f, "WireMsg::UserMsg({})", utils::bin_data_format(&*m))
+            }
+            ref w => write!(f, "{}", w),
+        }
+    }
+}
+
+/// Type of peer connecting to us.
+///
+/// If the peer is a client then we allow a single connection between us with a bidirectional
+/// stream, otherwise we will have 2 connections with uni-directional stream in each.
+///
+/// This information will be given to the user for them to deal with it appropriately.
+#[derive(Serialize, Deserialize, Debug)]
+pub enum Handshake {
+    /// The connecting peer is a node. Certificate is needed for allowing connection back to the
+    /// peer
+    Node { cert_der: Vec<u8> },
+    /// The connecting peer is a client. No need for a reverse connection.
+    Client,
+}
+
+impl fmt::Display for Handshake {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Handshake::Node { ref cert_der } => write!(
+                f,
+                "Handshake::Node {{ cert_der: {} }}",
+                utils::bin_data_format(cert_der)
+            ),
+            Handshake::Client => write!(f, "Handshake::Client"),
+        }
     }
 }

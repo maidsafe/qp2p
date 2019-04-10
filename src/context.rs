@@ -1,4 +1,4 @@
-use crate::config::SerialisableCertificate;
+use crate::config::{OurType, SerialisableCertificate};
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
 use std::cell::RefCell;
@@ -75,6 +75,7 @@ pub struct Context {
     pub max_msg_size_allowed: usize,
     pub idle_timeout_msec: u64,
     pub keep_alive_interval_msec: u32,
+    pub our_type: OurType,
     quic_ep: quinn::Endpoint,
 }
 
@@ -85,6 +86,7 @@ impl Context {
         max_msg_size_allowed: usize,
         idle_timeout_msec: u64,
         keep_alive_interval_msec: u32,
+        our_type: OurType,
         quic_ep: quinn::Endpoint,
     ) -> Self {
         Self {
@@ -95,6 +97,7 @@ impl Context {
             max_msg_size_allowed,
             idle_timeout_msec,
             keep_alive_interval_msec,
+            our_type,
             quic_ep,
         }
     }
@@ -146,6 +149,7 @@ impl fmt::Debug for Connection {
 
 pub enum ToPeer {
     NoConnection,
+    NotNeeded,
     Initiated {
         peer_cert_der: Vec<u8>,
         pending_sends: Vec<WireMsg>,
@@ -157,6 +161,15 @@ pub enum ToPeer {
 }
 
 impl ToPeer {
+    #[allow(unused)]
+    pub fn is_not_needed(&self) -> bool {
+        if let ToPeer::NotNeeded = *self {
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn is_no_connection(&self) -> bool {
         if let ToPeer::NoConnection = *self {
             true
@@ -192,7 +205,6 @@ impl Default for ToPeer {
 impl fmt::Debug for ToPeer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            ToPeer::NoConnection => write!(f, "ToPeer::NoConnection",),
             ToPeer::Initiated {
                 ref pending_sends, ..
             } => write!(
@@ -201,6 +213,7 @@ impl fmt::Debug for ToPeer {
                 pending_sends.len()
             ),
             ToPeer::Established { .. } => write!(f, "ToPeer::Established"),
+            ref blah => write!(f, "{:?}", blah),
         }
     }
 }
@@ -215,6 +228,7 @@ impl Drop for ToPeer {
 
 pub enum FromPeer {
     NoConnection,
+    NotNeeded,
     Established {
         q_conn: quinn::Connection,
         pending_reads: Vec<WireMsg>,
@@ -222,6 +236,15 @@ pub enum FromPeer {
 }
 
 impl FromPeer {
+    #[allow(unused)]
+    pub fn is_not_needed(&self) -> bool {
+        if let FromPeer::NotNeeded = *self {
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn is_no_connection(&self) -> bool {
         if let FromPeer::NoConnection = *self {
             true
@@ -248,7 +271,6 @@ impl Default for FromPeer {
 impl fmt::Debug for FromPeer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            FromPeer::NoConnection => write!(f, "FromPeer::NoConnection"),
             FromPeer::Established {
                 ref pending_reads, ..
             } => write!(
@@ -256,6 +278,7 @@ impl fmt::Debug for FromPeer {
                 "FromPeer::Established with {} pending reads",
                 pending_reads.len()
             ),
+            ref blah => write!(f, "{:?}", blah),
         }
     }
 }

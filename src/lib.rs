@@ -5,7 +5,7 @@ extern crate serde_derive;
 #[macro_use]
 extern crate unwrap;
 
-pub use config::{Config, SerialisableCertificate};
+pub use config::{Config, OurType, SerialisableCertificate};
 pub use error::Error;
 pub use event::Event;
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
@@ -13,6 +13,7 @@ pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSE
 use crate::wire_msg::WireMsg;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use event_loop::EventLoop;
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::mpsc::{self, Sender};
 use tokio::prelude::Future;
@@ -27,6 +28,7 @@ mod event;
 mod event_loop;
 mod listener;
 mod peer_config;
+mod utils;
 mod wire_msg;
 
 pub type R<T> = Result<T, Error>;
@@ -42,15 +44,57 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 pub struct Crust {
     event_tx: Sender<Event>,
     cfg: Config,
-    our_info: Option<CrustInfo>,
+    us: Option<NodeInfo>,
     el: EventLoop,
 }
 
-/// Crust information for peers to connect to each other
+/// A peer to us
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
-pub struct CrustInfo {
+pub enum Peer {
+    Node { node_info: NodeInfo },
+    Client { peer_addr: SocketAddr },
+}
+
+impl Peer {
+    pub fn peer_addr(&self) -> SocketAddr {
+        match *self {
+            Peer::Node { ref node_info } => node_info.peer_addr,
+            Peer::Client { peer_addr } => peer_addr,
+        }
+    }
+
+    pub fn peer_cert_der(&self) -> Option<&[u8]> {
+        match *self {
+            Peer::Node { ref node_info } => Some(&node_info.peer_cert_der),
+            Peer::Client { .. } => None,
+        }
+    }
+}
+
+/// Information for a peer of type `Peer::Node`.
+///
+/// This is a necessary information needed to connect to someone.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub struct NodeInfo {
     pub peer_addr: SocketAddr,
     pub peer_cert_der: Vec<u8>,
+}
+
+impl Into<Peer> for NodeInfo {
+    fn into(self) -> Peer {
+        Peer::Node { node_info: self }
+    }
+}
+
+impl fmt::Display for NodeInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "NodeInfo {{ peer_addr: {}, peer_cert_der: {} }}",
+            self.peer_addr,
+            utils::bin_data_format(&self.peer_cert_der)
+        )
+    }
 }
 
 impl Crust {
@@ -65,7 +109,7 @@ impl Crust {
         Self {
             event_tx,
             cfg,
-            our_info: None,
+            us: None,
             el,
         }
     }
@@ -97,6 +141,7 @@ impl Crust {
             .cfg
             .keep_alive_interval_msec
             .unwrap_or(peer_config::DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
+        let our_type = self.cfg.our_type;
 
         let tx = self.event_tx.clone();
 
@@ -133,8 +178,8 @@ impl Crust {
                             );
                         }
                         println!(
-                            "Failed to bind to port: {}. Trying random port.",
-                            DEFAULT_PORT_TO_TRY
+                            "Failed to bind to port: {} - Error: {:?} - {}. Trying random port.",
+                            DEFAULT_PORT_TO_TRY, e, e
                         );
                         unwrap!(ep_builder.bind(&(ip, 0)))
                     }
@@ -147,6 +192,7 @@ impl Crust {
                 max_msg_size_allowed,
                 idle_timeout_msec,
                 keep_alive_interval_msec,
+                our_type,
                 ep,
             );
             initialise_ctx(ctx);
@@ -158,7 +204,7 @@ impl Crust {
 
     /// Connect to the given peer. This will error out if the peer is already in the process of
     /// being connected to OR for any other connection failure reasons.
-    pub fn connect_to(&mut self, peer_info: CrustInfo) {
+    pub fn connect_to(&mut self, peer_info: NodeInfo) {
         self.el.post(move || {
             if let Err(e) = connect::connect_to(peer_info, None) {
                 println!(
@@ -185,9 +231,9 @@ impl Crust {
     /// If the peer is not connected, it will attempt to connect to it first
     /// and then send the message. This can be called multiple times while the peer is still being
     /// connected to - all the sends will be buffered until the peer is connected to.
-    pub fn send(&mut self, peer_info: CrustInfo, msg: bytes::Bytes) {
+    pub fn send(&mut self, peer: Peer, msg: bytes::Bytes) {
         self.el
-            .post(move || communicate::try_write_to_peer(peer_info, WireMsg::UserMsg(msg)));
+            .post(move || communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg)));
     }
 
     /// Get our connection info to give to others for them to connect to us
@@ -198,9 +244,9 @@ impl Crust {
     /// such an address cannot be reached and hence not useful.
     // FIXME calling this mutliple times concurrently just now could have it hanging as only one tx
     // is registered and that replaces any previous tx registered. Fix by using a vec of txs
-    pub fn our_connection_info(&mut self) -> R<CrustInfo> {
-        if let Some(ref our_info) = self.our_info {
-            return Ok(our_info.clone());
+    pub fn our_connection_info(&mut self) -> R<NodeInfo> {
+        if let Some(ref us) = self.us {
+            return Ok(us.clone());
         }
 
         let our_addr = match self.query_ip_echo_service() {
@@ -223,14 +269,14 @@ impl Crust {
 
         let our_cert_der = self.our_certificate_der();
 
-        let our_info = CrustInfo {
+        let us = NodeInfo {
             peer_addr: our_addr,
             peer_cert_der: our_cert_der,
         };
 
-        self.our_info = Some(our_info.clone());
+        self.us = Some(us.clone());
 
-        Ok(our_info)
+        Ok(us)
     }
 
     fn our_certificate_der(&mut self) -> Vec<u8> {
@@ -247,17 +293,18 @@ impl Crust {
     fn query_ip_echo_service(&mut self) -> R<SocketAddr> {
         // FIXME: For the purpose of simplicity we are asking only one peer just now. In production
         // ask multiple until one answers OR we exhaust the list
-        let echo_server_info = if let Some(peer_info) = self.cfg.hard_coded_contacts.first() {
-            peer_info.clone()
+        let node_info = if let Some(node_info) = self.cfg.hard_coded_contacts.first() {
+            node_info.clone()
         } else {
             return Err(Error::NoEndpointEchoServerFound);
         };
+        let echo_server = Peer::Node { node_info };
 
         let (tx, rx) = mpsc::channel();
 
         self.el.post(move || {
             ctx_mut(|c| c.our_ext_addr_tx = Some(tx));
-            communicate::try_write_to_peer(echo_server_info, WireMsg::EndpointEchoReq)
+            communicate::try_write_to_peer(echo_server, WireMsg::EndpointEchoReq)
         });
 
         Ok(unwrap!(rx.recv()))
@@ -308,10 +355,15 @@ mod tests {
         while let Ok(_) = rx1.try_recv() {}
 
         let data = bytes::Bytes::from(vec![12, 13, 14, 253]);
-        crust2.send(crust1_info, data.clone());
+        crust2.send(crust1_info.into(), data.clone());
 
         match unwrap!(rx1.recv()) {
-            Event::ConnectedTo { crust_info } => assert_eq!(crust_info, crust2_info),
+            Event::ConnectedTo { peer } => assert_eq!(
+                peer,
+                Peer::Node {
+                    node_info: crust2_info.clone()
+                }
+            ),
             x => panic!("Received unexpected event: {:?}", x),
         }
         match unwrap!(rx1.recv()) {
@@ -352,9 +404,9 @@ mod tests {
             .name("Crust0-test-thread".to_string())
             .spawn(move || {
                 match rx0.recv() {
-                    Ok(Event::ConnectedTo { crust_info }) => {
-                        assert_eq!(crust_info.peer_addr, crust1_addr)
-                    }
+                    Ok(Event::ConnectedTo {
+                        peer: Peer::Node { node_info },
+                    }) => assert_eq!(node_info.peer_addr, crust1_addr),
                     Ok(x) => panic!("Expected Event::ConnectedTo - got {:?}", x),
                     Err(e) => panic!(
                         "Crust0 Expected Event::ConnectedTo; got error: {:?} {}",
@@ -392,9 +444,9 @@ mod tests {
             .name("Crust1-test-thread".to_string())
             .spawn(move || {
                 match rx1.recv() {
-                    Ok(Event::ConnectedTo { crust_info }) => {
-                        assert_eq!(crust_info.peer_addr, crust0_addr)
-                    }
+                    Ok(Event::ConnectedTo {
+                        peer: Peer::Node { node_info },
+                    }) => assert_eq!(node_info.peer_addr, crust0_addr),
                     Ok(x) => panic!("Expected Event::ConnectedTo - got {:?}", x),
                     Err(e) => panic!(
                         "Crust1 Expected Event::ConnectedTo; got error: {:?} {}",
@@ -416,14 +468,14 @@ mod tests {
 
         // Send the biggest message first and we'll assert that it arrives last hence not blocking
         // the rest of smaller messages sent after it
-        crust1.send(crust0_info.clone(), big_msg_to_crust0);
-        crust1.send(crust0_info.clone(), small_msg0_to_crust0);
+        crust1.send(crust0_info.clone().into(), big_msg_to_crust0);
+        crust1.send(crust0_info.clone().into(), small_msg0_to_crust0);
         // Even after a delay the following small message should arrive before the 1st sent big
         // message
         std::thread::sleep(std::time::Duration::from_millis(100));
-        crust1.send(crust0_info, small_msg1_to_crust0);
+        crust1.send(crust0_info.into(), small_msg1_to_crust0);
 
-        crust0.send(crust1_info, msg_to_crust1);
+        crust0.send(crust1_info.into(), msg_to_crust1);
 
         unwrap!(j0.join());
         unwrap!(j1.join());
@@ -431,7 +483,7 @@ mod tests {
 
     fn new_random_crust_for_unit_test(
         is_addr_unspecified: bool,
-        contacts: Vec<CrustInfo>,
+        contacts: Vec<NodeInfo>,
     ) -> (Crust, Receiver<Event>) {
         let (tx, rx) = mpsc::channel();
         let mut crust = {

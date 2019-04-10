@@ -49,5 +49,8 @@ quick_error! {
              display("Bincode error: {}", e)
              from()
          }
+         OperationNotAllowed {
+             display("This operation is not allowed for us")
+         }
      }
 }
