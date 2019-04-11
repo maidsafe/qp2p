@@ -51,13 +51,13 @@ p2p-quic sets 2 connection types when in p2p mode. This allows the connections t
 Where 1 allows connections from consumers of the network, such as clients or
 perhaps p2p nodes who are simply obtaining information, such as bootstrapping,
 2 is used where the network is allowing another p2p worker. These peers must be
-both able to connect and be able to be connected to. Using uni-directional
-streams forces the node to confirm both incoming and outgoing connectivity is
-available.
+both able to connect and be able to be connected to. Using a uni-directional
+stream per connection forces the node to confirm both incoming and outgoing
+connectivity is available.
 
 A peer my also use a bi-directional connection where it is using STUN or TURN
-to make that connection. In these cases it doe not make sense to force a two
-way connection.
+to make that connection. It has to however introduce itself as a Client and
+not a Node as Nodes are always checked for reverse connectivity to them.
 
 ### IP Spoof defence
 
