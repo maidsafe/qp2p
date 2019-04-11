@@ -89,7 +89,7 @@ fn handle_new_connection_res(
 
     println!("Successfully connected to peer: {}", peer_addr);
 
-    let mut should_read = false;
+    let mut should_accept_incoming = false;
 
     ctx_mut(|c| {
         let conn = match c.connections.get_mut(&peer_addr) {
@@ -113,8 +113,10 @@ fn handle_new_connection_res(
                 mem::replace(peer_cert_der, Default::default()),
                 mem::replace(pending_sends, Default::default()),
             ),
+            // TODO analyse if this is actually reachable in some wierd case where things were in
+            // the event loop and resolving now etc
             x => unreachable!(
-                "We can handle new connection only because it was previously \
+                "TODO We can handle new connection only because it was previously \
                  initiated: {:?}",
                 x
             ),
@@ -147,7 +149,7 @@ fn handle_new_connection_res(
                     println!("Could not fire event: {:?}", e);
                 }
 
-                should_read = true;
+                should_accept_incoming = true;
             }
             FromPeer::Established {
                 ref mut pending_reads,
@@ -185,7 +187,7 @@ fn handle_new_connection_res(
         };
     });
 
-    if should_read {
+    if should_accept_incoming {
         communicate::read_from_peer(peer_addr, incoming_streams);
     }
 }

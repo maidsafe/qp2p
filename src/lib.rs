@@ -198,7 +198,10 @@ impl Crust {
             initialise_ctx(ctx);
 
             current_thread::spawn(dr.map_err(|e| println!("Error in quinn Driver: {:?}", e)));
-            listener::listen(incoming_connections);
+
+            if our_type != OurType::Client {
+                listener::listen(incoming_connections);
+            }
         });
     }
 

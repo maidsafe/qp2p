@@ -184,7 +184,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                         ToPeer::NoConnection | ToPeer::NotNeeded | ToPeer::Initiated { .. } => {
                             println!(
                                 "TODO Ignoring as we received something from some we are no \
-                                 longer connected to"
+                                 longer or not yet connected to"
                             );
                         }
                         ToPeer::Established { ref q_conn, .. } => dispatch_wire_msg(
