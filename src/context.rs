@@ -127,7 +127,9 @@ impl Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        if self.to_peer.is_established() && self.from_peer.is_established() {
+        if (self.to_peer.is_established() || self.to_peer.is_not_needed())
+            && (self.from_peer.is_established() || self.from_peer.is_not_needed())
+        {
             // No need to log this as this will fire even when the crust handle is dropped and at
             // that point there might be no one listening so sender will error out
             let _ = self.event_tx.send(Event::ConnectionFailure {
@@ -161,7 +163,6 @@ pub enum ToPeer {
 }
 
 impl ToPeer {
-    #[allow(unused)]
     pub fn is_not_needed(&self) -> bool {
         if let ToPeer::NotNeeded = *self {
             true
@@ -236,7 +237,6 @@ pub enum FromPeer {
 }
 
 impl FromPeer {
-    #[allow(unused)]
     pub fn is_not_needed(&self) -> bool {
         if let FromPeer::NotNeeded = *self {
             true
