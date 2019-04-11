@@ -495,6 +495,7 @@ mod tests {
             if !is_addr_unspecified {
                 cfg.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
             }
+            cfg.port = Some(0);
             Crust::with_config(tx, cfg)
         };
 
