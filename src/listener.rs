@@ -58,7 +58,6 @@ fn handle_new_conn(
                     peer_addr,
                     peer_cert_der: peer_cert_der.clone(),
                 };
-
                 let peer = Peer::Node { node_info };
 
                 // TODO come back to all the connected-to events and see if we are handling all

@@ -19,7 +19,7 @@ use std::net::SocketAddr;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
-/// Connect to the give peer
+/// Connect to the given peer
 pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R<()> {
     let peer_addr = peer_info.peer_addr;
 
@@ -131,6 +131,12 @@ fn handle_new_connection_res(
             ),
         };
 
+        let node_info = NodeInfo {
+            peer_addr,
+            peer_cert_der: peer_cert_der.clone(),
+        };
+        c.bootstrap_cache.add_peer(node_info.clone());
+
         match conn.from_peer {
             FromPeer::NoConnection => {
                 communicate::write_to_peer_connection(
@@ -148,12 +154,7 @@ fn handle_new_connection_res(
                     WireMsg::Handshake(Handshake::Client),
                 );
 
-                let node_info = NodeInfo {
-                    peer_addr,
-                    peer_cert_der: peer_cert_der.clone(),
-                };
                 let peer = Peer::Node { node_info };
-
                 if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
                     println!("Could not fire event: {:?}", e);
                 }
@@ -164,23 +165,19 @@ fn handle_new_connection_res(
                 ref mut pending_reads,
                 ..
             } => {
-                let node_info = NodeInfo {
-                    peer_addr,
-                    peer_cert_der: peer_cert_der.clone(),
-                };
                 let peer = Peer::Node { node_info };
-
-                if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
+                if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer: peer.clone() }) {
                     println!("Could not fire event: {:?}", e);
                 }
 
                 for pending_read in pending_reads.drain(..) {
                     communicate::dispatch_wire_msg(
-                        peer_addr,
+                        peer.clone(),
                         &q_conn,
                         c.our_ext_addr_tx.take(),
                         &c.event_tx,
                         pending_read,
+                        &mut c.bootstrap_cache,
                     );
                 }
             }
