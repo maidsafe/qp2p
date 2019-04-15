@@ -1,5 +1,5 @@
 [package]
-name = "using-quinn"
+name = "quic-p2p"
 version = "0.1.0"
 authors = ["ustulation <ustulation@gmail.com>"]
 edition = "2018"

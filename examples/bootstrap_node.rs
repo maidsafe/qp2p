@@ -26,7 +26,7 @@ extern crate serde_derive;
 mod common;
 use common::Rpc;
 
-use using_quinn::{Config, Event, NodeInfo, Peer, QuicP2p, SerialisableCertificate};
+use quic_p2p::{Config, Event, NodeInfo, Peer, QuicP2p, SerialisableCertificate};
 
 use bincode;
 use bytes::Bytes;
