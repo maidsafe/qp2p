@@ -37,6 +37,7 @@ pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R
             .connections
             .entry(peer_addr)
             .or_insert_with(|| Connection::new(peer_addr, event_tx));
+
         if conn.to_peer.is_no_connection() {
             // TODO see if this can be the default from-peer for OurType::Client
             if c.our_type == OurType::Client {
@@ -178,6 +179,7 @@ fn handle_new_connection_res(
                         &c.event_tx,
                         pending_read,
                         &mut c.bootstrap_cache,
+                        conn.we_contacted_peer,
                     );
                 }
             }

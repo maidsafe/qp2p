@@ -238,11 +238,14 @@ impl QuicP2p {
     /// being connected to OR for any other connection failure reasons.
     pub fn connect_to(&mut self, peer_info: NodeInfo) {
         self.el.post(move || {
+            let peer_addr = peer_info.peer_addr;
             if let Err(e) = connect::connect_to(peer_info, None) {
                 println!(
                     "(TODO return this) Could not connect to the asked peer: {}",
                     e
                 );
+            } else {
+                flag_valid_connection(&peer_addr);
             }
         });
     }
@@ -264,8 +267,11 @@ impl QuicP2p {
     /// and then send the message. This can be called multiple times while the peer is still being
     /// connected to - all the sends will be buffered until the peer is connected to.
     pub fn send(&mut self, peer: Peer, msg: bytes::Bytes) {
-        self.el
-            .post(move || communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg)));
+        self.el.post(move || {
+            let peer_addr = peer.peer_addr();
+            communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg));
+            flag_valid_connection(&peer_addr);
+        });
     }
 
     /// Get our connection info to give to others for them to connect to us
@@ -341,6 +347,14 @@ impl QuicP2p {
 
         Ok(unwrap!(rx.recv()))
     }
+}
+
+fn flag_valid_connection(peer_addr: &SocketAddr) {
+    ctx_mut(|c| {
+        if let Some(conn) = c.connections.get_mut(peer_addr) {
+            conn.we_contacted_peer = true;
+        }
+    })
 }
 
 #[cfg(test)]

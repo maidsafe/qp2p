@@ -35,6 +35,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
             .connections
             .entry(peer_addr)
             .or_insert_with(|| Connection::new(peer_addr, event_tx));
+
         match conn.to_peer {
             ToPeer::NoConnection => Some(msg),
             ToPeer::NotNeeded => {
@@ -212,6 +213,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                                 &c.event_tx,
                                 wire_msg,
                                 &mut c.bootstrap_cache,
+                                conn.we_contacted_peer,
                             );
                         }
                     },
@@ -229,6 +231,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                             &c.event_tx,
                             wire_msg,
                             &mut c.bootstrap_cache,
+                            conn.we_contacted_peer,
                         ),
                         ToPeer::Established {
                             ref q_conn,
@@ -245,6 +248,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                                 &c.event_tx,
                                 wire_msg,
                                 &mut c.bootstrap_cache,
+                                conn.we_contacted_peer,
                             );
                         }
                     },
@@ -267,9 +271,12 @@ pub fn dispatch_wire_msg(
     event_tx: &Sender<Event>,
     wire_msg: WireMsg,
     bootstrap_cache: &mut BootstrapCache,
+    we_contacted_peer: bool,
 ) {
     match wire_msg {
-        WireMsg::UserMsg(m) => handle_user_msg(peer, event_tx, m, bootstrap_cache),
+        WireMsg::UserMsg(m) => {
+            handle_user_msg(peer, event_tx, m, bootstrap_cache, we_contacted_peer)
+        }
         WireMsg::EndpointEchoReq => handle_echo_req(peer.peer_addr(), q_conn),
         WireMsg::EndpointEchoResp(our_addr) => handle_echo_resp(our_addr, inform_tx),
         WireMsg::Handshake(_) => unreachable!("Should have been handled already"),
@@ -379,6 +386,7 @@ fn handle_user_msg(
     event_tx: &Sender<Event>,
     msg: bytes::Bytes,
     bootstrap_cache: &mut BootstrapCache,
+    we_contacted_peer: bool,
 ) {
     let peer_addr = peer.peer_addr();
     let new_msg = Event::NewMessage { peer_addr, msg };
@@ -387,7 +395,9 @@ fn handle_user_msg(
     }
 
     if let Peer::Node { node_info } = peer {
-        bootstrap_cache.add_peer(node_info);
+        if we_contacted_peer {
+            bootstrap_cache.add_peer(node_info);
+        }
     }
 }
 

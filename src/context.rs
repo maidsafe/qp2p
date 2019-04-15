@@ -130,6 +130,14 @@ impl Context {
 pub struct Connection {
     pub to_peer: ToPeer,
     pub from_peer: FromPeer,
+
+    /// quic-p2p won't validate incoming peers, it will simply pass them to the upper layer.
+    /// Until we know that these peers are useful/valid for the upper layers, we might refrain
+    /// ourselves from taking specific actions: e.g. putting these peers into the bootstrap cache.
+    /// This flag indicates whether upper layer attempted to connect/send something to the other
+    /// end of this connection.
+    pub we_contacted_peer: bool,
+
     peer_addr: SocketAddr,
     event_tx: Sender<Event>,
 }
@@ -143,6 +151,7 @@ impl Connection {
             from_peer: Default::default(),
             peer_addr,
             event_tx,
+            we_contacted_peer: Default::default(),
         }
     }
 }
