@@ -7,8 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use quic_p2p::Peer;
 use serde_derive::{Deserialize, Serialize};
-use using_quinn::Peer;
 
 /// Remote procedure call for our examples to communicate.
 #[derive(Debug, Serialize, Deserialize)]

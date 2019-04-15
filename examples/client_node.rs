@@ -28,12 +28,12 @@ use clap::{self, App, Arg};
 use common::Rpc;
 use crc::crc32;
 use env_logger;
+use quic_p2p::{Config, Event, NodeInfo, Peer, QuicP2p};
 use rand::{self, RngCore};
 use serde_json;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::mpsc::{channel, Receiver};
-use using_quinn::{Config, Event, NodeInfo, Peer, QuicP2p};
 
 #[derive(Debug)]
 struct CliArgs {

@@ -22,8 +22,8 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use serde_json;
 
+use quic_p2p::{Config, Event, Peer, QuicP2p};
 use std::sync::{Arc, Mutex};
-use using_quinn::{Config, Event, Peer, QuicP2p};
 
 struct PeerList {
     peers: Vec<Peer>,
