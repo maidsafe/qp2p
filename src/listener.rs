@@ -32,8 +32,6 @@ fn handle_new_conn(
     q_conn: quinn::Connection,
     incoming_streams: quinn::IncomingStreams,
 ) {
-    // FIXME: If we don't have a connection to the peer yet, don't wait indefinitely for them to
-    // send in their certificate - have a delay and then log and forget them
     let peer_addr = q_conn.remote_address();
 
     current_thread::spawn(conn_driver.map_err(move |e| {

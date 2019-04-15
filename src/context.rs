@@ -11,10 +11,17 @@ use crate::config::{OurType, SerialisableCertificate};
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
 use std::cell::RefCell;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant};
+use tokio::prelude::Future;
+use tokio::runtime::current_thread;
+use tokio::timer::Delay;
+
+const KILL_INCOMPLETE_CONN_SEC: u64 = 60;
 
 thread_local! {
     pub static CTX: RefCell<Option<Context>> = RefCell::new(None);
@@ -125,6 +132,8 @@ pub struct Connection {
 
 impl Connection {
     pub fn new(peer_addr: SocketAddr, event_tx: Sender<Event>) -> Self {
+        spawn_incomplete_conn_killer(peer_addr);
+
         Self {
             to_peer: Default::default(),
             from_peer: Default::default(),
@@ -298,4 +307,40 @@ impl Drop for FromPeer {
             q_conn.clone().close(0, &[]);
         }
     }
+}
+
+fn spawn_incomplete_conn_killer(peer_addr: SocketAddr) {
+    let leaf =
+        Delay::new(Instant::now() + Duration::from_secs(KILL_INCOMPLETE_CONN_SEC)).then(move |r| {
+            if let Err(e) = r {
+                println!("Error in incomplete connection killer delay: {:?}", e);
+            }
+
+            ctx_mut(|c| {
+                let conn = if let Entry::Occupied(oe) = c.connections.entry(peer_addr) {
+                    oe
+                } else {
+                    return;
+                };
+
+                if (!conn.get().to_peer.is_established() && !conn.get().to_peer.is_not_needed())
+                    || (!conn.get().from_peer.is_established()
+                        && !conn.get().from_peer.is_not_needed())
+                    || (conn.get().to_peer.is_not_needed() && conn.get().from_peer.is_not_needed())
+                {
+                    println!(
+                        "Killing a non-completing connection for peer: {}",
+                        peer_addr
+                    );
+                    conn.remove();
+                }
+            });
+
+            Ok(())
+        });
+
+    // TODO find a way to cancel this timer if we know the connection is done. Otherwise it
+    // might delay a clean exit of event loop if we were to use current_thread::run() instead
+    // of block_on as just now in event_loop.rs
+    current_thread::spawn(leaf);
 }
