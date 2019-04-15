@@ -2,7 +2,7 @@ use crate::{utils, Peer};
 use std::fmt;
 use std::net::SocketAddr;
 
-/// Crust Events to the user
+/// QuicP2p Events to the user
 #[derive(Debug)]
 pub enum Event {
     ConnectionFailure {

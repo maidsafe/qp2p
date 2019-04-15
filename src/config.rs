@@ -10,7 +10,7 @@
 use crate::NodeInfo;
 use std::net::IpAddr;
 
-/// Crust configurations
+/// QuicP2p configurations
 #[derive(Default, Serialize, Deserialize)]
 pub struct Config {
     /// Hard Coded contacts

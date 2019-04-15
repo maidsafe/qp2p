@@ -23,7 +23,7 @@ use rustyline::Editor;
 use serde_json;
 
 use std::sync::{Arc, Mutex};
-use using_quinn::{Config, Crust, Event, Peer};
+use using_quinn::{Config, Event, Peer, QuicP2p};
 
 struct PeerList {
     peers: Vec<Peer>,
@@ -82,7 +82,7 @@ fn main() {
 
     let (ev_tx, ev_rx) = channel();
 
-    let mut crust = Crust::with_config(
+    let mut qp2p = QuicP2p::with_config(
         ev_tx,
         Config {
             port,
@@ -90,9 +90,9 @@ fn main() {
         },
     );
 
-    crust.start_listening();
+    qp2p.start_listening();
 
-    println!("Crust started");
+    println!("QuicP2p started");
 
     let peerlist = Arc::new(Mutex::new(PeerList::new()));
     let peerlist2 = peerlist.clone();
@@ -127,7 +127,7 @@ fn main() {
                 };
                 let mut peerlist = peerlist.lock().unwrap();
                 let result = match cmd {
-                    "ourinfo" => Ok(print_ourinfo(&mut crust)),
+                    "ourinfo" => Ok(print_ourinfo(&mut qp2p)),
                     "addpeer" => peerlist
                         .insert_from_json(&args.collect::<Vec<_>>().join(" "))
                         .and(Ok(())),
@@ -146,7 +146,7 @@ fn main() {
                         .map(|peer| {
                             // FIXME: I've unwrapped this due to API changes - pls handle
                             // appropriately
-                            crust.send(
+                            qp2p.send(
                                 peer.clone(),
                                 Bytes::from(
                                     args.collect::<Vec<_>>().join(" ").as_bytes().to_owned(),
@@ -170,12 +170,12 @@ fn main() {
         }
     }
 
-    drop(crust);
+    drop(qp2p);
     rx_thread.join().unwrap();
 }
 
-fn print_ourinfo(crust: &mut Crust) {
-    let ourinfo = match crust.our_connection_info() {
+fn print_ourinfo(qp2p: &mut QuicP2p) {
+    let ourinfo = match qp2p.our_connection_info() {
         Ok(ourinfo) => ourinfo,
         Err(e) => {
             println!("Error getting ourinfo: {}", e);
