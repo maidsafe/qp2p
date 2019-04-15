@@ -139,7 +139,7 @@ impl Drop for Connection {
         if (self.to_peer.is_established() || self.to_peer.is_not_needed())
             && (self.from_peer.is_established() || self.from_peer.is_not_needed())
         {
-            // No need to log this as this will fire even when the crust handle is dropped and at
+            // No need to log this as this will fire even when the QuicP2p handle is dropped and at
             // that point there might be no one listening so sender will error out
             let _ = self.event_tx.send(Event::ConnectionFailure {
                 peer_addr: self.peer_addr,

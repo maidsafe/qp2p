@@ -13,6 +13,6 @@ use using_quinn::Peer;
 /// Remote procedure call for our examples to communicate.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Rpc {
-    /// Starts the connectivity and data exchange test between us and given Crust peers.
+    /// Starts the connectivity and data exchange test between us and given QuicP2p peers.
     StartTest(Vec<Peer>),
 }

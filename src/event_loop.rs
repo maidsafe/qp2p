@@ -67,7 +67,7 @@ impl EventLoop {
         let (tx, rx) = mpsc::unbounded_channel::<EventLoopMsg>();
 
         let j = unwrap!(thread::Builder::new()
-            .name("Crust-Event-Loop".into())
+            .name("QuicP2p-Event-Loop".into())
             .spawn(move || {
                 let event_loop_future = rx.map_err(|_| ()).for_each(move |ev_loop_msg| {
                     if let Some(mut f) = ev_loop_msg.0 {
@@ -79,7 +79,7 @@ impl EventLoop {
                 });
 
                 let _r = current_thread::block_on_all(event_loop_future);
-                println!("Exiting Crust Event Loop");
+                println!("Exiting QuicP2p Event Loop");
             }));
 
         Self { tx, j: Some(j) }

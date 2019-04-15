@@ -33,7 +33,7 @@ use serde_json;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::mpsc::{channel, Receiver};
-use using_quinn::{Config, Crust, Event, NodeInfo, Peer};
+use using_quinn::{Config, Event, NodeInfo, Peer, QuicP2p};
 
 #[derive(Debug)]
 struct CliArgs {
@@ -41,7 +41,7 @@ struct CliArgs {
 }
 
 struct ClientNode {
-    crust: Crust,
+    qp2p: QuicP2p,
     bootstrap_node_info: NodeInfo,
     /// It's optional just to fight the borrow checker.
     event_rx: Option<Receiver<Event>>,
@@ -72,7 +72,7 @@ fn main() {
 impl ClientNode {
     fn new(bootstrap_node_info: NodeInfo) -> Self {
         let (event_tx, event_rx) = channel();
-        let crust = Crust::with_config(
+        let mut qp2p = QuicP2p::with_config(
             event_tx,
             Config {
                 port: Some(0),
@@ -88,11 +88,11 @@ impl ClientNode {
         let small_msg = Bytes::from(random_data_with_hash(SMALL_MSG_SIZE));
         assert!(hash_correct(&small_msg));
 
-        crust.start_listening();
-        let our_ci = unwrap!(crust.our_connection_info());
+        qp2p.start_listening();
+        let our_ci = unwrap!(qp2p.our_connection_info());
 
         Self {
-            crust,
+            qp2p,
             bootstrap_node_info,
             large_msg,
             small_msg,
@@ -105,7 +105,7 @@ impl ClientNode {
         }
     }
 
-    /// Blocks and reacts to crust events.
+    /// Blocks and reacts to qp2p events.
     fn run(&mut self) {
         info!("Peer started");
 
@@ -113,12 +113,12 @@ impl ClientNode {
         let bootstrap_node = Peer::Node {
             node_info: self.bootstrap_node_info.clone(),
         };
-        self.crust.send(bootstrap_node, Bytes::from(vec![1, 2, 3]));
+        self.qp2p.send(bootstrap_node, Bytes::from(vec![1, 2, 3]));
 
-        self.poll_crust_events();
+        self.poll_qp2p_events();
     }
 
-    fn poll_crust_events(&mut self) {
+    fn poll_qp2p_events(&mut self) {
         let event_rx = unwrap!(self.event_rx.take());
         for event in event_rx.iter() {
             match event {
@@ -139,8 +139,8 @@ impl ClientNode {
         if peer_info == self.bootstrap_node_info {
             info!("Connected to bootstrap node. Waiting for other node contacts...");
         } else if self.client_nodes.contains(&peer_info) {
-            self.crust.send(peer.clone(), self.large_msg.clone());
-            self.crust.send(peer, self.small_msg.clone());
+            self.qp2p.send(peer.clone(), self.large_msg.clone());
+            self.qp2p.send(peer, self.small_msg.clone());
             self.sent_messages += 1;
         }
     }
@@ -194,7 +194,7 @@ impl ClientNode {
                 Peer::Client { .. } => panic!("In this example only Node peers are expected"),
             };
             if conn_info != self.our_ci {
-                self.crust.connect_to(conn_info.clone());
+                self.qp2p.connect_to(conn_info.clone());
                 self.client_nodes.insert(conn_info);
             }
         }
@@ -206,7 +206,7 @@ impl ClientNode {
 }
 
 fn parse_cli_args() -> Result<CliArgs, clap::Error> {
-    let matches = App::new("Crust client node example")
+    let matches = App::new("QuicP2p client node example")
         .about(
             "Client node will be connecting to bootstrap node from which it will receive contacts
             of other client nodes. Then this node will connect with all other client nodes and

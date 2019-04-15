@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 
 const MAX_MESSAGE_SIZE_FOR_SERIALISATION: usize = 1024; // 1 KiB
 
-/// Final type serialised and sent on the wire by Crust
+/// Final type serialised and sent on the wire by QuicP2p
 #[derive(Serialize, Deserialize, Debug)]
 pub enum WireMsg {
     Handshake(Handshake),

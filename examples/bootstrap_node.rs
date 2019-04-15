@@ -26,7 +26,7 @@ extern crate serde_derive;
 mod common;
 use common::Rpc;
 
-use using_quinn::{Config, Crust, Event, NodeInfo, Peer, SerialisableCertificate};
+use using_quinn::{Config, Event, NodeInfo, Peer, QuicP2p, SerialisableCertificate};
 
 use bincode;
 use bytes::Bytes;
@@ -74,14 +74,14 @@ fn main() -> Result<(), io::Error> {
         BootstrapNodeConfig::default()
     });
 
-    // Initialise Crust
+    // Initialise QuicP2p
     let (ev_tx, ev_rx) = channel();
 
-    let (mut crust, our_cert_der) = {
+    let (mut qp2p, our_cert_der) = {
         let our_complete_cert = SerialisableCertificate::default();
         let cert_der = our_complete_cert.cert_der.clone();
         (
-            Crust::with_config(
+            QuicP2p::with_config(
                 ev_tx,
                 Config {
                     our_complete_cert: Some(our_complete_cert),
@@ -93,16 +93,16 @@ fn main() -> Result<(), io::Error> {
             cert_der,
         )
     };
-    crust.start_listening();
+    qp2p.start_listening();
 
-    info!("Crust started on port {}", bootstrap_node_config.port);
+    info!("QuicP2p started on port {}", bootstrap_node_config.port);
 
     let our_conn_info = NodeInfo {
         peer_addr: SocketAddr::from((bootstrap_node_config.ip, bootstrap_node_config.port)),
         peer_cert_der: our_cert_der,
     };
 
-    // let our_conn_info = unwrap!(crust.our_connection_info());
+    // let our_conn_info = unwrap!(qp2p.our_connection_info());
     println!(
         "Our connection info:\n{}\n",
         unwrap!(serde_json::to_string(&our_conn_info)),
@@ -128,8 +128,8 @@ fn main() -> Result<(), io::Error> {
                     let contacts: Vec<_> = connected_peers.values().cloned().collect();
                     let msg = Bytes::from(unwrap!(bincode::serialize(&Rpc::StartTest(contacts))));
                     for peer in connected_peers.values() {
-                        // crust.send(Peer::Node { node_info: peer.clone() }, msg.clone());
-                        crust.send(peer.clone(), msg.clone());
+                        // qp2p.send(Peer::Node { node_info: peer.clone() }, msg.clone());
+                        qp2p.send(peer.clone(), msg.clone());
                     }
                     test_triggered = true;
                 } else if connected_peers.len() >= expected_connections {

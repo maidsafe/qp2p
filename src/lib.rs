@@ -49,8 +49,8 @@ pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
 /// before using a random port.
 pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 
-/// Main Crust instance to communicate with Crust
-pub struct Crust {
+/// Main QuicP2p instance to communicate with QuicP2p
+pub struct QuicP2p {
     event_tx: Sender<Event>,
     cfg: Config,
     us: Option<NodeInfo>,
@@ -106,13 +106,13 @@ impl fmt::Display for NodeInfo {
     }
 }
 
-impl Crust {
-    /// Create a new Crust instance
+impl QuicP2p {
+    /// Create a new QuicP2p instance
     pub fn new(event_tx: Sender<Event>) -> Self {
         Self::with_config(event_tx, Config::read_or_construct_default())
     }
 
-    /// Create a new Crust instance with supplied Configuration
+    /// Create a new QuicP2p instance with supplied Configuration
     pub fn with_config(event_tx: Sender<Event>, cfg: Config) -> Self {
         let el = EventLoop::spawn();
         Self {
@@ -125,7 +125,7 @@ impl Crust {
 
     /// Start listener
     ///
-    /// It is necessary to call this to initialise Crust context within the event loop. Otherwise
+    /// It is necessary to call this to initialise QuicP2p context within the event loop. Otherwise
     /// very limited functionaity will be available.
     pub fn start_listening(&mut self) {
         let (port, is_user_supplied) = self
@@ -329,58 +329,58 @@ mod tests {
     use std::sync::mpsc::{self, Receiver};
 
     #[test]
-    fn dropping_crust_handle_gracefully_shutsdown_event_loop() {
+    fn dropping_qp2p_handle_gracefully_shutsdown_event_loop() {
         let (tx, _rx) = mpsc::channel();
-        let mut crust = Crust::new(tx);
-        crust.start_listening();
+        let mut qp2p = QuicP2p::new(tx);
+        qp2p.start_listening();
     }
 
     #[test]
     fn echo_service() {
-        let (mut crust0, _rx) = new_random_crust_for_unit_test(false, Default::default());
+        let (mut qp2p0, _rx) = new_random_qp2p_for_unit_test(false, Default::default());
 
         // Confirm there's no echo service available for us
-        match crust0.query_ip_echo_service() {
+        match qp2p0.query_ip_echo_service() {
             Ok(_) => panic!("Without Hard Coded Contacts, echo service should not be possible"),
             Err(Error::NoEndpointEchoServerFound) => (),
             Err(e) => panic!("{:?} - {}", e, e),
         }
 
         // Now the only way to obtain info is via querring the quic_ep for the bound address
-        let crust0_info = unwrap!(crust0.our_connection_info());
-        let crust0_port = crust0_info.peer_addr.port();
+        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
+        let qp2p0_port = qp2p0_info.peer_addr.port();
 
-        let (mut crust1, rx1) = new_random_crust_for_unit_test(true, vec![crust0_info.clone()]);
+        let (mut qp2p1, rx1) = new_random_qp2p_for_unit_test(true, vec![qp2p0_info.clone()]);
 
-        // Echo service is availabe through crust0
-        let crust1_port = unwrap!(crust1.query_ip_echo_service()).port();
-        let crust1_info = unwrap!(crust1.our_connection_info());
+        // Echo service is availabe through qp2p0
+        let qp2p1_port = unwrap!(qp2p1.query_ip_echo_service()).port();
+        let qp2p1_info = unwrap!(qp2p1.our_connection_info());
 
-        assert_ne!(crust0_port, crust1_port);
-        assert_eq!(crust1_port, crust1_info.peer_addr.port());
+        assert_ne!(qp2p0_port, qp2p1_port);
+        assert_eq!(qp2p1_port, qp2p1_info.peer_addr.port());
 
-        let (mut crust2, _rx) = new_random_crust_for_unit_test(true, vec![crust0_info.clone()]);
-        let crust2_info = unwrap!(crust2.our_connection_info());
+        let (mut qp2p2, _rx) = new_random_qp2p_for_unit_test(true, vec![qp2p0_info.clone()]);
+        let qp2p2_info = unwrap!(qp2p2.our_connection_info());
 
-        // The two crust can now send data to each other
+        // The two qp2p can now send data to each other
         // Drain the receiver first
         while let Ok(_) = rx1.try_recv() {}
 
         let data = bytes::Bytes::from(vec![12, 13, 14, 253]);
-        crust2.send(crust1_info.into(), data.clone());
+        qp2p2.send(qp2p1_info.into(), data.clone());
 
         match unwrap!(rx1.recv()) {
             Event::ConnectedTo { peer } => assert_eq!(
                 peer,
                 Peer::Node {
-                    node_info: crust2_info.clone()
+                    node_info: qp2p2_info.clone()
                 }
             ),
             x => panic!("Received unexpected event: {:?}", x),
         }
         match unwrap!(rx1.recv()) {
             Event::NewMessage { peer_addr, msg } => {
-                assert_eq!(peer_addr, crust2_info.peer_addr);
+                assert_eq!(peer_addr, qp2p2_info.peer_addr);
                 assert_eq!(msg, data);
             }
             x => panic!("Received unexpected event: {:?}", x),
@@ -389,54 +389,54 @@ mod tests {
 
     #[test]
     fn multistreaming_and_no_head_of_queue_blocking() {
-        let (mut crust0, rx0) = new_random_crust_for_unit_test(false, Default::default());
-        let crust0_info = unwrap!(crust0.our_connection_info());
+        let (mut qp2p0, rx0) = new_random_qp2p_for_unit_test(false, Default::default());
+        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
-        let (mut crust1, rx1) = new_random_crust_for_unit_test(true, vec![crust0_info.clone()]);
-        let crust1_info = unwrap!(crust1.our_connection_info());
+        let (mut qp2p1, rx1) = new_random_qp2p_for_unit_test(true, vec![qp2p0_info.clone()]);
+        let qp2p1_info = unwrap!(qp2p1.our_connection_info());
 
-        let crust0_addr = crust0_info.peer_addr;
-        let crust1_addr = crust1_info.peer_addr;
+        let qp2p0_addr = qp2p0_info.peer_addr;
+        let qp2p1_addr = qp2p1_info.peer_addr;
 
         // 400 MiB message
-        let big_msg_to_crust0 = bytes::Bytes::from(vec![255; 400 * 1024 * 1024]);
-        let big_msg_to_crust0_clone = big_msg_to_crust0.clone();
+        let big_msg_to_qp2p0 = bytes::Bytes::from(vec![255; 400 * 1024 * 1024]);
+        let big_msg_to_qp2p0_clone = big_msg_to_qp2p0.clone();
 
         // very small messages
-        let small_msg0_to_crust0 = bytes::Bytes::from(vec![255, 254, 253, 252]);
-        let small_msg0_to_crust0_clone = small_msg0_to_crust0.clone();
+        let small_msg0_to_qp2p0 = bytes::Bytes::from(vec![255, 254, 253, 252]);
+        let small_msg0_to_qp2p0_clone = small_msg0_to_qp2p0.clone();
 
-        let small_msg1_to_crust0 = bytes::Bytes::from(vec![155, 154, 153, 152]);
-        let small_msg1_to_crust0_clone = small_msg1_to_crust0.clone();
+        let small_msg1_to_qp2p0 = bytes::Bytes::from(vec![155, 154, 153, 152]);
+        let small_msg1_to_qp2p0_clone = small_msg1_to_qp2p0.clone();
 
-        let msg_to_crust1 = bytes::Bytes::from(vec![120, 129, 2]);
-        let msg_to_crust1_clone = msg_to_crust1.clone();
+        let msg_to_qp2p1 = bytes::Bytes::from(vec![120, 129, 2]);
+        let msg_to_qp2p1_clone = msg_to_qp2p1.clone();
 
         let j0 = unwrap!(std::thread::Builder::new()
-            .name("Crust0-test-thread".to_string())
+            .name("QuicP2p0-test-thread".to_string())
             .spawn(move || {
                 match rx0.recv() {
                     Ok(Event::ConnectedTo {
                         peer: Peer::Node { node_info },
-                    }) => assert_eq!(node_info.peer_addr, crust1_addr),
+                    }) => assert_eq!(node_info.peer_addr, qp2p1_addr),
                     Ok(x) => panic!("Expected Event::ConnectedTo - got {:?}", x),
                     Err(e) => panic!(
-                        "Crust0 Expected Event::ConnectedTo; got error: {:?} {}",
+                        "QuicP2p0 Expected Event::ConnectedTo; got error: {:?} {}",
                         e, e
                     ),
                 };
                 for i in 0..3 {
                     match rx0.recv() {
                         Ok(Event::NewMessage { peer_addr, msg }) => {
-                            assert_eq!(peer_addr, crust1_addr);
+                            assert_eq!(peer_addr, qp2p1_addr);
                             if i != 2 {
                                 assert!(
-                                    msg == small_msg0_to_crust0_clone
-                                        || msg == small_msg1_to_crust0_clone
+                                    msg == small_msg0_to_qp2p0_clone
+                                        || msg == small_msg1_to_qp2p0_clone
                                 );
                                 println!("Smaller message {:?} rxd from {}", &*msg, peer_addr)
                             } else {
-                                assert_eq!(msg, big_msg_to_crust0_clone);
+                                assert_eq!(msg, big_msg_to_qp2p0_clone);
                                 println!(
                                     "Big message of size {} rxd from {}",
                                     msg.len(),
@@ -446,33 +446,33 @@ mod tests {
                         }
                         Ok(x) => panic!("Expected Event::NewMessage - got {:?}", x),
                         Err(e) => panic!(
-                            "Crust0 Expected Event::NewMessage; got error: {:?} {}",
+                            "QuicP2p0 Expected Event::NewMessage; got error: {:?} {}",
                             e, e
                         ),
                     };
                 }
             }));
         let j1 = unwrap!(std::thread::Builder::new()
-            .name("Crust1-test-thread".to_string())
+            .name("QuicP2p1-test-thread".to_string())
             .spawn(move || {
                 match rx1.recv() {
                     Ok(Event::ConnectedTo {
                         peer: Peer::Node { node_info },
-                    }) => assert_eq!(node_info.peer_addr, crust0_addr),
+                    }) => assert_eq!(node_info.peer_addr, qp2p0_addr),
                     Ok(x) => panic!("Expected Event::ConnectedTo - got {:?}", x),
                     Err(e) => panic!(
-                        "Crust1 Expected Event::ConnectedTo; got error: {:?} {}",
+                        "QuicP2p1 Expected Event::ConnectedTo; got error: {:?} {}",
                         e, e
                     ),
                 };
                 match rx1.recv() {
                     Ok(Event::NewMessage { peer_addr, msg }) => {
-                        assert_eq!(peer_addr, crust0_addr);
-                        assert_eq!(msg, msg_to_crust1_clone);
+                        assert_eq!(peer_addr, qp2p0_addr);
+                        assert_eq!(msg, msg_to_qp2p1_clone);
                     }
                     Ok(x) => panic!("Expected Event::NewMessage - got {:?}", x),
                     Err(e) => panic!(
-                        "Crust1 Expected Event::NewMessage; got error: {:?} {}",
+                        "QuicP2p1 Expected Event::NewMessage; got error: {:?} {}",
                         e, e
                     ),
                 };
@@ -480,36 +480,36 @@ mod tests {
 
         // Send the biggest message first and we'll assert that it arrives last hence not blocking
         // the rest of smaller messages sent after it
-        crust1.send(crust0_info.clone().into(), big_msg_to_crust0);
-        crust1.send(crust0_info.clone().into(), small_msg0_to_crust0);
+        qp2p1.send(qp2p0_info.clone().into(), big_msg_to_qp2p0);
+        qp2p1.send(qp2p0_info.clone().into(), small_msg0_to_qp2p0);
         // Even after a delay the following small message should arrive before the 1st sent big
         // message
         std::thread::sleep(std::time::Duration::from_millis(100));
-        crust1.send(crust0_info.into(), small_msg1_to_crust0);
+        qp2p1.send(qp2p0_info.into(), small_msg1_to_qp2p0);
 
-        crust0.send(crust1_info.into(), msg_to_crust1);
+        qp2p0.send(qp2p1_info.into(), msg_to_qp2p1);
 
         unwrap!(j0.join());
         unwrap!(j1.join());
     }
 
-    fn new_random_crust_for_unit_test(
+    fn new_random_qp2p_for_unit_test(
         is_addr_unspecified: bool,
         contacts: Vec<NodeInfo>,
-    ) -> (Crust, Receiver<Event>) {
+    ) -> (QuicP2p, Receiver<Event>) {
         let (tx, rx) = mpsc::channel();
-        let mut crust = {
+        let mut qp2p = {
             let mut cfg = Config::with_default_cert();
             cfg.hard_coded_contacts = contacts;
             cfg.port = Some(0);
             if !is_addr_unspecified {
                 cfg.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
             }
-            Crust::with_config(tx, cfg)
+            QuicP2p::with_config(tx, cfg)
         };
 
-        crust.start_listening();
+        qp2p.start_listening();
 
-        (crust, rx)
+        (qp2p, rx)
     }
 }
