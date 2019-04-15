@@ -19,15 +19,13 @@ pub use error::Error;
 pub use event::Event;
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
 
-use crate::bootstrap_cache::BootstrapCache;
-use crate::dirs::Dirs;
+use crate::bootstrap_cache::init_bootstrap_cache;
 use crate::wire_msg::WireMsg;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
-use directories::ProjectDirs;
 use event_loop::EventLoop;
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::mpsc::{self, Sender};
-use std::{fmt, io};
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
@@ -156,6 +154,7 @@ impl QuicP2p {
             .keep_alive_interval_msec
             .unwrap_or(peer_config::DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
         let our_type = self.cfg.our_type;
+        let hard_coded_contacts = self.cfg.hard_coded_contacts.clone();
 
         let tx = self.event_tx.clone();
 
@@ -201,7 +200,7 @@ impl QuicP2p {
                 }
             };
 
-            let bootstrap_cache = match init_bootstrap_cache() {
+            let bootstrap_cache = match init_bootstrap_cache(hard_coded_contacts) {
                 Ok(cache) => cache,
                 Err(e) => {
                     let _ = err_tx.send(Err(e));
@@ -342,15 +341,6 @@ impl QuicP2p {
 
         Ok(unwrap!(rx.recv()))
     }
-}
-
-/// Tries to determine the best location for bootstrap cache and constructs it.
-fn init_bootstrap_cache() -> R<BootstrapCache> {
-    let dirs = ProjectDirs::from("net", "MaidSafe", "quic-p2p")
-        .ok_or_else(|| io::ErrorKind::NotFound.into())
-        .map_err(Error::IoError)?;
-    let dirs = Dirs::Desktop(dirs);
-    BootstrapCache::try_new(&dirs)
 }
 
 #[cfg(test)]
