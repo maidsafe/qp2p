@@ -7,6 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use crate::bootstrap_cache::BootstrapCache;
 use crate::context::{ctx, ctx_mut, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
@@ -34,6 +35,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
             .connections
             .entry(peer_addr)
             .or_insert_with(|| Connection::new(peer_addr, event_tx));
+
         match conn.to_peer {
             ToPeer::NoConnection => Some(msg),
             ToPeer::NotNeeded => {
@@ -196,13 +198,24 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                                  longer or not yet connected to"
                             );
                         }
-                        ToPeer::Established { ref q_conn, .. } => dispatch_wire_msg(
-                            peer_addr,
-                            q_conn,
-                            c.our_ext_addr_tx.take(),
-                            &c.event_tx,
-                            wire_msg,
-                        ),
+                        ToPeer::Established {
+                            ref q_conn,
+                            ref peer_cert_der,
+                        } => {
+                            let node_info = NodeInfo {
+                                peer_addr,
+                                peer_cert_der: peer_cert_der.clone(),
+                            };
+                            dispatch_wire_msg(
+                                node_info.into(),
+                                q_conn,
+                                c.our_ext_addr_tx.take(),
+                                &c.event_tx,
+                                wire_msg,
+                                &mut c.bootstrap_cache,
+                                conn.we_contacted_peer,
+                            );
+                        }
                     },
                     FromPeer::Established {
                         ref q_conn,
@@ -212,20 +225,32 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                             pending_reads.push(wire_msg);
                         }
                         ToPeer::NotNeeded => dispatch_wire_msg(
-                            // Message from a client
-                            peer_addr,
+                            Peer::Client { peer_addr },
                             q_conn,
                             c.our_ext_addr_tx.take(),
                             &c.event_tx,
                             wire_msg,
+                            &mut c.bootstrap_cache,
+                            conn.we_contacted_peer,
                         ),
-                        ToPeer::Established { ref q_conn, .. } => dispatch_wire_msg(
-                            peer_addr,
-                            q_conn,
-                            c.our_ext_addr_tx.take(),
-                            &c.event_tx,
-                            wire_msg,
-                        ),
+                        ToPeer::Established {
+                            ref q_conn,
+                            ref peer_cert_der,
+                        } => {
+                            let node_info = NodeInfo {
+                                peer_addr,
+                                peer_cert_der: peer_cert_der.clone(),
+                            };
+                            dispatch_wire_msg(
+                                node_info.into(),
+                                q_conn,
+                                c.our_ext_addr_tx.take(),
+                                &c.event_tx,
+                                wire_msg,
+                                &mut c.bootstrap_cache,
+                                conn.we_contacted_peer,
+                            );
+                        }
                     },
                     FromPeer::NoConnection => unreachable!(
                         "Cannot have no connection for someone \
@@ -240,15 +265,19 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
 /// Dispatch wire message
 // TODO: Improve by not taking `inform_tx` which is necessary right now to prevent double borrow
 pub fn dispatch_wire_msg(
-    peer_addr: SocketAddr,
+    peer: Peer,
     q_conn: &quinn::Connection,
     inform_tx: Option<Sender<SocketAddr>>,
     event_tx: &Sender<Event>,
     wire_msg: WireMsg,
+    bootstrap_cache: &mut BootstrapCache,
+    we_contacted_peer: bool,
 ) {
     match wire_msg {
-        WireMsg::UserMsg(m) => handle_user_msg(peer_addr, event_tx, m),
-        WireMsg::EndpointEchoReq => handle_echo_req(peer_addr, q_conn),
+        WireMsg::UserMsg(m) => {
+            handle_user_msg(peer, event_tx, m, bootstrap_cache, we_contacted_peer)
+        }
+        WireMsg::EndpointEchoReq => handle_echo_req(peer.peer_addr(), q_conn),
         WireMsg::EndpointEchoResp(our_addr) => handle_echo_resp(our_addr, inform_tx),
         WireMsg::Handshake(_) => unreachable!("Should have been handled already"),
     }
@@ -352,10 +381,23 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
     }
 }
 
-fn handle_user_msg(peer_addr: SocketAddr, event_tx: &Sender<Event>, msg: bytes::Bytes) {
+fn handle_user_msg(
+    peer: Peer,
+    event_tx: &Sender<Event>,
+    msg: bytes::Bytes,
+    bootstrap_cache: &mut BootstrapCache,
+    we_contacted_peer: bool,
+) {
+    let peer_addr = peer.peer_addr();
     let new_msg = Event::NewMessage { peer_addr, msg };
     if let Err(e) = event_tx.send(new_msg) {
         println!("Could not dispatch incoming user message: {:?}", e);
+    }
+
+    if let Peer::Node { node_info } = peer {
+        if we_contacted_peer {
+            bootstrap_cache.add_peer(node_info);
+        }
     }
 }
 

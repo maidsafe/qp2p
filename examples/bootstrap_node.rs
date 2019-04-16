@@ -93,7 +93,7 @@ fn main() -> Result<(), io::Error> {
             cert_der,
         )
     };
-    qp2p.start_listening();
+    unwrap!(qp2p.start_listening());
 
     info!("QuicP2p started on port {}", bootstrap_node_config.port);
 

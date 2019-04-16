@@ -19,6 +19,7 @@ pub use error::Error;
 pub use event::Event;
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
 
+use crate::bootstrap_cache::init_bootstrap_cache;
 use crate::wire_msg::WireMsg;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use event_loop::EventLoop;
@@ -28,10 +29,12 @@ use std::sync::mpsc::{self, Sender};
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
+mod bootstrap_cache;
 mod communicate;
 mod config;
 mod connect;
 mod context;
+mod dirs;
 mod error;
 mod event;
 mod event_loop;
@@ -127,7 +130,7 @@ impl QuicP2p {
     ///
     /// It is necessary to call this to initialise QuicP2p context within the event loop. Otherwise
     /// very limited functionaity will be available.
-    pub fn start_listening(&mut self) {
+    pub fn start_listening(&mut self) -> R<()> {
         let (port, is_user_supplied) = self
             .cfg
             .port
@@ -151,6 +154,7 @@ impl QuicP2p {
             .keep_alive_interval_msec
             .unwrap_or(peer_config::DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
         let our_type = self.cfg.our_type;
+        let hard_coded_contacts = self.cfg.hard_coded_contacts.clone();
 
         let tx = self.event_tx.clone();
 
@@ -166,6 +170,7 @@ impl QuicP2p {
             )
         };
 
+        let (err_tx, err_rx) = mpsc::channel();
         self.el.post(move || {
             let our_cfg = unwrap!(peer_config::new_our_cfg(
                 idle_timeout_msec,
@@ -195,6 +200,13 @@ impl QuicP2p {
                 }
             };
 
+            let bootstrap_cache = match init_bootstrap_cache(hard_coded_contacts) {
+                Ok(cache) => cache,
+                Err(e) => {
+                    let _ = err_tx.send(Err(e));
+                    return;
+                }
+            };
             let ctx = Context::new(
                 tx,
                 our_complete_cert,
@@ -202,6 +214,7 @@ impl QuicP2p {
                 idle_timeout_msec,
                 keep_alive_interval_msec,
                 our_type,
+                bootstrap_cache,
                 ep,
             );
             initialise_ctx(ctx);
@@ -211,18 +224,28 @@ impl QuicP2p {
             if our_type != OurType::Client {
                 listener::listen(incoming_connections);
             }
+
+            let _ = err_tx.send(Ok(()));
         });
+
+        err_rx
+            .recv()
+            .map_err(Error::ChannelRecv)
+            .and_then(|res| res)
     }
 
     /// Connect to the given peer. This will error out if the peer is already in the process of
     /// being connected to OR for any other connection failure reasons.
     pub fn connect_to(&mut self, peer_info: NodeInfo) {
         self.el.post(move || {
+            let peer_addr = peer_info.peer_addr;
             if let Err(e) = connect::connect_to(peer_info, None) {
                 println!(
                     "(TODO return this) Could not connect to the asked peer: {}",
                     e
                 );
+            } else {
+                flag_valid_connection(&peer_addr);
             }
         });
     }
@@ -244,8 +267,11 @@ impl QuicP2p {
     /// and then send the message. This can be called multiple times while the peer is still being
     /// connected to - all the sends will be buffered until the peer is connected to.
     pub fn send(&mut self, peer: Peer, msg: bytes::Bytes) {
-        self.el
-            .post(move || communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg)));
+        self.el.post(move || {
+            let peer_addr = peer.peer_addr();
+            communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg));
+            flag_valid_connection(&peer_addr);
+        });
     }
 
     /// Get our connection info to give to others for them to connect to us
@@ -323,6 +349,14 @@ impl QuicP2p {
     }
 }
 
+fn flag_valid_connection(peer_addr: &SocketAddr) {
+    ctx_mut(|c| {
+        if let Some(conn) = c.connections.get_mut(peer_addr) {
+            conn.we_contacted_peer = true;
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,7 +366,7 @@ mod tests {
     fn dropping_qp2p_handle_gracefully_shutsdown_event_loop() {
         let (tx, _rx) = mpsc::channel();
         let mut qp2p = QuicP2p::new(tx);
-        qp2p.start_listening();
+        unwrap!(qp2p.start_listening());
     }
 
     #[test]
@@ -508,7 +542,7 @@ mod tests {
             QuicP2p::with_config(tx, cfg)
         };
 
-        qp2p.start_listening();
+        unwrap!(qp2p.start_listening());
 
         (qp2p, rx)
     }

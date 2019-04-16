@@ -7,6 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use crate::bootstrap_cache::BootstrapCache;
 use crate::config::{OurType, SerialisableCertificate};
 use crate::event::Event;
 use crate::wire_msg::WireMsg;
@@ -92,6 +93,7 @@ pub struct Context {
     pub idle_timeout_msec: u64,
     pub keep_alive_interval_msec: u32,
     pub our_type: OurType,
+    pub bootstrap_cache: BootstrapCache,
     quic_ep: quinn::Endpoint,
 }
 
@@ -103,6 +105,7 @@ impl Context {
         idle_timeout_msec: u64,
         keep_alive_interval_msec: u32,
         our_type: OurType,
+        bootstrap_cache: BootstrapCache,
         quic_ep: quinn::Endpoint,
     ) -> Self {
         Self {
@@ -114,6 +117,7 @@ impl Context {
             idle_timeout_msec,
             keep_alive_interval_msec,
             our_type,
+            bootstrap_cache,
             quic_ep,
         }
     }
@@ -126,6 +130,14 @@ impl Context {
 pub struct Connection {
     pub to_peer: ToPeer,
     pub from_peer: FromPeer,
+
+    /// quic-p2p won't validate incoming peers, it will simply pass them to the upper layer.
+    /// Until we know that these peers are useful/valid for the upper layers, we might refrain
+    /// ourselves from taking specific actions: e.g. putting these peers into the bootstrap cache.
+    /// This flag indicates whether upper layer attempted to connect/send something to the other
+    /// end of this connection.
+    pub we_contacted_peer: bool,
+
     peer_addr: SocketAddr,
     event_tx: Sender<Event>,
 }
@@ -139,6 +151,7 @@ impl Connection {
             from_peer: Default::default(),
             peer_addr,
             event_tx,
+            we_contacted_peer: Default::default(),
         }
     }
 }

@@ -9,6 +9,7 @@
 
 use std::io;
 use std::net::SocketAddr;
+use std::sync::mpsc;
 
 quick_error! {
     #[derive(Debug)]
@@ -61,5 +62,11 @@ quick_error! {
          OperationNotAllowed {
              display("This operation is not allowed for us")
          }
+        /// Failed receiving from an `mpsc::channel`.
+        ChannelRecv(e: mpsc::RecvError) {
+            display("Channel receive error: {}", e)
+            cause(e)
+            from()
+        }
      }
 }
