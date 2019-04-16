@@ -245,7 +245,7 @@ impl QuicP2p {
                     e
                 );
             } else {
-                flag_valid_connection(&peer_addr);
+                Self::set_we_contacted_peer(&peer_addr);
             }
         });
     }
@@ -270,7 +270,7 @@ impl QuicP2p {
         self.el.post(move || {
             let peer_addr = peer.peer_addr();
             communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg));
-            flag_valid_connection(&peer_addr);
+            Self::set_we_contacted_peer(&peer_addr);
         });
     }
 
@@ -347,14 +347,15 @@ impl QuicP2p {
 
         Ok(unwrap!(rx.recv()))
     }
-}
 
-fn flag_valid_connection(peer_addr: &SocketAddr) {
-    ctx_mut(|c| {
-        if let Some(conn) = c.connections.get_mut(peer_addr) {
-            conn.we_contacted_peer = true;
-        }
-    })
+    #[inline]
+    fn set_we_contacted_peer(peer_addr: &SocketAddr) {
+        ctx_mut(|c| {
+            if let Some(conn) = c.connections.get_mut(peer_addr) {
+                conn.we_contacted_peer = true;
+            }
+        })
+    }
 }
 
 #[cfg(test)]
