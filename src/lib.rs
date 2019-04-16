@@ -25,9 +25,10 @@ use crate::bootstrap_cache::init_bootstrap_cache;
 use crate::wire_msg::WireMsg;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use event_loop::EventLoop;
-use std::fmt;
+use std::collections::VecDeque;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::mpsc::{self, Sender};
+use std::{fmt, mem};
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
@@ -53,6 +54,74 @@ pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.
 pub const DEFAULT_PORT_TO_TRY: u16 = 443;
+
+/// Builder for `QuicP2p`. Convenient for setting various parameters and creating `QuicP2p`.
+pub struct Builder {
+    event_tx: Sender<Event>,
+    cfg: Option<Config>,
+    proxies: VecDeque<NodeInfo>,
+    use_proxies_exclusively: bool,
+}
+
+impl Builder {
+    /// New `Builder`
+    pub fn new(event_tx: Sender<Event>) -> Self {
+        Self {
+            event_tx,
+            cfg: Default::default(),
+            proxies: Default::default(),
+            use_proxies_exclusively: Default::default(),
+        }
+    }
+
+    /// Take proxies from the user.
+    ///
+    /// Either use these exclusively or in addition to the ones read from bootstrap cache file if
+    /// such a file exists
+    pub fn with_proxies(mut self, proxies: VecDeque<NodeInfo>, use_exclusively: bool) -> Self {
+        self.use_proxies_exclusively = use_exclusively;
+
+        if use_exclusively {
+            self.proxies = proxies;
+        } else {
+            self.proxies.extend(proxies.into_iter());
+        }
+
+        self
+    }
+
+    /// Configuration for `QuicP2p`
+    pub fn with_config(mut self, cfg: Config) -> Self {
+        self.cfg = Some(cfg);
+        self
+    }
+
+    /// Construct `QuicP2p` ready to be used with supplied parameters earlier
+    pub fn build(self) -> R<QuicP2p> {
+        let mut qp2p = if let Some(cfg) = self.cfg {
+            QuicP2p::with_config(self.event_tx, cfg)
+        } else {
+            QuicP2p::new(self.event_tx)
+        };
+
+        qp2p.start_listening()?;
+
+        let use_proxies_exclusively = self.use_proxies_exclusively;
+        let proxies = self.proxies;
+
+        qp2p.el.post(move || {
+            ctx_mut(|c| {
+                if use_proxies_exclusively {
+                    let _ = mem::replace(c.bootstrap_cache.peers_mut(), proxies);
+                } else {
+                    c.bootstrap_cache.peers_mut().extend(proxies.into_iter());
+                }
+            })
+        });
+
+        Ok(qp2p)
+    }
+}
 
 /// Main QuicP2p instance to communicate with QuicP2p
 pub struct QuicP2p {

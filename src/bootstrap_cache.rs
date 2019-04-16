@@ -61,9 +61,8 @@ impl BootstrapCache {
         })
     }
 
-    #[allow(unused)]
-    pub fn peers(&self) -> &VecDeque<NodeInfo> {
-        &self.peers
+    pub fn peers_mut(&mut self) -> &mut VecDeque<NodeInfo> {
+        &mut self.peers
     }
 
     /// Caches given peer if it's not in hard coded contacts.
@@ -184,10 +183,10 @@ mod tests {
                 cache.add_peer(rand_peer());
             }
 
-            assert_eq!(cache.peers().len(), 10);
+            assert_eq!(cache.peers.len(), 10);
 
             let cache = unwrap!(BootstrapCache::try_new(&dirs, HashSet::new()));
-            assert_eq!(cache.peers().len(), 10);
+            assert_eq!(cache.peers.len(), 10);
         }
 
         #[test]
@@ -202,7 +201,7 @@ mod tests {
             cache.add_peer(peer1.clone());
             cache.add_peer(peer2.clone());
 
-            let peers: Vec<NodeInfo> = cache.peers().iter().cloned().collect();
+            let peers: Vec<NodeInfo> = cache.peers.iter().cloned().collect();
             assert_eq!(peers, vec![peer2]);
         }
     }
@@ -223,7 +222,7 @@ mod tests {
 
             cache.move_to_cache_top(peer2.clone());
 
-            let peers: Vec<NodeInfo> = cache.peers().iter().cloned().collect();
+            let peers: Vec<NodeInfo> = cache.peers.iter().cloned().collect();
             assert_eq!(peers, vec![peer1, peer3, peer2]);
         }
     }
