@@ -230,10 +230,9 @@ impl QuicP2p {
             let _ = err_tx.send(Ok(()));
         });
 
-        err_rx
-            .recv()
-            .map_err(Error::ChannelRecv)
-            .and_then(|res| res)
+        (err_rx.recv()?)?;
+
+        Ok(())
     }
 
     /// Connect to the given peer. This will error out if the peer is already in the process of
