@@ -35,7 +35,7 @@ pub fn bin_data_format(data: &[u8]) -> String {
 /// Handle error in communication
 #[inline]
 pub fn handle_communication_err(peer_addr: SocketAddr, e: &Error, details: &str) {
-    println!(
+    debug!(
         "ERROR in communication with peer {}: {:?} - {}. Details: {}",
         peer_addr, e, e, details
     );

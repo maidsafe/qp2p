@@ -8,6 +8,8 @@
 // Software.
 
 #[macro_use]
+extern crate log;
+#[macro_use]
 extern crate quick_error;
 #[macro_use]
 extern crate serde_derive;
@@ -191,7 +193,7 @@ impl QuicP2p {
                                 port, e, e
                             );
                         }
-                        println!(
+                        info!(
                             "Failed to bind to port: {} - Error: {:?} - {}. Trying random port.",
                             DEFAULT_PORT_TO_TRY, e, e
                         );
@@ -219,7 +221,7 @@ impl QuicP2p {
             );
             initialise_ctx(ctx);
 
-            current_thread::spawn(dr.map_err(|e| println!("Error in quinn Driver: {:?}", e)));
+            current_thread::spawn(dr.map_err(|e| warn!("Error in quinn Driver: {:?}", e)));
 
             if our_type != OurType::Client {
                 listener::listen(incoming_connections);
@@ -240,7 +242,7 @@ impl QuicP2p {
         self.el.post(move || {
             let peer_addr = peer_info.peer_addr;
             if let Err(e) = connect::connect_to(peer_info, None) {
-                println!(
+                info!(
                     "(TODO return this) Could not connect to the asked peer: {}",
                     e
                 );
@@ -255,7 +257,7 @@ impl QuicP2p {
         self.el.post(move || {
             ctx_mut(|c| {
                 if c.connections.remove(&peer_addr).is_none() {
-                    println!("Asked to disconnect from an unknown peer");
+                    debug!("Asked to disconnect from an unknown peer");
                 }
             })
         });
@@ -469,14 +471,10 @@ mod tests {
                                     msg == small_msg0_to_qp2p0_clone
                                         || msg == small_msg1_to_qp2p0_clone
                                 );
-                                println!("Smaller message {:?} rxd from {}", &*msg, peer_addr)
+                                info!("Smaller message {:?} rxd from {}", &*msg, peer_addr)
                             } else {
                                 assert_eq!(msg, big_msg_to_qp2p0_clone);
-                                println!(
-                                    "Big message of size {} rxd from {}",
-                                    msg.len(),
-                                    peer_addr
-                                );
+                                info!("Big message of size {} rxd from {}", msg.len(), peer_addr);
                             }
                         }
                         Ok(x) => panic!("Expected Event::NewMessage - got {:?}", x),

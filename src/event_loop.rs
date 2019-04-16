@@ -20,7 +20,7 @@ where
 {
     let msg = EventLoopMsg::new(f);
     if let Err(e) = tx.try_send(msg) {
-        println!("Error posting messages to event loop: {:?}", e);
+        warn!("Error posting messages to event loop: {:?}", e);
     }
 }
 
@@ -79,7 +79,7 @@ impl EventLoop {
                 });
 
                 let _r = current_thread::block_on_all(event_loop_future);
-                println!("Exiting QuicP2p Event Loop");
+                debug!("Exiting QuicP2p Event Loop");
             }));
 
         Self { tx, j: Some(j) }
@@ -102,11 +102,11 @@ impl EventLoop {
 impl Drop for EventLoop {
     fn drop(&mut self) {
         if let Err(e) = self.tx.try_send(EventLoopMsg::terminator()) {
-            println!("Error trying to send an event loop terminator: {:?}", e);
+            warn!("Error trying to send an event loop terminator: {:?}", e);
         }
         let j = unwrap!(self.j.take());
         if let Err(e) = j.join() {
-            println!("Error joining the event loop thread: {:?}", e);
+            warn!("Error joining the event loop thread: {:?}", e);
         }
     }
 }

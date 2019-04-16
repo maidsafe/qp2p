@@ -97,7 +97,7 @@ fn handle_new_connection_res(
         conn_driver.map_err(move |e| handle_connect_err(peer_addr, &From::from(e))),
     );
 
-    println!("Successfully connected to peer: {}", peer_addr);
+    trace!("Successfully connected to peer: {}", peer_addr);
 
     let mut should_accept_incoming = false;
 
@@ -105,7 +105,7 @@ fn handle_new_connection_res(
         let conn = match c.connections.get_mut(&peer_addr) {
             Some(conn) => conn,
             None => {
-                println!(
+                trace!(
                     "Made a successful connection to a peer we are no longer interested in or \
                      the peer had its connection to us servered which made us forget this peer: {}",
                     peer_addr
@@ -157,7 +157,7 @@ fn handle_new_connection_res(
 
                 let peer = Peer::Node { node_info };
                 if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
-                    println!("Could not fire event: {:?}", e);
+                    info!("Could not fire event: {:?}", e);
                 }
 
                 should_accept_incoming = true;
@@ -168,7 +168,7 @@ fn handle_new_connection_res(
             } => {
                 let peer = Peer::Node { node_info };
                 if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer: peer.clone() }) {
-                    println!("Could not fire event: {:?}", e);
+                    info!("Could not fire event: {:?}", e);
                 }
 
                 for pending_read in pending_reads.drain(..) {
@@ -201,7 +201,7 @@ fn handle_new_connection_res(
 }
 
 fn handle_connect_err(peer_addr: SocketAddr, e: &Error) {
-    println!(
+    debug!(
         "Error connecting to peer {}: {:?} - Details: {}",
         peer_addr, e, e
     );
@@ -213,7 +213,7 @@ fn handle_connect_err(peer_addr: SocketAddr, e: &Error) {
     ctx_mut(|c| {
         if let Some(conn) = c.connections.remove(&peer_addr) {
             if !conn.from_peer.is_no_connection() {
-                println!(
+                info!(
                     "Peer {} has a connection to us but we couldn't connect to it. \
                      All connections to this peer will now be severed.",
                     peer_addr
