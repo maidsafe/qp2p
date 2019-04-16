@@ -98,6 +98,7 @@ pub struct Context {
 }
 
 impl Context {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         event_tx: Sender<Event>,
         our_complete_cert: SerialisableCertificate,

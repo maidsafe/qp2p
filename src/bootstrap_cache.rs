@@ -118,7 +118,7 @@ fn read_from_disk(filename: &Path) -> R<VecDeque<NodeInfo>> {
             error!("could not open {}: {}", filename.display(), e);
             e.into()
         })
-        .map(|f| BufReader::new(f))
+        .map(BufReader::new)
         .and_then(|mut rdr| deserialize_from(&mut rdr))
         .map_err(|e| {
             error!("could not deserialise {}: {}", filename.display(), e);
@@ -132,7 +132,7 @@ fn write_to_disk(filename: &Path, data: VecDeque<NodeInfo>) -> R<()> {
             error!("could not create {}: {}", filename.display(), e);
             e.into()
         })
-        .map(|f| BufWriter::new(f))
+        .map(BufWriter::new)
         .and_then(|mut rdr| serialize_into(&mut rdr, &data))
         .map_err(|e| {
             error!("could not serialise {}: {}", filename.display(), e);
