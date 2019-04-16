@@ -18,7 +18,7 @@ use tokio::runtime::current_thread;
 /// Start listening
 pub fn listen(incoming_connections: quinn::Incoming) {
     let leaf = incoming_connections
-        .map_err(|()| println!("ERROR: Listener errored out"))
+        .map_err(|()| warn!("ERROR: Listener errored out"))
         .for_each(move |(conn_driver, q_conn, incoming)| {
             handle_new_conn(conn_driver, q_conn, incoming);
             Ok(())
@@ -63,7 +63,7 @@ fn handle_new_conn(
                 // TODO come back to all the connected-to events and see if we are handling all
                 // cases
                 if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
-                    println!("ERROR in informing user about a new peer: {:?} - {}", e, e);
+                    info!("ERROR in informing user about a new peer: {:?} - {}", e, e);
                 }
             }
             None
@@ -73,7 +73,7 @@ fn handle_new_conn(
     });
 
     if let Some(q_conn) = is_duplicate {
-        println!("Not allowing duplicate connection from peer: {}", peer_addr);
+        debug!("Not allowing duplicate connection from peer: {}", peer_addr);
         q_conn.close(0, &[]);
         return;
     }

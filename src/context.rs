@@ -327,7 +327,7 @@ fn spawn_incomplete_conn_killer(peer_addr: SocketAddr) {
     let leaf =
         Delay::new(Instant::now() + Duration::from_secs(KILL_INCOMPLETE_CONN_SEC)).then(move |r| {
             if let Err(e) = r {
-                println!("Error in incomplete connection killer delay: {:?}", e);
+                info!("Error in incomplete connection killer delay: {:?}", e);
             }
 
             ctx_mut(|c| {
@@ -342,7 +342,7 @@ fn spawn_incomplete_conn_killer(peer_addr: SocketAddr) {
                         && !conn.get().from_peer.is_not_needed())
                     || (conn.get().to_peer.is_not_needed() && conn.get().from_peer.is_not_needed())
                 {
-                    println!(
+                    trace!(
                         "Killing a non-completing connection for peer: {}",
                         peer_addr
                     );

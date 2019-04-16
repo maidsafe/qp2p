@@ -39,7 +39,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
         match conn.to_peer {
             ToPeer::NoConnection => Some(msg),
             ToPeer::NotNeeded => {
-                println!("TODO We normally can't get here - ignoring");
+                warn!("TODO We normally can't get here - ignoring");
                 None
             }
             ToPeer::Initiated {
@@ -47,7 +47,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
                 ref mut pending_sends,
             } => {
                 if *peer_cert_der != node_info.peer_cert_der {
-                    println!("TODO Certificate we have for the peer already doesn't match with the \
+                    info!("TODO Certificate we have for the peer already doesn't match with the \
                     one given - we should disconnect to such peers - something fishy going on.");
                 }
                 pending_sends.push(msg);
@@ -63,7 +63,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
     if connect_and_send.is_some() {
         let peer_addr = node_info.peer_addr;
         if let Err(e) = connect::connect_to(node_info, connect_and_send) {
-            println!(
+            debug!(
                 "Unable to connect to peer {} to be able to send message: {:?}",
                 peer_addr, e
             );
@@ -77,7 +77,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
     ctx(|c| {
         let conn = match c.connections.get(&peer_addr) {
             Some(conn) => conn,
-            None => return println!("Asked to communicate with an unknown peer: {}", peer_addr),
+            None => return trace!("Asked to communicate with an unknown peer: {}", peer_addr),
         };
 
         match &conn.to_peer {
@@ -85,7 +85,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
                 if let FromPeer::Established { ref q_conn, .. } = conn.from_peer {
                     write_to_peer_connection(peer_addr, q_conn, msg);
                 } else {
-                    println!(
+                    debug!(
                         "TODO We cannot communicate with someone we are not needing to connect to \
                          and they are not connected to us just now. Peer: {}",
                         peer_addr
@@ -96,7 +96,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
                 write_to_peer_connection(peer_addr, q_conn, msg)
             }
             ToPeer::NoConnection | ToPeer::Initiated { .. } => {
-                return println!(
+                return debug!(
                     "Peer {} is in invalid state {:?} to be communicated to",
                     peer_addr, conn.to_peer
                 );
@@ -139,7 +139,7 @@ pub fn read_from_peer(peer_addr: SocketAddr, incoming_streams: quinn::IncomingSt
         })
         .for_each(move |quic_stream| {
             read_peer_stream(peer_addr, quic_stream).map_err(|e| {
-                println!(
+                debug!(
                     "Error in Incoming-streams while reading from peer {}: {:?} - {}.",
                     peer_addr, e, e
                 )
@@ -181,7 +181,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                 let conn = match c.connections.get_mut(&peer_addr) {
                     Some(conn) => conn,
                     None => {
-                        println!("Rxd wire-message from someone we don't know. Probably it was a \
+                        trace!("Rxd wire-message from someone we don't know. Probably it was a \
                         pending stream when we dropped the peer connection. Ignoring this message \
                         from peer: {}", peer_addr);
                         return;
@@ -193,7 +193,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                     FromPeer::NotNeeded => match conn.to_peer {
                         // Means we are a client
                         ToPeer::NoConnection | ToPeer::NotNeeded | ToPeer::Initiated { .. } => {
-                            println!(
+                            trace!(
                                 "TODO Ignoring as we received something from some we are no \
                                  longer or not yet connected to"
                             );
@@ -293,7 +293,7 @@ fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
         let conn = match c.connections.get_mut(&peer_addr) {
             Some(conn) => conn,
             None => {
-                println!("Rxd handshake from someone we don't know. Probably it was a pending \
+                trace!("Rxd handshake from someone we don't know. Probably it was a pending \
                 stream when we dropped the peer connection. Ignoring this message from peer: {}",
                 peer_addr);
                 return;
@@ -304,7 +304,7 @@ fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
             ToPeer::NoConnection => (),
             ToPeer::NotNeeded | ToPeer::Initiated { .. } | ToPeer::Established { .. } => {
                 // TODO consider booting this peer out
-                println!(
+                debug!(
                     "Illegal handshake message - we have {:?} for the peer",
                     conn.to_peer
                 );
@@ -317,7 +317,7 @@ fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
         let peer = Peer::Client { peer_addr };
 
         if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
-            println!("ERROR in informing user about a new peer: {:?} - {}", e, e);
+            info!("ERROR in informing user about a new peer: {:?} - {}", e, e);
         }
     })
 }
@@ -339,7 +339,7 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
         let conn = match c.connections.get_mut(&peer_addr) {
             Some(conn) => conn,
             None => {
-                println!("Rxd certificate from someone we don't know. Probably it was a pending \
+                trace!("Rxd certificate from someone we don't know. Probably it was a pending \
                 stream when we dropped the peer connection. Ignoring this message from peer: {}",
                 peer_addr);
                 return false;
@@ -349,7 +349,7 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
         match conn.to_peer {
             ToPeer::NoConnection => true,
             ToPeer::NotNeeded => {
-                println!(
+                info!(
                     "TODO received a Node handshake from someone who has introduced oneself \
                      as a client before."
                 );
@@ -362,7 +362,7 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
                 ref peer_cert_der, ..
             } => {
                 if *peer_cert_der != node_info.peer_cert_der {
-                    println!("TODO Certificate we have for the peer already doesn't match with \
+                    info!("TODO Certificate we have for the peer already doesn't match with \
                         the one given - we should disconnect to such peers - something fishy going \
                         on.");
                 }
@@ -373,7 +373,7 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
 
     if reverse_connect_to_peer {
         if let Err(e) = connect::connect_to(node_info, None) {
-            println!(
+            debug!(
                 "ERROR: Could not reverse connect to peer {}: {}",
                 peer_addr, e
             );
@@ -391,7 +391,7 @@ fn handle_user_msg(
     let peer_addr = peer.peer_addr();
     let new_msg = Event::NewMessage { peer_addr, msg };
     if let Err(e) = event_tx.send(new_msg) {
-        println!("Could not dispatch incoming user message: {:?}", e);
+        info!("Could not dispatch incoming user message: {:?}", e);
     }
 
     if let Peer::Node { node_info } = peer {
@@ -409,7 +409,7 @@ fn handle_echo_req(peer_addr: SocketAddr, q_conn: &quinn::Connection) {
 fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAddr>>) {
     if let Some(tx) = inform_tx {
         if let Err(e) = tx.send(our_ext_addr) {
-            println!("Error informing endpoint echo service response: {:?}", e);
+            info!("Error informing endpoint echo service response: {:?}", e);
         }
     }
 }
