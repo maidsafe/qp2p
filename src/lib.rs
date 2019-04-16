@@ -266,6 +266,17 @@ impl QuicP2p {
         Ok(us)
     }
 
+    /// Retrieves current node bootstrap cache.
+    pub fn bootstrap_cache(&mut self) -> R<Vec<NodeInfo>> {
+        let (tx, rx) = mpsc::channel();
+        self.el.post(move || {
+            let cache = ctx(|c| c.bootstrap_cache.peers().iter().cloned().collect());
+            let _ = tx.send(cache);
+        });
+        let cache = rx.recv()?;
+        Ok(cache)
+    }
+
     fn new(event_tx: Sender<Event>) -> Self {
         Self::with_config(event_tx, Config::read_or_construct_default())
     }
@@ -588,6 +599,31 @@ mod tests {
 
         unwrap!(j0.join());
         unwrap!(j1.join());
+    }
+
+    #[test]
+    fn connect_to_marks_that_we_attempted_to_contact_the_peer() {
+        let (mut peer1, _) = new_random_qp2p_for_unit_test(false, vec![]);
+        let peer1_conn_info = unwrap!(peer1.our_connection_info());
+        let peer1_addr = peer1_conn_info.peer_addr;
+
+        let (mut peer2, ev_rx) = new_random_qp2p_for_unit_test(false, vec![]);
+        peer2.connect_to(peer1_conn_info);
+
+        for event in ev_rx.iter() {
+            if let Event::ConnectedTo { .. } = event {
+                break;
+            }
+        }
+
+        let (tx, rx) = mpsc::channel();
+        peer2.el.post(move || {
+            let contacted = ctx(|c| unwrap!(c.connections.get(&peer1_addr)).we_contacted_peer);
+            let _ = tx.send(contacted);
+        });
+        let we_contacted_peer = unwrap!(rx.recv());
+
+        assert!(we_contacted_peer);
     }
 
     fn new_random_qp2p_for_unit_test(

@@ -413,3 +413,40 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAdd
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::testing::{rand_node_info, test_dirs};
+    use std::collections::HashSet;
+    use std::sync::mpsc;
+
+    mod handle_user_msg {
+        use super::*;
+
+        #[test]
+        fn when_peer_is_node_and_we_contacted_it_before_it_is_moved_to_bootstrap_cache_top() {
+            let (event_tx, _event_rx) = mpsc::channel();
+            let peer1 = rand_node_info();
+            let peer2 = rand_node_info();
+            let peer = Peer::Node {
+                node_info: peer1.clone(),
+            };
+            let mut bootstrap_cache =
+                unwrap!(BootstrapCache::try_new(&test_dirs(), HashSet::new()));
+            bootstrap_cache.add_peer(peer1.clone());
+            bootstrap_cache.add_peer(peer2.clone());
+
+            handle_user_msg(
+                peer,
+                &event_tx,
+                bytes::Bytes::from(vec![]),
+                &mut bootstrap_cache,
+                true,
+            );
+
+            let cached_peers: Vec<_> = bootstrap_cache.peers().iter().cloned().collect();
+            assert_eq!(cached_peers, vec![peer2, peer1]);
+        }
+    }
+}
