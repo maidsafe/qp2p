@@ -218,7 +218,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                         // Means we are a client
                         ToPeer::NoConnection | ToPeer::NotNeeded | ToPeer::Initiated { .. } => {
                             trace!(
-                                "TODO Ignoring as we received something from some we are no \
+                                "TODO Ignoring as we received something from someone we are no \
                                  longer or not yet connected to"
                             );
                         }
@@ -441,8 +441,44 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAdd
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils;
     use crate::utils::testing::{rand_node_info, test_dirs};
+    use std::collections::HashSet;
     use std::sync::mpsc;
+
+    // Test for the case of bi-directional stream usage attempt.
+    #[test]
+    fn disallow_bidirectional_streams() {
+        let (mut qp2p0, rx0) = test_utils::new_random_qp2p_for_unit_test(false, Default::default());
+        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
+
+        let (mut qp2p1, rx1) = {
+            let mut hcc: HashSet<_> = Default::default();
+            assert!(hcc.insert(qp2p0_info.clone()));
+            test_utils::new_random_qp2p_for_unit_test(true, hcc)
+        };
+        let qp2p1_info = unwrap!(qp2p1.our_connection_info());
+
+        // Drain the message queues
+        while let Ok(_) = rx1.try_recv() {}
+        while let Ok(_) = rx0.try_recv() {}
+
+        // Create a bi-directional stream and write data
+        qp2p1.el.post(move || {
+            test_utils::write_to_bi_stream(
+                qp2p0_info.peer_addr,
+                WireMsg::UserMsg(From::from("123")),
+            );
+        });
+
+        // The connection should fail because we don't allow bi-directional streams
+        match rx0.recv() {
+            Ok(Event::ConnectionFailure { peer_addr }) => {
+                assert_eq!(peer_addr, qp2p1_info.peer_addr);
+            }
+            r => panic!("Unexpected result {:?}", r),
+        }
+    }
 
     mod handle_user_msg {
         use super::*;
