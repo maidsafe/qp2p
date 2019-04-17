@@ -53,6 +53,8 @@ mod event_loop;
 mod listener;
 mod peer;
 mod peer_config;
+#[cfg(test)]
+mod test_utils;
 mod utils;
 mod wire_msg;
 
@@ -398,8 +400,11 @@ impl QuicP2p {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::wire_msg::{Handshake, WireMsg};
     use std::collections::HashSet;
-    use std::sync::mpsc::{self, Receiver};
+    use std::sync::mpsc::{self, TryRecvError};
+    use std::time::Duration;
+    use test_utils::{new_random_qp2p_for_unit_test, TestClient};
 
     #[test]
     fn dropping_qp2p_handle_gracefully_shutsdown_event_loop() {
@@ -564,13 +569,77 @@ mod tests {
         qp2p1.send(qp2p0_info.clone().into(), small_msg0_to_qp2p0);
         // Even after a delay the following small message should arrive before the 1st sent big
         // message
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(100));
         qp2p1.send(qp2p0_info.into(), small_msg1_to_qp2p0);
 
         qp2p0.send(qp2p1_info.into(), msg_to_qp2p1);
 
         unwrap!(j0.join());
         unwrap!(j1.join());
+    }
+
+    // Test for the case when we send an extra handshake introducing ourselves as a Client after we already
+    // introduced ourselves as a Node. This message should be just ignored and the peer type should not
+    // be changed.
+    #[test]
+    fn double_handshake_node() {
+        let (mut qp2p0, rx0) = new_random_qp2p_for_unit_test(false, Default::default());
+        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
+
+        let (tx1, _rx1) = mpsc::channel();
+        let mut malicious_client = TestClient::new(tx1);
+        unwrap!(malicious_client.activate(OurType::Node));
+        malicious_client.send(
+            qp2p0_info.clone().into(),
+            WireMsg::Handshake(Handshake::Client),
+        );
+
+        std::thread::sleep(Duration::from_millis(10));
+
+        match rx0.try_recv() {
+            Ok(Event::ConnectedTo {
+                peer: Peer::Node { .. },
+            }) => {}
+            r => panic!("Unexpected result {:?}", r),
+        }
+
+        // No more messages expected
+        match rx0.try_recv() {
+            Err(TryRecvError::Empty) => {}
+            r => panic!("Unexpected result {:?}", r),
+        }
+    }
+
+    // Test for the case when we send an extra handshake introducing ourselves as a Node after we already
+    // introduced ourselves as a Client. This message should be just ignored and the peer type should not
+    // be changed.
+    #[test]
+    fn double_handshake_client() {
+        let (mut qp2p0, rx0) = new_random_qp2p_for_unit_test(false, Default::default());
+        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
+
+        let (tx1, _rx1) = mpsc::channel();
+        let mut malicious_client = TestClient::new(tx1);
+        unwrap!(malicious_client.activate(OurType::Client));
+        malicious_client.send(
+            qp2p0_info.clone().into(),
+            WireMsg::Handshake(Handshake::Node { cert_der: vec![] }),
+        );
+
+        std::thread::sleep(Duration::from_millis(10));
+
+        match rx0.try_recv() {
+            Ok(Event::ConnectedTo {
+                peer: Peer::Client { .. },
+            }) => {}
+            r => panic!("Unexpected result {:?}", r),
+        }
+
+        // No more messages expected
+        match rx0.try_recv() {
+            Err(TryRecvError::Empty) => {}
+            r => panic!("Unexpected result {:?}", r),
+        }
     }
 
     #[test]
@@ -596,23 +665,5 @@ mod tests {
         let we_contacted_peer = unwrap!(rx.recv());
 
         assert!(we_contacted_peer);
-    }
-
-    fn new_random_qp2p_for_unit_test(
-        is_addr_unspecified: bool,
-        contacts: HashSet<NodeInfo>,
-    ) -> (QuicP2p, Receiver<Event>) {
-        let (tx, rx) = mpsc::channel();
-        let qp2p = {
-            let mut cfg = Config::with_default_cert();
-            cfg.hard_coded_contacts = contacts;
-            cfg.port = Some(0);
-            if !is_addr_unspecified {
-                cfg.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-            }
-            unwrap!(Builder::new(tx).with_config(cfg).build())
-        };
-
-        (qp2p, rx)
     }
 }
