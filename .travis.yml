@@ -16,7 +16,10 @@ before_script:
     fi
   - rustup component add rustfmt clippy
 script:
-  - cargo fmt -- --check &&
-    cargo test --verbose --release
+  - cargo fmt -- --check
+  - if [ "${TRAVIS_OS_NAME}" = linux ]; then
+      cargo clippy --verbose --release --all-targets ;
+    fi
+  - cargo test --verbose --release
 before_cache:
   - cargo prune
