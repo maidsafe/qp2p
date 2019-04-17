@@ -28,7 +28,7 @@ use clap::{self, App, Arg};
 use common::Rpc;
 use crc::crc32;
 use env_logger;
-use quic_p2p::{Config, Event, NodeInfo, Peer, QuicP2p};
+use quic_p2p::{Builder, Config, Event, NodeInfo, Peer, QuicP2p};
 use rand::{self, RngCore};
 use serde_json;
 use std::collections::{HashMap, HashSet};
@@ -72,15 +72,14 @@ fn main() {
 impl ClientNode {
     fn new(bootstrap_node_info: NodeInfo) -> Self {
         let (event_tx, event_rx) = channel();
-        let mut qp2p = QuicP2p::with_config(
-            event_tx,
-            Config {
+        let mut qp2p = unwrap!(Builder::new(event_tx)
+            .with_config(Config {
                 port: Some(0),
                 hard_coded_contacts: vec![bootstrap_node_info.clone()],
                 idle_timeout_msec: Some(0),
                 ..Default::default()
-            },
-        );
+            },)
+            .build());
 
         let large_msg = Bytes::from(random_data_with_hash(LARGE_MSG_SIZE));
         assert!(hash_correct(&large_msg));
@@ -88,7 +87,6 @@ impl ClientNode {
         let small_msg = Bytes::from(random_data_with_hash(SMALL_MSG_SIZE));
         assert!(hash_correct(&small_msg));
 
-        unwrap!(qp2p.start_listening());
         let our_ci = unwrap!(qp2p.our_connection_info());
 
         Self {

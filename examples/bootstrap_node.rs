@@ -26,7 +26,7 @@ extern crate serde_derive;
 mod common;
 use common::Rpc;
 
-use quic_p2p::{Config, Event, NodeInfo, Peer, QuicP2p, SerialisableCertificate};
+use quic_p2p::{Builder, Config, Event, NodeInfo, Peer, SerialisableCertificate};
 
 use bincode;
 use bytes::Bytes;
@@ -81,19 +81,17 @@ fn main() -> Result<(), io::Error> {
         let our_complete_cert = SerialisableCertificate::default();
         let cert_der = our_complete_cert.cert_der.clone();
         (
-            QuicP2p::with_config(
-                ev_tx,
-                Config {
+            unwrap!(Builder::new(ev_tx)
+                .with_config(Config {
                     our_complete_cert: Some(our_complete_cert),
                     port: Some(bootstrap_node_config.port),
                     ip: Some(IpAddr::V4(bootstrap_node_config.ip)),
                     ..Default::default()
-                },
-            ),
+                },)
+                .build()),
             cert_der,
         )
     };
-    unwrap!(qp2p.start_listening());
 
     info!("QuicP2p started on port {}", bootstrap_node_config.port);
 

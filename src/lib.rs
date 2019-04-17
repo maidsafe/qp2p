@@ -90,13 +90,15 @@ impl Builder {
         self
     }
 
-    /// Configuration for `QuicP2p`
+    /// Configuration for `QuicP2p`.
+    ///
+    /// If not specified it'll call `Config::read_or_construct_default()`
     pub fn with_config(mut self, cfg: Config) -> Self {
         self.cfg = Some(cfg);
         self
     }
 
-    /// Construct `QuicP2p` ready to be used with supplied parameters earlier
+    /// Construct `QuicP2p` with supplied parameters earlier, ready to be used.
     pub fn build(self) -> R<QuicP2p> {
         let mut qp2p = if let Some(cfg) = self.cfg {
             QuicP2p::with_config(self.event_tx, cfg)
@@ -104,7 +106,7 @@ impl Builder {
             QuicP2p::new(self.event_tx)
         };
 
-        qp2p.start_listening()?;
+        qp2p.activate()?;
 
         let use_proxies_exclusively = self.use_proxies_exclusively;
         let proxies = self.proxies;
@@ -181,13 +183,94 @@ impl fmt::Display for NodeInfo {
 }
 
 impl QuicP2p {
-    /// Create a new QuicP2p instance
-    pub fn new(event_tx: Sender<Event>) -> Self {
+    /// Connect to the given peer. This will error out if the peer is already in the process of
+    /// being connected to OR for any other connection failure reasons.
+    pub fn connect_to(&mut self, peer_info: NodeInfo) {
+        self.el.post(move || {
+            let peer_addr = peer_info.peer_addr;
+            if let Err(e) = connect::connect_to(peer_info, None) {
+                info!(
+                    "(TODO return this) Could not connect to the asked peer: {}",
+                    e
+                );
+            } else {
+                Self::set_we_contacted_peer(&peer_addr);
+            }
+        });
+    }
+
+    /// Disconnect from the given peer
+    pub fn disconnect_from(&mut self, peer_addr: SocketAddr) {
+        self.el.post(move || {
+            ctx_mut(|c| {
+                if c.connections.remove(&peer_addr).is_none() {
+                    debug!("Asked to disconnect from an unknown peer");
+                }
+            })
+        });
+    }
+
+    /// Send message to peer.
+    ///
+    /// If the peer is not connected, it will attempt to connect to it first
+    /// and then send the message. This can be called multiple times while the peer is still being
+    /// connected to - all the sends will be buffered until the peer is connected to.
+    pub fn send(&mut self, peer: Peer, msg: bytes::Bytes) {
+        self.el.post(move || {
+            let peer_addr = peer.peer_addr();
+            communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg));
+            Self::set_we_contacted_peer(&peer_addr);
+        });
+    }
+
+    /// Get our connection info to give to others for them to connect to us
+    ///
+    /// Will use hard coded contacts to ask for our endpoint. If no contact is given then we'll
+    /// simply build our connection info by querying the underlying bound socket for our address.
+    /// Note that if such an obtained address is of unspecified category we will ignore that as
+    /// such an address cannot be reached and hence not useful.
+    // FIXME calling this mutliple times concurrently just now could have it hanging as only one tx
+    // is registered and that replaces any previous tx registered. Fix by using a vec of txs
+    pub fn our_connection_info(&mut self) -> R<NodeInfo> {
+        if let Some(ref us) = self.us {
+            return Ok(us.clone());
+        }
+
+        let our_addr = match self.query_ip_echo_service() {
+            Ok(addr) => addr,
+            Err(e @ Error::NoEndpointEchoServerFound) => {
+                let (tx, rx) = mpsc::channel();
+                self.el.post(move || {
+                    let local_addr_res = ctx(|c| c.quic_ep().local_addr());
+                    unwrap!(tx.send(local_addr_res));
+                });
+                let addr = unwrap!(rx.recv())?;
+                if addr.ip().is_unspecified() {
+                    return Err(e);
+                } else {
+                    addr
+                }
+            }
+            Err(e) => return Err(e),
+        };
+
+        let our_cert_der = self.our_certificate_der();
+
+        let us = NodeInfo {
+            peer_addr: our_addr,
+            peer_cert_der: our_cert_der,
+        };
+
+        self.us = Some(us.clone());
+
+        Ok(us)
+    }
+
+    fn new(event_tx: Sender<Event>) -> Self {
         Self::with_config(event_tx, Config::read_or_construct_default())
     }
 
-    /// Create a new QuicP2p instance with supplied Configuration
-    pub fn with_config(event_tx: Sender<Event>, cfg: Config) -> Self {
+    fn with_config(event_tx: Sender<Event>, cfg: Config) -> Self {
         let el = EventLoop::spawn();
         Self {
             event_tx,
@@ -197,11 +280,8 @@ impl QuicP2p {
         }
     }
 
-    /// Start listener
-    ///
-    /// It is necessary to call this to initialise QuicP2p context within the event loop. Otherwise
-    /// very limited functionaity will be available.
-    pub fn start_listening(&mut self) -> R<()> {
+    /// Must be called only once. There can only be one context per `QuicP2p` instance.
+    fn activate(&mut self) -> R<()> {
         let (port, is_user_supplied) = self
             .cfg
             .port
@@ -304,89 +384,6 @@ impl QuicP2p {
         Ok(())
     }
 
-    /// Connect to the given peer. This will error out if the peer is already in the process of
-    /// being connected to OR for any other connection failure reasons.
-    pub fn connect_to(&mut self, peer_info: NodeInfo) {
-        self.el.post(move || {
-            let peer_addr = peer_info.peer_addr;
-            if let Err(e) = connect::connect_to(peer_info, None) {
-                info!(
-                    "(TODO return this) Could not connect to the asked peer: {}",
-                    e
-                );
-            } else {
-                Self::set_we_contacted_peer(&peer_addr);
-            }
-        });
-    }
-
-    /// Disconnect from the given peer
-    pub fn disconnect_from(&mut self, peer_addr: SocketAddr) {
-        self.el.post(move || {
-            ctx_mut(|c| {
-                if c.connections.remove(&peer_addr).is_none() {
-                    debug!("Asked to disconnect from an unknown peer");
-                }
-            })
-        });
-    }
-
-    /// Send message to peer.
-    ///
-    /// If the peer is not connected, it will attempt to connect to it first
-    /// and then send the message. This can be called multiple times while the peer is still being
-    /// connected to - all the sends will be buffered until the peer is connected to.
-    pub fn send(&mut self, peer: Peer, msg: bytes::Bytes) {
-        self.el.post(move || {
-            let peer_addr = peer.peer_addr();
-            communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg));
-            Self::set_we_contacted_peer(&peer_addr);
-        });
-    }
-
-    /// Get our connection info to give to others for them to connect to us
-    ///
-    /// Will use hard coded contacts to ask for our endpoint. If no contact is given then we'll
-    /// simply build our connection info by querying the underlying bound socket for our address.
-    /// Note that if such an obtained address is of unspecified category we will ignore that as
-    /// such an address cannot be reached and hence not useful.
-    // FIXME calling this mutliple times concurrently just now could have it hanging as only one tx
-    // is registered and that replaces any previous tx registered. Fix by using a vec of txs
-    pub fn our_connection_info(&mut self) -> R<NodeInfo> {
-        if let Some(ref us) = self.us {
-            return Ok(us.clone());
-        }
-
-        let our_addr = match self.query_ip_echo_service() {
-            Ok(addr) => addr,
-            Err(e @ Error::NoEndpointEchoServerFound) => {
-                let (tx, rx) = mpsc::channel();
-                self.el.post(move || {
-                    let local_addr_res = ctx(|c| c.quic_ep().local_addr());
-                    unwrap!(tx.send(local_addr_res));
-                });
-                let addr = unwrap!(rx.recv())?;
-                if addr.ip().is_unspecified() {
-                    return Err(e);
-                } else {
-                    addr
-                }
-            }
-            Err(e) => return Err(e),
-        };
-
-        let our_cert_der = self.our_certificate_der();
-
-        let us = NodeInfo {
-            peer_addr: our_addr,
-            peer_cert_der: our_cert_der,
-        };
-
-        self.us = Some(us.clone());
-
-        Ok(us)
-    }
-
     fn our_certificate_der(&mut self) -> Vec<u8> {
         let (tx, rx) = mpsc::channel();
 
@@ -436,8 +433,7 @@ mod tests {
     #[test]
     fn dropping_qp2p_handle_gracefully_shutsdown_event_loop() {
         let (tx, _rx) = mpsc::channel();
-        let mut qp2p = QuicP2p::new(tx);
-        unwrap!(qp2p.start_listening());
+        let _qp2p = unwrap!(Builder::new(tx).build());
     }
 
     #[test]
@@ -599,17 +595,15 @@ mod tests {
         contacts: Vec<NodeInfo>,
     ) -> (QuicP2p, Receiver<Event>) {
         let (tx, rx) = mpsc::channel();
-        let mut qp2p = {
+        let qp2p = {
             let mut cfg = Config::with_default_cert();
             cfg.hard_coded_contacts = contacts;
             cfg.port = Some(0);
             if !is_addr_unspecified {
                 cfg.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
             }
-            QuicP2p::with_config(tx, cfg)
+            unwrap!(Builder::new(tx).with_config(cfg).build())
         };
-
-        unwrap!(qp2p.start_listening());
 
         (qp2p, rx)
     }

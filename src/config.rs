@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::NodeInfo;
+use crate::{NodeInfo, R};
 use std::net::IpAddr;
 
 /// QuicP2p configurations
@@ -40,12 +40,34 @@ pub struct Config {
 }
 
 impl Config {
+    /// Try and read the config off the disk first and failing that create a default one. It will
+    /// try write the default constructed one to the disk.
     pub fn read_or_construct_default() -> Config {
-        // FIXME 1st try reading from the disk
-        Default::default()
+        match Self::read_config() {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                debug!("Failed to read off the disk: {:?} - {}", e, e);
+                let cfg = Self::with_default_cert();
+                // FIXME write this config to the disk. If error then simply log an `info!` and
+                // carry on - don't error out completely
+                cfg
+            }
+        }
     }
 
+    // FIXME Implement this
+    /// Read the Config off the disk
+    pub fn read_config() -> R<Config> {
+        Err(From::from(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Unimplemented",
+        )))
+    }
+
+    /// Create a default Config with random Certificate
     pub fn with_default_cert() -> Config {
+        trace!("Constructing default Config");
+
         Self {
             our_complete_cert: Some(Default::default()),
             ..Self::default()
