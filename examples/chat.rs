@@ -22,7 +22,7 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use serde_json;
 
-use quic_p2p::{Config, Event, Peer, QuicP2p};
+use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
 use std::sync::{Arc, Mutex};
 
 struct PeerList {
@@ -82,15 +82,13 @@ fn main() {
 
     let (ev_tx, ev_rx) = channel();
 
-    let mut qp2p = QuicP2p::with_config(
-        ev_tx,
-        Config {
+    let mut qp2p = unwrap!(Builder::new(ev_tx)
+        .with_config(Config {
             port,
             ..Default::default()
-        },
-    );
+        },)
+        .build());
 
-    unwrap!(qp2p.start_listening());
     println!("QuicP2p started");
 
     let peerlist = Arc::new(Mutex::new(PeerList::new()));
