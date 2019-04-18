@@ -331,8 +331,8 @@ impl QuicP2p {
                 our_complete_cert,
             )
         };
+        let bootstrap_cache = init_bootstrap_cache(hard_coded_contacts)?;
 
-        let (err_tx, err_rx) = mpsc::channel();
         self.el.post(move || {
             let our_cfg = unwrap!(peer_config::new_our_cfg(
                 idle_timeout_msec,
@@ -362,13 +362,6 @@ impl QuicP2p {
                 }
             };
 
-            let bootstrap_cache = match init_bootstrap_cache(hard_coded_contacts) {
-                Ok(cache) => cache,
-                Err(e) => {
-                    let _ = err_tx.send(Err(e));
-                    return;
-                }
-            };
             let ctx = Context::new(
                 tx,
                 our_complete_cert,
@@ -386,11 +379,7 @@ impl QuicP2p {
             if our_type != OurType::Client {
                 listener::listen(incoming_connections);
             }
-
-            let _ = err_tx.send(Ok(()));
         });
-
-        (err_rx.recv()?)?;
 
         Ok(())
     }
