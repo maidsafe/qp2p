@@ -47,10 +47,9 @@ impl Config {
             Ok(cfg) => cfg,
             Err(e) => {
                 debug!("Failed to read off the disk: {:?} - {}", e, e);
-                let cfg = Self::with_default_cert();
                 // FIXME write this config to the disk. If error then simply log an `info!` and
                 // carry on - don't error out completely
-                cfg
+                Self::with_default_cert()
             }
         }
     }
