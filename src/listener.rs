@@ -10,7 +10,7 @@
 use crate::communicate;
 use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
 use crate::event::Event;
-use crate::utils;
+use crate::utils::{self, QConn};
 use crate::{NodeInfo, Peer};
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
@@ -32,6 +32,8 @@ fn handle_new_conn(
     q_conn: quinn::Connection,
     incoming_streams: quinn::IncomingStreams,
 ) {
+    let q_conn = QConn::from(q_conn);
+
     let peer_addr = q_conn.remote_address();
 
     current_thread::spawn(conn_driver.map_err(move |e| {
@@ -72,9 +74,8 @@ fn handle_new_conn(
         }
     });
 
-    if let Some(q_conn) = is_duplicate {
+    if let Some(_q_conn) = is_duplicate {
         debug!("Not allowing duplicate connection from peer: {}", peer_addr);
-        q_conn.close(0, &[]);
         return;
     }
 

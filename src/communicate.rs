@@ -11,7 +11,7 @@ use crate::bootstrap_cache::BootstrapCache;
 use crate::context::{ctx, ctx_mut, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
-use crate::utils;
+use crate::utils::{self, QConn};
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{connect, NodeInfo};
 use crate::{Peer, R};
@@ -107,11 +107,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
 }
 
 /// Write to the peer, given the QUIC connection to it
-pub fn write_to_peer_connection(
-    peer_addr: SocketAddr,
-    conn: &quinn::Connection,
-    wire_msg: WireMsg,
-) {
+pub fn write_to_peer_connection(peer_addr: SocketAddr, conn: &QConn, wire_msg: WireMsg) {
     let leaf = conn
         .open_uni()
         .map_err(move |e| {
@@ -267,7 +263,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
 // TODO: Improve by not taking `inform_tx` which is necessary right now to prevent double borrow
 pub fn dispatch_wire_msg(
     peer: Peer,
-    q_conn: &quinn::Connection,
+    q_conn: &QConn,
     inform_tx: Option<Sender<SocketAddr>>,
     event_tx: &Sender<Event>,
     wire_msg: WireMsg,
@@ -402,7 +398,7 @@ fn handle_user_msg(
     }
 }
 
-fn handle_echo_req(peer_addr: SocketAddr, q_conn: &quinn::Connection) {
+fn handle_echo_req(peer_addr: SocketAddr, q_conn: &QConn) {
     let msg = WireMsg::EndpointEchoResp(peer_addr);
     write_to_peer_connection(peer_addr, q_conn, msg);
 }
