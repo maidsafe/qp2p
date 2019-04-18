@@ -136,7 +136,9 @@ fn handle_new_connection_res(
             peer_addr,
             peer_cert_der: peer_cert_der.clone(),
         };
-        c.bootstrap_cache.add_peer(node_info.clone());
+        if conn.we_contacted_peer {
+            c.bootstrap_cache.add_peer(node_info.clone());
+        }
 
         match conn.from_peer {
             FromPeer::NoConnection => {
