@@ -141,6 +141,7 @@ pub enum Peer {
 }
 
 impl Peer {
+    /// Get peer's Endpoint
     pub fn peer_addr(&self) -> SocketAddr {
         match *self {
             Peer::Node { ref node_info } => node_info.peer_addr,
@@ -148,6 +149,12 @@ impl Peer {
         }
     }
 
+    /// Get peer's Certificate
+    ///
+    /// If the peer was a node then the function returns the certificate used by it. For clients it
+    /// is not useful in our network to share certificates as we don't reverse connect to the
+    /// clients. Due to absence of the knowledge of client's certificate (as it's not exchanged in
+    /// handshake) this function retuns `None` for client peers.
     pub fn peer_cert_der(&self) -> Option<&[u8]> {
         match *self {
             Peer::Node { ref node_info } => Some(&node_info.peer_cert_der),
@@ -161,7 +168,9 @@ impl Peer {
 /// This is a necessary information needed to connect to someone.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub struct NodeInfo {
+    /// Endpoint of the node
     pub peer_addr: SocketAddr,
+    /// Certificate of the node
     pub peer_cert_der: Vec<u8>,
 }
 
