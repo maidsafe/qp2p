@@ -22,6 +22,8 @@ use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 use tokio::timer::Delay;
 
+pub type Terminator = tokio::sync::mpsc::Sender<()>;
+
 const KILL_INCOMPLETE_CONN_SEC: u64 = 60;
 
 thread_local! {
@@ -185,6 +187,7 @@ pub enum ToPeer {
     NoConnection,
     NotNeeded,
     Initiated {
+        terminator: Terminator,
         peer_cert_der: Vec<u8>,
         pending_sends: Vec<WireMsg>,
     },
@@ -253,8 +256,14 @@ impl fmt::Debug for ToPeer {
 
 impl Drop for ToPeer {
     fn drop(&mut self) {
-        if let ToPeer::Established { ref q_conn, .. } = *self {
-            q_conn.clone().close(0, &[]);
+        match *self {
+            ToPeer::NotNeeded | ToPeer::NoConnection => {}
+            ToPeer::Initiated {
+                ref mut terminator, ..
+            } => {
+                let _ = terminator.try_send(());
+            }
+            ToPeer::Established { ref q_conn, .. } => q_conn.clone().close(0, &[]),
         }
     }
 }

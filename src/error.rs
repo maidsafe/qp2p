@@ -62,6 +62,11 @@ quick_error! {
          OperationNotAllowed {
              display("This operation is not allowed for us")
          }
+        /// Connection Cancelled
+        ConnectionCancelled {
+            display("Connection was actively cancelled")
+            from()
+        }
         /// Failed receiving from an `mpsc::channel`.
         ChannelRecv(e: mpsc::RecvError) {
             display("Channel receive error: {}", e)

@@ -8,7 +8,7 @@
 // Software.
 
 use crate::config::OurType;
-use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
+use crate::context::{Terminator, ctx_mut, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
 use crate::peer_config;
@@ -16,11 +16,11 @@ use crate::wire_msg::{Handshake, WireMsg};
 use crate::{communicate, NodeInfo, Peer, R};
 use std::mem;
 use std::net::SocketAddr;
-use tokio::prelude::Future;
+use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
 /// Connect to the given peer
-pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R<()> {
+pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R<Terminator> {
     let peer_addr = peer_info.peer_addr;
 
     let peer_cfg = match peer_config::new_client_cfg(&peer_info.peer_cert_der) {
@@ -50,7 +50,9 @@ pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R
             if let Some(pending_send) = send_after_connect {
                 pending_sends.push(pending_send);
             }
+            let (terminator, rx) = tokio::sync::mpsc::channel::<()>(1);
             conn.to_peer = ToPeer::Initiated {
+                terminator: terminator.clone(),
                 peer_cert_der: peer_info.peer_cert_der,
                 pending_sends,
             };
@@ -58,13 +60,27 @@ pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R
             c.quic_ep()
                 .connect_with(peer_cfg, &peer_addr, "MaidSAFE.net")
                 .map_err(Error::from)
-                .map(move |new_client_conn_fut| {
-                    let leaf = new_client_conn_fut.then(move |new_peer_conn_res| {
-                        handle_new_connection_res(peer_addr, new_peer_conn_res);
-                        Ok(())
-                    });
+                .and_then(move |new_client_conn_fut| {
+                    let terminator_leaf = rx
+                        .map_err(move |_| {
+                            handle_connect_err(peer_addr, &Error::ConnectionCancelled)
+                        })
+                        .for_each(move |_| {
+                            handle_connect_err(peer_addr, &Error::ConnectionCancelled);
+                            Err(())
+                        });
+                    let handle_new_connection_res_leaf =
+                        new_client_conn_fut.then(move |new_peer_conn_res| {
+                            handle_new_connection_res(peer_addr, new_peer_conn_res);
+                            Ok::<_, ()>(())
+                        });
+                    let leaf = terminator_leaf
+                        .select(handle_new_connection_res_leaf)
+                        .then(|_| Ok(()));
 
                     current_thread::spawn(leaf);
+
+                    Ok(terminator)
                 })
         } else {
             Err(Error::DuplicateConnectionToPeer(peer_addr))
@@ -119,6 +135,7 @@ fn handle_new_connection_res(
             ToPeer::Initiated {
                 ref mut peer_cert_der,
                 ref mut pending_sends,
+                ..
             } => (
                 mem::replace(peer_cert_der, Default::default()),
                 mem::replace(pending_sends, Default::default()),
