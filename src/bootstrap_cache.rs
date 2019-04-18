@@ -160,74 +160,72 @@ fn write_to_disk(filename: &Path, data: VecDeque<NodeInfo>) -> R<()> {
 mod tests {
     use super::*;
     use crate::utils::testing::{rand_node_info, test_dirs};
+    use speculate::speculate;
 
-    mod add_peer {
-        use super::*;
-
-        #[test]
-        fn when_10_peers_are_added_they_are_synced_to_disk() {
+    speculate! {
+        before {
             let dirs = test_dirs();
+            #[allow(unused)]
             let mut cache = unwrap!(BootstrapCache::try_new(&dirs, HashSet::new()));
+        }
 
-            for _ in 0..10 {
-                cache.add_peer(rand_node_info());
+        describe "add_peer" {
+            describe "when 10 peers are added" {
+                before {
+                    for _ in 0..10 {
+                        cache.add_peer(rand_node_info());
+                    }
+                }
+
+                it "syncs cache to disk" {
+                    assert_eq!(cache.peers.len(), 10);
+
+                    let cache = unwrap!(BootstrapCache::try_new(&dirs, HashSet::new()));
+                    assert_eq!(cache.peers.len(), 10);
+                }
             }
 
-            assert_eq!(cache.peers.len(), 10);
+            describe "when given peer is in hard coded contacts" {
+                it "does not cache this peer" {
+                    let peer1 = rand_node_info();
+                    let peer2 = rand_node_info();
+                    let hard_coded = vec![peer1.clone()].iter().cloned().collect();
 
-            let cache = unwrap!(BootstrapCache::try_new(&dirs, HashSet::new()));
-            assert_eq!(cache.peers.len(), 10);
-        }
+                    let mut cache = unwrap!(BootstrapCache::try_new(&dirs, hard_coded));
 
-        #[test]
-        fn when_given_peer_is_in_hard_coded_contacts_it_is_not_cached() {
-            let peer1 = rand_node_info();
-            let peer2 = rand_node_info();
-            let hard_coded = vec![peer1.clone()].iter().cloned().collect();
+                    cache.add_peer(peer1.clone());
+                    cache.add_peer(peer2.clone());
 
-            let dirs = test_dirs();
-            let mut cache = unwrap!(BootstrapCache::try_new(&dirs, hard_coded));
-
-            cache.add_peer(peer1.clone());
-            cache.add_peer(peer2.clone());
-
-            let peers: Vec<NodeInfo> = cache.peers.iter().cloned().collect();
-            assert_eq!(peers, vec![peer2]);
-        }
-
-        #[test]
-        fn it_caps_cache_size() {
-            let dirs = test_dirs();
-            let mut cache = unwrap!(BootstrapCache::try_new(&dirs, HashSet::new()));
-
-            for _ in 0..MAX_CACHE_SIZE {
-                cache.add_peer(rand_node_info());
+                    let peers: Vec<NodeInfo> = cache.peers.iter().cloned().collect();
+                    assert_eq!(peers, vec![peer2]);
+                }
             }
-            assert_eq!(cache.peers.len(), MAX_CACHE_SIZE);
 
-            cache.add_peer(rand_node_info());
-            assert_eq!(cache.peers.len(), MAX_CACHE_SIZE);
+            it "caps cache size" {
+                for _ in 0..MAX_CACHE_SIZE {
+                    cache.add_peer(rand_node_info());
+                }
+                assert_eq!(cache.peers.len(), MAX_CACHE_SIZE);
+
+                cache.add_peer(rand_node_info());
+                assert_eq!(cache.peers.len(), MAX_CACHE_SIZE);
+            }
         }
-    }
 
-    mod move_to_cache_top {
-        use super::*;
+        describe "move_to_cache_top" {
+            it "moves given node to the top of the list" {
+                let peer1 = rand_node_info();
+                let peer2 = rand_node_info();
+                let peer3 = rand_node_info();
+                cache.add_peer(peer1.clone());
+                cache.add_peer(peer2.clone());
+                cache.add_peer(peer3.clone());
 
-        #[test]
-        fn it_moves_given_node_to_the_top_of_the_list() {
-            let dirs = test_dirs();
-            let mut cache = unwrap!(BootstrapCache::try_new(&dirs, HashSet::new()));
-            let peer1 = rand_node_info();
-            let peer2 = rand_node_info();
-            let peer3 = rand_node_info();
-            cache.add_peer(peer1.clone());
-            cache.add_peer(peer2.clone());
-            cache.add_peer(peer3.clone());
+                cache.move_to_cache_top(peer2.clone());
 
-            cache.move_to_cache_top(peer2.clone());
-
-            let peers: Vec<NodeInfo> = cache.peers.iter().cloned().collect();
-            assert_eq!(peers, vec![peer1, peer3, peer2]);
+                let peers: Vec<NodeInfo> = cache.peers.iter().cloned().collect();
+                assert_eq!(peers, vec![peer1, peer3, peer2]);
+            }
         }
     }
 }
