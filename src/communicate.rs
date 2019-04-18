@@ -45,6 +45,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
             ToPeer::Initiated {
                 ref peer_cert_der,
                 ref mut pending_sends,
+                ..
             } => {
                 if *peer_cert_der != node_info.peer_cert_der {
                     info!("TODO Certificate we have for the peer already doesn't match with the \
