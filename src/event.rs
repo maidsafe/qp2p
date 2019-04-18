@@ -1,10 +1,14 @@
-use crate::{utils, Peer};
+use crate::{utils, NodeInfo, Peer};
 use std::fmt;
 use std::net::SocketAddr;
 
 /// QuicP2p Events to the user
 #[derive(Debug)]
 pub enum Event {
+    BootstrapFailure,
+    BootstrappedTo {
+        node: NodeInfo,
+    },
     ConnectionFailure {
         peer_addr: SocketAddr,
     },

@@ -69,6 +69,10 @@ impl BootstrapCache {
         &self.peers
     }
 
+    pub fn hard_coded_contacts(&self) -> &HashSet<NodeInfo> {
+        &self.hard_coded_contacts
+    }
+
     /// Caches given peer if it's not in hard coded contacts.
     pub fn add_peer(&mut self, peer: NodeInfo) {
         if self.hard_coded_contacts.contains(&peer) {

@@ -11,7 +11,7 @@ use crate::communicate;
 use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
 use crate::event::Event;
 use crate::utils::{self, QConn};
-use crate::{NodeInfo, Peer};
+use crate::NodeInfo;
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
@@ -45,7 +45,7 @@ fn handle_new_conn(
         let conn = c
             .connections
             .entry(peer_addr)
-            .or_insert_with(|| Connection::new(peer_addr, event_tx));
+            .or_insert_with(|| Connection::new(peer_addr, event_tx, None));
         if conn.from_peer.is_no_connection() {
             conn.from_peer = FromPeer::Established {
                 q_conn,
@@ -60,11 +60,19 @@ fn handle_new_conn(
                     peer_addr,
                     peer_cert_der: peer_cert_der.clone(),
                 };
-                let peer = Peer::Node { node_info };
 
                 // TODO come back to all the connected-to events and see if we are handling all
                 // cases
-                if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
+                let event = if let Some(bootstrap_group) = conn.bootstrap_group.take() {
+                    bootstrap_group.terminate_group(true);
+                    Event::BootstrappedTo { node: node_info }
+                } else {
+                    Event::ConnectedTo {
+                        peer: node_info.into(),
+                    }
+                };
+
+                if let Err(e) = c.event_tx.send(event) {
                     info!("ERROR in informing user about a new peer: {:?} - {}", e, e);
                 }
             }

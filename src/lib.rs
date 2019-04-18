@@ -32,6 +32,7 @@ use std::{fmt, mem};
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
+mod bootstrap;
 mod bootstrap_cache;
 mod communicate;
 mod config;
@@ -192,12 +193,19 @@ impl fmt::Display for NodeInfo {
 }
 
 impl QuicP2p {
+    /// Bootstrap to a proxy
+    pub fn bootstrap(&mut self) {
+        self.el.post(|| {
+            bootstrap::initiate();
+        })
+    }
+
     /// Connect to the given peer. This will error out if the peer is already in the process of
     /// being connected to OR for any other connection failure reasons.
     pub fn connect_to(&mut self, peer_info: NodeInfo) {
         self.el.post(move || {
             let peer_addr = peer_info.peer_addr;
-            if let Err(e) = connect::connect_to(peer_info, None) {
+            if let Err(e) = connect::connect_to(peer_info, None, None) {
                 info!(
                     "(TODO return this) Could not connect to the asked peer: {}",
                     e
