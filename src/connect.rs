@@ -8,7 +8,7 @@
 // Software.
 
 use crate::config::OurType;
-use crate::context::{ctx_mut, Connection, FromPeer, Terminator, ToPeer};
+use crate::context::{ctx_mut, BootstrapGroupBuilder, Connection, FromPeer, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
 use crate::peer_config;
@@ -21,7 +21,11 @@ use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
 /// Connect to the given peer
-pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R<Terminator> {
+pub fn connect_to(
+    peer_info: NodeInfo,
+    send_after_connect: Option<WireMsg>,
+    bootstrap_group_builder: Option<&BootstrapGroupBuilder>,
+) -> R<()> {
     let peer_addr = peer_info.peer_addr;
 
     let peer_cfg = match peer_config::new_client_cfg(&peer_info.peer_cert_der) {
@@ -34,10 +38,16 @@ pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R
 
     let r = ctx_mut(|c| {
         let event_tx = c.event_tx.clone();
-        let conn = c
-            .connections
-            .entry(peer_addr)
-            .or_insert_with(|| Connection::new(peer_addr, event_tx));
+
+        let (terminator, rx) = tokio::sync::mpsc::channel::<()>(1);
+
+        let conn = c.connections.entry(peer_addr).or_insert_with(|| {
+            Connection::new(
+                peer_addr,
+                event_tx,
+                bootstrap_group_builder.map(|b| b.clone_group(peer_addr, terminator.clone())),
+            )
+        });
 
         if conn.to_peer.is_no_connection() {
             // TODO see if this can be the default from-peer for OurType::Client
@@ -47,11 +57,17 @@ pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R
                 }
                 conn.from_peer = FromPeer::NotNeeded;
             }
+
+            // If we already had an incoming from someone we are trying to bootstrap off
+            if conn.bootstrap_group.is_none() {
+                conn.bootstrap_group =
+                    bootstrap_group_builder.map(|b| b.clone_group(peer_addr, terminator.clone()));
+            }
+
             let mut pending_sends: Vec<_> = Default::default();
             if let Some(pending_send) = send_after_connect {
                 pending_sends.push(pending_send);
             }
-            let (terminator, rx) = tokio::sync::mpsc::channel::<()>(1);
             conn.to_peer = ToPeer::Initiated {
                 terminator: terminator.clone(),
                 peer_cert_der: peer_info.peer_cert_der,
@@ -81,7 +97,7 @@ pub fn connect_to(peer_info: NodeInfo, send_after_connect: Option<WireMsg>) -> R
 
                     current_thread::spawn(leaf);
 
-                    Ok(terminator)
+                    Ok(())
                 })
         } else {
             Err(Error::DuplicateConnectionToPeer(peer_addr))
@@ -177,8 +193,16 @@ fn handle_new_connection_res(
                     WireMsg::Handshake(Handshake::Client),
                 );
 
-                let peer = Peer::Node { node_info };
-                if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
+                let event = if let Some(bootstrap_group) = conn.bootstrap_group.take() {
+                    bootstrap_group.terminate_group(true);
+                    Event::BootstrappedTo { node: node_info }
+                } else {
+                    Event::ConnectedTo {
+                        peer: node_info.into(),
+                    }
+                };
+
+                if let Err(e) = c.event_tx.send(event) {
                     info!("Could not fire event: {:?}", e);
                 }
 
@@ -188,10 +212,22 @@ fn handle_new_connection_res(
                 ref mut pending_reads,
                 ..
             } => {
-                let peer = Peer::Node { node_info };
-                if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer: peer.clone() }) {
+                let event = if let Some(bootstrap_group) = conn.bootstrap_group.take() {
+                    bootstrap_group.terminate_group(true);
+                    Event::BootstrappedTo {
+                        node: node_info.clone(),
+                    }
+                } else {
+                    Event::ConnectedTo {
+                        peer: node_info.clone().into(),
+                    }
+                };
+
+                if let Err(e) = c.event_tx.send(event) {
                     info!("Could not fire event: {:?}", e);
                 }
+
+                let peer = Peer::Node { node_info };
 
                 for pending_read in pending_reads.drain(..) {
                     communicate::dispatch_wire_msg(

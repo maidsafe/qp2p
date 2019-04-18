@@ -34,7 +34,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
         let conn = c
             .connections
             .entry(peer_addr)
-            .or_insert_with(|| Connection::new(peer_addr, event_tx));
+            .or_insert_with(|| Connection::new(peer_addr, event_tx, None));
 
         match conn.to_peer {
             ToPeer::NoConnection => Some(msg),
@@ -63,7 +63,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
 
     if connect_and_send.is_some() {
         let peer_addr = node_info.peer_addr;
-        if let Err(e) = connect::connect_to(node_info, connect_and_send) {
+        if let Err(e) = connect::connect_to(node_info, connect_and_send, None) {
             debug!(
                 "Unable to connect to peer {} to be able to send message: {:?}",
                 peer_addr, e
@@ -369,7 +369,7 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
     });
 
     if reverse_connect_to_peer {
-        if let Err(e) = connect::connect_to(node_info, None) {
+        if let Err(e) = connect::connect_to(node_info, None, None) {
             debug!(
                 "ERROR: Could not reverse connect to peer {}: {}",
                 peer_addr, e

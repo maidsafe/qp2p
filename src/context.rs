@@ -17,6 +17,7 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
 use std::net::SocketAddr;
+use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 use tokio::prelude::Future;
@@ -134,28 +135,107 @@ impl Context {
 pub struct Connection {
     pub to_peer: ToPeer,
     pub from_peer: FromPeer,
-
+    /// Belongs to a bootstap group of connection attempts
+    pub bootstrap_group: Option<BootstrapGroup>,
     /// quic-p2p won't validate incoming peers, it will simply pass them to the upper layer.
     /// Until we know that these peers are useful/valid for the upper layers, we might refrain
     /// ourselves from taking specific actions: e.g. putting these peers into the bootstrap cache.
     /// This flag indicates whether upper layer attempted to connect/send something to the other
     /// end of this connection.
     pub we_contacted_peer: bool,
-
     peer_addr: SocketAddr,
     event_tx: Sender<Event>,
 }
 
 impl Connection {
-    pub fn new(peer_addr: SocketAddr, event_tx: Sender<Event>) -> Self {
+    pub fn new(
+        peer_addr: SocketAddr,
+        event_tx: Sender<Event>,
+        bootstrap_group: Option<BootstrapGroup>,
+    ) -> Self {
         spawn_incomplete_conn_killer(peer_addr);
 
         Self {
             to_peer: Default::default(),
             from_peer: Default::default(),
+            bootstrap_group,
+            we_contacted_peer: false,
             peer_addr,
             event_tx,
-            we_contacted_peer: Default::default(),
+        }
+    }
+}
+
+pub struct BootstrapGroupBuilder {
+    inner: Rc<RefCell<BootstrapGroupInner>>,
+}
+
+impl BootstrapGroupBuilder {
+    pub fn new(event_tx: Sender<Event>) -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(BootstrapGroupInner {
+                is_bootstrap_successful_yet: false,
+                // TODO remove magic number
+                terminators: HashMap::with_capacity(300),
+                event_tx,
+            })),
+        }
+    }
+
+    pub fn clone_group(&self, peer_addr: SocketAddr, terminator: Terminator) -> BootstrapGroup {
+        if let Some(mut terminator) = self
+            .inner
+            .borrow_mut()
+            .terminators
+            .insert(peer_addr, terminator)
+        {
+            let _ = terminator.try_send(());
+        }
+
+        BootstrapGroup {
+            peer_addr,
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+pub struct BootstrapGroup {
+    peer_addr: SocketAddr,
+    inner: Rc<RefCell<BootstrapGroupInner>>,
+}
+
+impl BootstrapGroup {
+    pub fn terminate_group(&self, is_due_to_success: bool) {
+        let mut inner = self.inner.borrow_mut();
+
+        if is_due_to_success {
+            inner.is_bootstrap_successful_yet = true;
+        }
+
+        for (_, mut terminator) in inner.terminators.drain() {
+            let _ = terminator.try_send(());
+        }
+    }
+}
+
+impl Drop for BootstrapGroup {
+    fn drop(&mut self) {
+        let _ = self.inner.borrow_mut().terminators.remove(&self.peer_addr);
+    }
+}
+
+struct BootstrapGroupInner {
+    is_bootstrap_successful_yet: bool,
+    terminators: HashMap<SocketAddr, Terminator>,
+    event_tx: Sender<Event>,
+}
+
+impl Drop for BootstrapGroupInner {
+    fn drop(&mut self) {
+        if !self.is_bootstrap_successful_yet {
+            if let Err(e) = self.event_tx.send(Event::BootstrapFailure) {
+                info!("Failed informing about bootstrap failure: {:?}", e);
+            }
         }
     }
 }
@@ -165,7 +245,7 @@ impl Drop for Connection {
         if (self.to_peer.is_established() || self.to_peer.is_not_needed())
             && (self.from_peer.is_established() || self.from_peer.is_not_needed())
         {
-            // No need to log this as this will fire even when the QuicP2p handle is dropped and at
+            // No need to log these as this will fire even when the QuicP2p handle is dropped and at
             // that point there might be no one listening so sender will error out
             let _ = self.event_tx.send(Event::ConnectionFailure {
                 peer_addr: self.peer_addr,
