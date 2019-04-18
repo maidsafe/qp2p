@@ -93,7 +93,7 @@ pub mod testing {
         let peer_cert_der = SerialisableCertificate::default().cert_der;
         let mut rng = rand::thread_rng();
         let port: u16 = rng.gen();
-        let peer_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port));
+        let peer_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
         NodeInfo {
             peer_addr,
             peer_cert_der,

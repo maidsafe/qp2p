@@ -73,7 +73,6 @@ pub fn connect_to(
                 peer_cert_der: peer_info.peer_cert_der,
                 pending_sends,
             };
-            let peer_addr = peer_addr;
             c.quic_ep()
                 .connect_with(peer_cfg, &peer_addr, "MaidSAFE.net")
                 .map_err(Error::from)
