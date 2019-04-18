@@ -57,3 +57,17 @@ fn incoming_connections_yield_connected_to_event() {
         &peer2_conn_info.peer_cert_der[..]
     );
 }
+
+#[test]
+fn incoming_connections_are_not_put_into_bootstrap_cache_upon_connected_to_event() {
+    let (mut peer1, ev_rx) = test_peer();
+    let peer1_conn_info = unwrap!(peer1.our_connection_info());
+
+    let (mut peer2, _) = test_peer();
+    peer2.connect_to(peer1_conn_info.clone());
+
+    let _ = wait_till_connected(ev_rx);
+
+    let cache = unwrap!(peer1.bootstrap_cache());
+    assert!(cache.is_empty());
+}
