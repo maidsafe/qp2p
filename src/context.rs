@@ -10,6 +10,7 @@
 use crate::bootstrap_cache::BootstrapCache;
 use crate::config::{OurType, SerialisableCertificate};
 use crate::event::Event;
+use crate::utils::QConn;
 use crate::wire_msg::WireMsg;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
@@ -193,7 +194,7 @@ pub enum ToPeer {
     },
     Established {
         peer_cert_der: Vec<u8>,
-        q_conn: quinn::Connection,
+        q_conn: QConn,
     },
 }
 
@@ -257,13 +258,12 @@ impl fmt::Debug for ToPeer {
 impl Drop for ToPeer {
     fn drop(&mut self) {
         match *self {
-            ToPeer::NotNeeded | ToPeer::NoConnection => {}
+            ToPeer::NotNeeded | ToPeer::NoConnection | ToPeer::Established { .. } => {}
             ToPeer::Initiated {
                 ref mut terminator, ..
             } => {
                 let _ = terminator.try_send(());
             }
-            ToPeer::Established { ref q_conn, .. } => q_conn.clone().close(0, &[]),
         }
     }
 }
@@ -272,7 +272,7 @@ pub enum FromPeer {
     NoConnection,
     NotNeeded,
     Established {
-        q_conn: quinn::Connection,
+        q_conn: QConn,
         pending_reads: Vec<WireMsg>,
     },
 }
@@ -320,14 +320,6 @@ impl fmt::Debug for FromPeer {
                 pending_reads.len()
             ),
             ref blah => write!(f, "{:?}", blah),
-        }
-    }
-}
-
-impl Drop for FromPeer {
-    fn drop(&mut self) {
-        if let FromPeer::Established { ref q_conn, .. } = *self {
-            q_conn.clone().close(0, &[]);
         }
     }
 }

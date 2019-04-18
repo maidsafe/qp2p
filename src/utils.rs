@@ -10,6 +10,39 @@
 use crate::ctx_mut;
 use crate::error::Error;
 use std::net::SocketAddr;
+use std::ops::{Deref, DerefMut};
+
+// TODO move this and a few others into module called "types.rs"
+/// A quic-connection wrapper that will destroy the connection on drop
+pub struct QConn {
+    q_conn: quinn::Connection,
+}
+
+impl From<quinn::Connection> for QConn {
+    fn from(q_conn: quinn::Connection) -> Self {
+        Self { q_conn }
+    }
+}
+
+impl Deref for QConn {
+    type Target = quinn::Connection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.q_conn
+    }
+}
+
+impl DerefMut for QConn {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.q_conn
+    }
+}
+
+impl Drop for QConn {
+    fn drop(&mut self) {
+        self.q_conn.close(0, &[]);
+    }
+}
 
 /// Convert binary data to a diplay-able format
 #[inline]

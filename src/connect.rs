@@ -8,10 +8,11 @@
 // Software.
 
 use crate::config::OurType;
-use crate::context::{Terminator, ctx_mut, Connection, FromPeer, ToPeer};
+use crate::context::{ctx_mut, Connection, FromPeer, Terminator, ToPeer};
 use crate::error::Error;
 use crate::event::Event;
 use crate::peer_config;
+use crate::utils::QConn;
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{communicate, NodeInfo, Peer, R};
 use std::mem;
@@ -106,7 +107,9 @@ fn handle_new_connection_res(
     >,
 ) {
     let (conn_driver, q_conn, incoming_streams) = match new_peer_conn_res {
-        Ok((conn_driver, q_conn, incoming_streams)) => (conn_driver, q_conn, incoming_streams),
+        Ok((conn_driver, q_conn, incoming_streams)) => {
+            (conn_driver, QConn::from(q_conn), incoming_streams)
+        }
         Err(e) => return handle_connect_err(peer_addr, &From::from(e)),
     };
     current_thread::spawn(
