@@ -64,8 +64,8 @@ fn handle_new_conn(
 
                 // TODO come back to all the connected-to events and see if we are handling all
                 // cases
-                let event = if let Some(bootstrap_group) = conn.bootstrap_group.take() {
-                    bootstrap_group.terminate_group(true);
+                let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
+                    bootstrap_group_ref.terminate_group(true);
                     Event::BootstrappedTo { node: node_info }
                 } else {
                     Event::ConnectedTo {

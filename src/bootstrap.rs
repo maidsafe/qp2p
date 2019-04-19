@@ -8,10 +8,10 @@
 // Software.
 
 use crate::connect;
-use crate::connection::BootstrapGroupBuilder;
+use crate::connection::BootstrapGroupMaker;
 use crate::context::ctx;
 
-pub fn initiate() {
+pub fn start() {
     let (proxies, event_tx): (Vec<_>, _) = ctx(|c| {
         (
             c.bootstrap_cache
@@ -25,8 +25,8 @@ pub fn initiate() {
         )
     });
 
-    let bootstrap_group_builder = BootstrapGroupBuilder::new(event_tx);
+    let maker = BootstrapGroupMaker::new(event_tx);
     for proxy in proxies {
-        let _ = connect::connect_to(proxy, None, Some(&bootstrap_group_builder));
+        let _ = connect::connect_to(proxy, None, Some(&maker));
     }
 }

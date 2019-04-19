@@ -197,7 +197,7 @@ impl QuicP2p {
     /// Bootstrap to a proxy
     pub fn bootstrap(&mut self) {
         self.el.post(|| {
-            bootstrap::initiate();
+            bootstrap::start();
         })
     }
 

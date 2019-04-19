@@ -37,7 +37,7 @@ pub struct Connection {
     /// Connection from the peer to us
     pub from_peer: FromPeer,
     /// If this connection belongs to a bootstap group of connection attempts
-    pub bootstrap_group: Option<BootstrapGroup>,
+    pub bootstrap_group_ref: Option<BootstrapGroupRef>,
     /// quic-p2p won't validate incoming peers, it will simply pass them to the upper layer.
     /// Until we know that these peers are useful/valid for the upper layers, we might refrain
     /// ourselves from taking specific actions: e.g. putting these peers into the bootstrap cache.
@@ -53,91 +53,17 @@ impl Connection {
     pub fn new(
         peer_addr: SocketAddr,
         event_tx: Sender<Event>,
-        bootstrap_group: Option<BootstrapGroup>,
+        bootstrap_group_ref: Option<BootstrapGroupRef>,
     ) -> Self {
         spawn_incomplete_conn_killer(peer_addr);
 
         Self {
             to_peer: Default::default(),
             from_peer: Default::default(),
-            bootstrap_group,
+            bootstrap_group_ref,
             we_contacted_peer: false,
             peer_addr,
             event_tx,
-        }
-    }
-}
-
-pub struct BootstrapGroupBuilder {
-    inner: Rc<RefCell<BootstrapGroupInner>>,
-}
-
-impl BootstrapGroupBuilder {
-    pub fn new(event_tx: Sender<Event>) -> Self {
-        Self {
-            inner: Rc::new(RefCell::new(BootstrapGroupInner {
-                is_bootstrap_successful_yet: false,
-                // TODO remove magic number
-                terminators: HashMap::with_capacity(300),
-                event_tx,
-            })),
-        }
-    }
-
-    pub fn clone_group(&self, peer_addr: SocketAddr, terminator: Terminator) -> BootstrapGroup {
-        if let Some(mut terminator) = self
-            .inner
-            .borrow_mut()
-            .terminators
-            .insert(peer_addr, terminator)
-        {
-            let _ = terminator.try_send(());
-        }
-
-        BootstrapGroup {
-            peer_addr,
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-pub struct BootstrapGroup {
-    peer_addr: SocketAddr,
-    inner: Rc<RefCell<BootstrapGroupInner>>,
-}
-
-impl BootstrapGroup {
-    pub fn terminate_group(&self, is_due_to_success: bool) {
-        let mut inner = self.inner.borrow_mut();
-
-        if is_due_to_success {
-            inner.is_bootstrap_successful_yet = true;
-        }
-
-        for (_, mut terminator) in inner.terminators.drain() {
-            let _ = terminator.try_send(());
-        }
-    }
-}
-
-impl Drop for BootstrapGroup {
-    fn drop(&mut self) {
-        let _ = self.inner.borrow_mut().terminators.remove(&self.peer_addr);
-    }
-}
-
-struct BootstrapGroupInner {
-    is_bootstrap_successful_yet: bool,
-    terminators: HashMap<SocketAddr, Terminator>,
-    event_tx: Sender<Event>,
-}
-
-impl Drop for BootstrapGroupInner {
-    fn drop(&mut self) {
-        if !self.is_bootstrap_successful_yet {
-            if let Err(e) = self.event_tx.send(Event::BootstrapFailure) {
-                info!("Failed informing about bootstrap failure: {:?}", e);
-            }
         }
     }
 }
@@ -302,6 +228,98 @@ impl fmt::Debug for FromPeer {
                 pending_reads.len()
             ),
             ref blah => write!(f, "{:?}", blah),
+        }
+    }
+}
+
+/// Creator of a `BootstrapGroup`. Use this to obtain the reference to the undelying group.
+///
+/// Destroy the maker once all references of the group have been obtained to not hold the internal
+/// references for longer than needed. The maker going out of scope is enough for it's destruction.
+pub struct BootstrapGroupMaker {
+    group: Rc<RefCell<BootstrapGroup>>,
+}
+
+impl BootstrapGroupMaker {
+    /// Create a handle that refers to a newly created underlying group.
+    pub fn new(event_tx: Sender<Event>) -> Self {
+        Self {
+            group: Rc::new(RefCell::new(BootstrapGroup {
+                is_bootstrap_successful_yet: false,
+                // TODO remove magic number
+                terminators: HashMap::with_capacity(300),
+                event_tx,
+            })),
+        }
+    }
+
+    /// Add member to the underlying `BootstrapGroup` and get a reference to it.
+    pub fn add_member_and_get_group_ref(
+        &self,
+        peer_addr: SocketAddr,
+        terminator: Terminator,
+    ) -> BootstrapGroupRef {
+        if let Some(mut terminator) = self
+            .group
+            .borrow_mut()
+            .terminators
+            .insert(peer_addr, terminator)
+        {
+            let _ = terminator.try_send(());
+        }
+
+        BootstrapGroupRef {
+            peer_addr,
+            group: self.group.clone(),
+        }
+    }
+}
+
+/// Reference to the underlying `BootstrapGroup`.
+///
+/// Once all references are dropped (and the `BootstrapGroupMaker` was also dropped) the
+/// underlying group will also be destroyed. If the bootstrap was not yet successful by the time
+/// this happened, `BootstrapFailure` event will be fired.
+pub struct BootstrapGroupRef {
+    peer_addr: SocketAddr,
+    group: Rc<RefCell<BootstrapGroup>>,
+}
+
+impl BootstrapGroupRef {
+    /// Prematurely terminate all members of the underlying `BootstrapGroup`. Also indicate if this
+    /// is because the bootstrapping was successful (in which case no failure event will be
+    /// auto-fired).
+    pub fn terminate_group(&self, is_due_to_success: bool) {
+        let mut group = self.group.borrow_mut();
+
+        if is_due_to_success {
+            group.is_bootstrap_successful_yet = true;
+        }
+
+        for (_, mut terminator) in group.terminators.drain() {
+            let _ = terminator.try_send(());
+        }
+    }
+}
+
+impl Drop for BootstrapGroupRef {
+    fn drop(&mut self) {
+        let _ = self.group.borrow_mut().terminators.remove(&self.peer_addr);
+    }
+}
+
+struct BootstrapGroup {
+    is_bootstrap_successful_yet: bool,
+    terminators: HashMap<SocketAddr, Terminator>,
+    event_tx: Sender<Event>,
+}
+
+impl Drop for BootstrapGroup {
+    fn drop(&mut self) {
+        if !self.is_bootstrap_successful_yet {
+            if let Err(e) = self.event_tx.send(Event::BootstrapFailure) {
+                info!("Failed informing about bootstrap failure: {:?}", e);
+            }
         }
     }
 }
