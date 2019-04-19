@@ -148,7 +148,7 @@ pub fn read_from_peer(peer_addr: SocketAddr, incoming_streams: quinn::IncomingSt
 
 fn read_peer_stream(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<()> {
     let i_stream = match quic_stream {
-        quinn::NewStream::Bi(_bi) => {
+        quinn::NewStream::Bi(_, _) => {
             let e = Error::BiDirectionalStreamAttempted(peer_addr);
             utils::handle_communication_err(peer_addr, &e, "Receiving Stream");
             return Err(e);
@@ -156,7 +156,8 @@ fn read_peer_stream(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<(
         quinn::NewStream::Uni(uni) => uni,
     };
 
-    let leaf = quinn::read_to_end(i_stream, ctx(|c| c.max_msg_size_allowed))
+    let leaf = i_stream
+        .read_to_end(ctx(|c| c.max_msg_size_allowed))
         .map_err(move |e| utils::handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
         .and_then(move |(_i_stream, raw)| {
             WireMsg::from_raw(raw.into())
