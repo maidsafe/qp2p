@@ -21,8 +21,8 @@ use std::sync::mpsc::Sender;
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
-/// Send message to peer. If the peer is not connected, it will attempt to connect to it first
-/// and then send the message
+/// Send message to peer. If the peer is a node and is not connected, it will attempt to connect to
+/// it first and then send the message. For un-connected clients, it'll simply error out.
 pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
     let node_info = match peer {
         Peer::Client { peer_addr } => return write_to_peer(peer_addr, msg),

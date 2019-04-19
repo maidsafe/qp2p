@@ -8,7 +8,7 @@
 // Software.
 
 use crate::config::OurType;
-use crate::connection::{BootstrapGroupBuilder, Connection, FromPeer, ToPeer};
+use crate::connection::{BootstrapGroupMaker, Connection, FromPeer, ToPeer};
 use crate::context::ctx_mut;
 use crate::error::Error;
 use crate::event::Event;
@@ -25,7 +25,7 @@ use tokio::runtime::current_thread;
 pub fn connect_to(
     peer_info: NodeInfo,
     send_after_connect: Option<WireMsg>,
-    bootstrap_group_builder: Option<&BootstrapGroupBuilder>,
+    bootstrap_group_maker: Option<&BootstrapGroupMaker>,
 ) -> R<()> {
     let peer_addr = peer_info.peer_addr;
 
@@ -46,7 +46,8 @@ pub fn connect_to(
             Connection::new(
                 peer_addr,
                 event_tx,
-                bootstrap_group_builder.map(|b| b.clone_group(peer_addr, terminator.clone())),
+                bootstrap_group_maker
+                    .map(|m| m.add_member_and_get_group_ref(peer_addr, terminator.clone())),
             )
         });
 
@@ -60,9 +61,9 @@ pub fn connect_to(
             }
 
             // If we already had an incoming from someone we are trying to bootstrap off
-            if conn.bootstrap_group.is_none() {
-                conn.bootstrap_group =
-                    bootstrap_group_builder.map(|b| b.clone_group(peer_addr, terminator.clone()));
+            if conn.bootstrap_group_ref.is_none() {
+                conn.bootstrap_group_ref = bootstrap_group_maker
+                    .map(|b| b.add_member_and_get_group_ref(peer_addr, terminator.clone()));
             }
 
             let mut pending_sends: Vec<_> = Default::default();
@@ -193,8 +194,8 @@ fn handle_new_connection_res(
                     WireMsg::Handshake(Handshake::Client),
                 );
 
-                let event = if let Some(bootstrap_group) = conn.bootstrap_group.take() {
-                    bootstrap_group.terminate_group(true);
+                let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
+                    bootstrap_group_ref.terminate_group(true);
                     Event::BootstrappedTo { node: node_info }
                 } else {
                     Event::ConnectedTo {
@@ -212,8 +213,8 @@ fn handle_new_connection_res(
                 ref mut pending_reads,
                 ..
             } => {
-                let event = if let Some(bootstrap_group) = conn.bootstrap_group.take() {
-                    bootstrap_group.terminate_group(true);
+                let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
+                    bootstrap_group_ref.terminate_group(true);
                     Event::BootstrappedTo {
                         node: node_info.clone(),
                     }
