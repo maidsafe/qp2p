@@ -37,6 +37,7 @@ mod bootstrap_cache;
 mod communicate;
 mod config;
 mod connect;
+mod connection;
 mod context;
 mod dirs;
 mod error;

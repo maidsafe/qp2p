@@ -8,7 +8,8 @@
 // Software.
 
 use crate::connect;
-use crate::context::{ctx, BootstrapGroupBuilder};
+use crate::connection::BootstrapGroupBuilder;
+use crate::context::ctx;
 
 pub fn initiate() {
     let (proxies, event_tx): (Vec<_>, _) = ctx(|c| {
