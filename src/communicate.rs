@@ -8,7 +8,8 @@
 // Software.
 
 use crate::bootstrap_cache::BootstrapCache;
-use crate::context::{ctx, ctx_mut, Connection, FromPeer, ToPeer};
+use crate::connection::{Connection, FromPeer, ToPeer};
+use crate::context::{ctx, ctx_mut};
 use crate::error::Error;
 use crate::event::Event;
 use crate::utils::{self, QConn};

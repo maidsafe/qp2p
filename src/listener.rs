@@ -8,7 +8,8 @@
 // Software.
 
 use crate::communicate;
-use crate::context::{ctx_mut, Connection, FromPeer, ToPeer};
+use crate::connection::{Connection, FromPeer, ToPeer};
+use crate::context::ctx_mut;
 use crate::event::Event;
 use crate::utils::{self, QConn};
 use crate::NodeInfo;

@@ -8,7 +8,8 @@
 // Software.
 
 use crate::config::OurType;
-use crate::context::{ctx_mut, BootstrapGroupBuilder, Connection, FromPeer, ToPeer};
+use crate::connection::{BootstrapGroupBuilder, Connection, FromPeer, ToPeer};
+use crate::context::ctx_mut;
 use crate::error::Error;
 use crate::event::Event;
 use crate::peer_config;
