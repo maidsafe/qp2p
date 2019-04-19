@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::connection::{QConn};
+use crate::connection::QConn;
 use crate::utils::ConnectTerminator;
 use crate::wire_msg::WireMsg;
 use std::fmt;

@@ -7,14 +7,19 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use crate::dirs::Dirs;
+use crate::error::Error;
+use crate::utils;
 use crate::{NodeInfo, R};
+use std::collections::HashSet;
 use std::net::IpAddr;
+use std::path::PathBuf;
 
 /// QuicP2p configurations
 #[derive(Default, Serialize, Deserialize)]
 pub struct Config {
     /// Hard Coded contacts
-    pub hard_coded_contacts: Vec<NodeInfo>,
+    pub hard_coded_contacts: HashSet<NodeInfo>,
     /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
     pub port: Option<u16>,
     /// IP address for the listener. If none supplied we'll use the default address (0.0.0.0).
@@ -42,25 +47,35 @@ pub struct Config {
 impl Config {
     /// Try and read the config off the disk first and failing that create a default one. It will
     /// try write the default constructed one to the disk.
-    pub fn read_or_construct_default() -> Config {
-        match Self::read_config() {
+    pub fn read_or_construct_default(user_override: Option<&Dirs>) -> Config {
+        match Self::read_config(user_override) {
             Ok(cfg) => cfg,
             Err(e) => {
-                debug!("Failed to read off the disk: {:?} - {}", e, e);
-                // FIXME write this config to the disk. If error then simply log an `info!` and
-                // carry on - don't error out completely
-                Self::with_default_cert()
+                debug!("Failed to read config off the disk: {:?} - {}", e, e);
+                let cfg = Self::with_default_cert();
+                if let Err(e) =
+                    config_path(user_override).and_then(|p| utils::write_to_disk(&p, &cfg))
+                {
+                    info!("Failed to write config to the disk: {}", e);
+                }
+
+                cfg
             }
         }
     }
 
-    // FIXME Implement this
     /// Read the Config off the disk
-    pub fn read_config() -> R<Config> {
-        Err(From::from(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Unimplemented",
-        )))
+    pub fn read_config(user_override: Option<&Dirs>) -> R<Config> {
+        let config_path = config_path(user_override)?;
+
+        if config_path.exists() {
+            Ok(utils::read_from_disk(&config_path)?)
+        } else {
+            Err(From::from(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Given config path does not exist",
+            )))
+        }
     }
 
     /// Create a default Config with random Certificate
@@ -116,4 +131,18 @@ impl Default for OurType {
     fn default() -> Self {
         OurType::Node
     }
+}
+
+fn config_path(user_override: Option<&Dirs>) -> R<PathBuf> {
+    let path = |dir: &Dirs| {
+        let path = dir.config_dir();
+        path.join("config")
+    };
+
+    let cfg_path = user_override.map_or_else(
+        || Ok::<_, Error>(path(&utils::project_dir()?)),
+        |d| Ok(path(d)),
+    )?;
+
+    Ok(cfg_path)
 }
