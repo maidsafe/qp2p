@@ -358,11 +358,11 @@ impl QuicP2p {
                 key
             ));
 
-            let mut ep_builder = quinn::Endpoint::new();
+            let mut ep_builder = quinn::Endpoint::builder();
             ep_builder.listen(our_cfg);
             let (dr, ep, incoming_connections) = {
                 match UdpSocket::bind(&(ip, port)) {
-                    Ok(udp) => unwrap!(ep_builder.from_socket(udp)),
+                    Ok(udp) => unwrap!(ep_builder.with_socket(udp)),
                     Err(e) => {
                         if is_user_supplied {
                             panic!(
