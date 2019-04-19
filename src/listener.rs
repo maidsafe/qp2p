@@ -8,10 +8,10 @@
 // Software.
 
 use crate::communicate;
-use crate::connection::{Connection, FromPeer, ToPeer};
+use crate::connection::{Connection, FromPeer, QConn, ToPeer};
 use crate::context::ctx_mut;
 use crate::event::Event;
-use crate::utils::{self, QConn};
+use crate::utils;
 use crate::NodeInfo;
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;

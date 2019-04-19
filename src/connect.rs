@@ -8,12 +8,12 @@
 // Software.
 
 use crate::config::OurType;
-use crate::connection::{BootstrapGroupMaker, Connection, FromPeer, ToPeer};
+use crate::connection::{BootstrapGroupMaker, Connection, FromPeer, QConn, ToPeer};
 use crate::context::ctx_mut;
 use crate::error::Error;
 use crate::event::Event;
 use crate::peer_config;
-use crate::utils::QConn;
+use crate::utils;
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{communicate, NodeInfo, Peer, R};
 use std::mem;
@@ -40,7 +40,7 @@ pub fn connect_to(
     let r = ctx_mut(|c| {
         let event_tx = c.event_tx.clone();
 
-        let (terminator, rx) = tokio::sync::mpsc::channel::<()>(1);
+        let (terminator, rx) = utils::connect_terminator();
 
         let conn = c.connections.entry(peer_addr).or_insert_with(|| {
             Connection::new(
