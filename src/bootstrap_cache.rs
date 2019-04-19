@@ -20,7 +20,7 @@ const MAX_CACHE_SIZE: usize = 200;
 /// A very simple LRU like struct that writes itself to disk every 10 entries added.
 pub struct BootstrapCache {
     peers: VecDeque<NodeInfo>,
-    path_buf: PathBuf,
+    cache_path: PathBuf,
     add_count: u8,
     hard_coded_contacts: HashSet<NodeInfo>,
 }
@@ -60,7 +60,7 @@ impl BootstrapCache {
 
         Ok(BootstrapCache {
             peers,
-            path_buf: cache_path,
+            cache_path,
             add_count: 0u8,
             hard_coded_contacts,
         })
@@ -110,7 +110,7 @@ impl BootstrapCache {
     /// Write cached peers to disk every 10 inserted peers.
     fn try_sync_to_disk(&mut self) {
         if self.add_count > 9 {
-            if let Err(e) = utils::write_to_disk(&self.path_buf.as_path(), &self.peers) {
+            if let Err(e) = utils::write_to_disk(&self.cache_path, &self.peers) {
                 info!("Failed to write bootstrap cache to disk: {}", e);
             }
             self.add_count = 0;
