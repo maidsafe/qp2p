@@ -14,8 +14,8 @@
 //! currently being made by the members of the group and thus an eventual destruction of all such
 //! members to not continue to use resources as we no longer require them.
 
-use crate::utils::ConnectTerminator;
 use crate::event::Event;
+use crate::utils::ConnectTerminator;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;

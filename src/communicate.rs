@@ -161,7 +161,7 @@ fn read_peer_stream(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<(
         .read_to_end(ctx(|c| c.max_msg_size_allowed))
         .map_err(move |e| utils::handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
         .and_then(move |(_i_stream, raw)| {
-            WireMsg::from_raw(raw.into())
+            WireMsg::from_raw(raw)
                 .map_err(|e| utils::handle_communication_err(peer_addr, &e, "Raw to WireMsg"))
                 .map(|wire_msg| handle_wire_msg(peer_addr, wire_msg))
         });
@@ -417,7 +417,6 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAdd
 mod tests {
     use super::*;
     use crate::utils::testing::{rand_node_info, test_dirs};
-    use std::collections::HashSet;
     use std::sync::mpsc;
 
     mod handle_user_msg {
@@ -432,7 +431,7 @@ mod tests {
                 node_info: peer1.clone(),
             };
             let mut bootstrap_cache =
-                unwrap!(BootstrapCache::try_new(&test_dirs(), HashSet::new()));
+                unwrap!(BootstrapCache::new(Default::default(), Some(&test_dirs())));
             bootstrap_cache.add_peer(peer1.clone());
             bootstrap_cache.add_peer(peer2.clone());
 

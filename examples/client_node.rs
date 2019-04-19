@@ -75,7 +75,11 @@ impl ClientNode {
         let mut qp2p = unwrap!(Builder::new(event_tx)
             .with_config(Config {
                 port: Some(0),
-                hard_coded_contacts: vec![bootstrap_node_info.clone()],
+                hard_coded_contacts: {
+                    let mut hcc: HashSet<_> = Default::default();
+                    assert!(hcc.insert(bootstrap_node_info.clone()));
+                    hcc
+                },
                 idle_timeout_msec: Some(0),
                 ..Default::default()
             },)

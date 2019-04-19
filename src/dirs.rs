@@ -35,7 +35,6 @@ pub enum Dirs {
 
 impl Dirs {
     /// Location of config, keys and certificates.
-    #[allow(unused)]
     pub(crate) fn config_dir(&self) -> &Path {
         use Dirs::*;
         match *self {

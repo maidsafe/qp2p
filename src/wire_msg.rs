@@ -55,10 +55,10 @@ impl fmt::Display for WireMsg {
     }
 }
 
-/// Type of peer connecting to us.
+/// Type of Handshake.
 ///
-/// If the peer is a client then we allow a single connection between us with a bidirectional
-/// stream, otherwise we will have 2 connections with uni-directional stream in each.
+/// If the peer is a client then we allow a single connection between us, otherwise we will have 2
+/// connections with a uni-directional stream in each.
 ///
 /// This information will be given to the user for them to deal with it appropriately.
 #[derive(Serialize, Deserialize, Debug)]

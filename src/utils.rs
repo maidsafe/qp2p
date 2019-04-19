@@ -8,8 +8,14 @@
 // Software.
 
 use crate::ctx_mut;
+use crate::dirs::Dirs;
 use crate::error::Error;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use std::fs::File;
+use std::io::{self, BufReader, BufWriter};
 use std::net::SocketAddr;
+use std::path::Path;
 
 /// Result used by `QuicP2p`.
 pub type R<T> = Result<T, Error>;
@@ -19,6 +25,14 @@ pub type ConnectTerminator = tokio::sync::mpsc::Sender<()>;
 /// Obtain a `ConnectTerminator` paired with a corresponding receiver.
 pub fn connect_terminator() -> (ConnectTerminator, tokio::sync::mpsc::Receiver<()>) {
     tokio::sync::mpsc::channel(1)
+}
+
+/// Get the project directory
+#[inline]
+pub fn project_dir() -> R<Dirs> {
+    let dirs = directories::ProjectDirs::from("net", "MaidSafe", "quic-p2p")
+        .ok_or_else(|| Error::Io(io::ErrorKind::NotFound.into()))?;
+    Ok(Dirs::Desktop(dirs))
 }
 
 /// Convert binary data to a diplay-able format
@@ -42,7 +56,7 @@ pub fn bin_data_format(data: &[u8]) -> String {
     )
 }
 
-/// Handle error in communication
+/// Handle error in communication.
 #[inline]
 pub fn handle_communication_err(peer_addr: SocketAddr, e: &Error, details: &str) {
     debug!(
@@ -50,6 +64,30 @@ pub fn handle_communication_err(peer_addr: SocketAddr, e: &Error, details: &str)
         peer_addr, e, e, details
     );
     let _ = ctx_mut(|c| c.connections.remove(&peer_addr));
+}
+
+/// Try reading from the disk into the given structure.
+pub fn read_from_disk<D>(file_path: &Path) -> R<D>
+where
+    D: DeserializeOwned,
+{
+    Ok(File::open(file_path)
+        .map_err(|e| e.into())
+        .map(BufReader::new)
+        .and_then(|mut rdr| bincode::deserialize_from(&mut rdr))?)
+}
+
+/// Try writing the given structure to the disk.
+pub fn write_to_disk<S>(file_path: &Path, s: &S) -> R<()>
+where
+    S: Serialize,
+{
+    File::create(file_path)
+        .map_err(|e| e.into())
+        .map(BufWriter::new)
+        .and_then(|mut rdr| bincode::serialize_into(&mut rdr, s))?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -63,7 +101,7 @@ pub mod testing {
     use std::path::PathBuf;
 
     pub fn test_dirs() -> Dirs {
-        Dirs::Overide(OverRide::new(&unwrap!(tmp_dir().to_str())))
+        Dirs::Overide(OverRide::new(&unwrap!(tmp_rand_dir().to_str())))
     }
 
     pub fn rand_node_info() -> NodeInfo {
@@ -77,8 +115,8 @@ pub mod testing {
         }
     }
 
-    fn tmp_dir() -> PathBuf {
-        let fname = format!("{:016x}.quic_p2p_tests", rand::random::<u64>());
+    fn tmp_rand_dir() -> PathBuf {
+        let fname = format!("quic_p2p_tests_{:016x}", rand::random::<u64>());
         let mut path = env::temp_dir();
         path.push(fname);
         path

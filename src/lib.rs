@@ -23,8 +23,8 @@ pub use peer::{NodeInfo, Peer};
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
 pub use utils::R;
 
-use crate::bootstrap_cache::init_bootstrap_cache;
 use crate::wire_msg::WireMsg;
+use bootstrap_cache::BootstrapCache;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use event_loop::EventLoop;
 use std::collections::VecDeque;
@@ -239,7 +239,7 @@ impl QuicP2p {
     }
 
     fn new(event_tx: Sender<Event>) -> Self {
-        Self::with_config(event_tx, Config::read_or_construct_default())
+        Self::with_config(event_tx, Config::read_or_construct_default(None))
     }
 
     fn with_config(event_tx: Sender<Event>, cfg: Config) -> Self {
@@ -292,7 +292,7 @@ impl QuicP2p {
                 our_complete_cert,
             )
         };
-        let bootstrap_cache = init_bootstrap_cache(hard_coded_contacts)?;
+        let bootstrap_cache = BootstrapCache::new(hard_coded_contacts, None)?;
 
         self.el.post(move || {
             let our_cfg = unwrap!(peer_config::new_our_cfg(
@@ -359,7 +359,7 @@ impl QuicP2p {
     fn query_ip_echo_service(&mut self) -> R<SocketAddr> {
         // FIXME: For the purpose of simplicity we are asking only one peer just now. In production
         // ask multiple until one answers OR we exhaust the list
-        let node_info = if let Some(node_info) = self.cfg.hard_coded_contacts.first() {
+        let node_info = if let Some(node_info) = self.cfg.hard_coded_contacts.iter().next() {
             node_info.clone()
         } else {
             return Err(Error::NoEndpointEchoServerFound);
@@ -389,6 +389,7 @@ impl QuicP2p {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
     use std::sync::mpsc::{self, Receiver};
 
     #[test]
@@ -412,7 +413,11 @@ mod tests {
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
         let qp2p0_port = qp2p0_info.peer_addr.port();
 
-        let (mut qp2p1, rx1) = new_random_qp2p_for_unit_test(true, vec![qp2p0_info.clone()]);
+        let (mut qp2p1, rx1) = {
+            let mut hcc: HashSet<_> = Default::default();
+            assert!(hcc.insert(qp2p0_info.clone()));
+            new_random_qp2p_for_unit_test(true, hcc)
+        };
 
         // Echo service is availabe through qp2p0
         let qp2p1_port = unwrap!(qp2p1.query_ip_echo_service()).port();
@@ -421,7 +426,11 @@ mod tests {
         assert_ne!(qp2p0_port, qp2p1_port);
         assert_eq!(qp2p1_port, qp2p1_info.peer_addr.port());
 
-        let (mut qp2p2, _rx) = new_random_qp2p_for_unit_test(true, vec![qp2p0_info.clone()]);
+        let (mut qp2p2, _rx) = {
+            let mut hcc: HashSet<_> = Default::default();
+            assert!(hcc.insert(qp2p0_info.clone()));
+            new_random_qp2p_for_unit_test(true, hcc)
+        };
         let qp2p2_info = unwrap!(qp2p2.our_connection_info());
 
         // The two qp2p can now send data to each other
@@ -454,7 +463,11 @@ mod tests {
         let (mut qp2p0, rx0) = new_random_qp2p_for_unit_test(false, Default::default());
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
-        let (mut qp2p1, rx1) = new_random_qp2p_for_unit_test(true, vec![qp2p0_info.clone()]);
+        let (mut qp2p1, rx1) = {
+            let mut hcc: HashSet<_> = Default::default();
+            assert!(hcc.insert(qp2p0_info.clone()));
+            new_random_qp2p_for_unit_test(true, hcc)
+        };
         let qp2p1_info = unwrap!(qp2p1.our_connection_info());
 
         let qp2p0_addr = qp2p0_info.peer_addr;
@@ -553,11 +566,11 @@ mod tests {
 
     #[test]
     fn connect_to_marks_that_we_attempted_to_contact_the_peer() {
-        let (mut peer1, _) = new_random_qp2p_for_unit_test(false, vec![]);
+        let (mut peer1, _) = new_random_qp2p_for_unit_test(false, Default::default());
         let peer1_conn_info = unwrap!(peer1.our_connection_info());
         let peer1_addr = peer1_conn_info.peer_addr;
 
-        let (mut peer2, ev_rx) = new_random_qp2p_for_unit_test(false, vec![]);
+        let (mut peer2, ev_rx) = new_random_qp2p_for_unit_test(false, Default::default());
         peer2.connect_to(peer1_conn_info);
 
         for event in ev_rx.iter() {
@@ -578,7 +591,7 @@ mod tests {
 
     fn new_random_qp2p_for_unit_test(
         is_addr_unspecified: bool,
-        contacts: Vec<NodeInfo>,
+        contacts: HashSet<NodeInfo>,
     ) -> (QuicP2p, Receiver<Event>) {
         let (tx, rx) = mpsc::channel();
         let qp2p = {

@@ -14,26 +14,26 @@ use std::sync::mpsc;
 quick_error! {
     #[derive(Debug)]
      pub enum Error {
-         IoError(e: io::Error) {
+         Io(e: io::Error) {
              display("IO Error: {}", e)
              from()
          }
-         ReadError(e: quinn::ReadError) {
+         Read(e: quinn::ReadError) {
              display("Read Error: {}", e)
              from()
          }
          BiDirectionalStreamAttempted(peer_addr: SocketAddr) {
              display("Bi-directional stream attempted by peer {}", peer_addr)
          }
-         ConnectError(e: quinn::ConnectError) {
+         Connect(e: quinn::ConnectError) {
              display("Connection Error: {}", e)
              from()
          }
-         ConnectionError(e: quinn::ConnectionError) {
+         Connection(e: quinn::ConnectionError) {
              display("Connection Error: {}", e)
              from()
          }
-         EndpointError(e: quinn::EndpointError) {
+         Endpoint(e: quinn::EndpointError) {
              display("Endpoint error: {}", e)
              from()
          }
@@ -51,11 +51,11 @@ quick_error! {
              display("Oneshot Receiver error: {}", e)
              from()
          }
-         TLSError(e: rustls::TLSError) {
+         TLS(e: rustls::TLSError) {
              display("TLE error: {}", e)
              from()
          }
-         BincodeError(e: bincode::Error) {
+         Bincode(e: bincode::Error) {
              display("Bincode error: {}", e)
              from()
          }
