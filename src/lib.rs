@@ -106,7 +106,7 @@ impl Builder {
         let mut qp2p = if let Some(cfg) = self.cfg {
             QuicP2p::with_config(self.event_tx, cfg)
         } else {
-            QuicP2p::new(self.event_tx)
+            QuicP2p::new(self.event_tx)?
         };
 
         qp2p.activate()?;
@@ -235,11 +235,15 @@ impl QuicP2p {
             let _ = tx.send(cache);
         });
         let cache = rx.recv()?;
+
         Ok(cache)
     }
 
-    fn new(event_tx: Sender<Event>) -> Self {
-        Self::with_config(event_tx, Config::read_or_construct_default(None))
+    fn new(event_tx: Sender<Event>) -> R<Self> {
+        Ok(Self::with_config(
+            event_tx,
+            Config::read_or_construct_default(None)?,
+        ))
     }
 
     fn with_config(event_tx: Sender<Event>, cfg: Config) -> Self {

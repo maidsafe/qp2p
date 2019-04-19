@@ -14,9 +14,10 @@ use crate::{NodeInfo, R};
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::{fmt, fs, io};
 
 /// QuicP2p configurations
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Config {
     /// Hard Coded contacts
     pub hard_coded_contacts: HashSet<NodeInfo>,
@@ -45,36 +46,25 @@ pub struct Config {
 }
 
 impl Config {
-    /// Try and read the config off the disk first and failing that create a default one. It will
-    /// try write the default constructed one to the disk.
-    pub fn read_or_construct_default(user_override: Option<&Dirs>) -> Config {
-        match Self::read_config(user_override) {
-            Ok(cfg) => cfg,
-            Err(e) => {
-                debug!("Failed to read config off the disk: {:?} - {}", e, e);
-                let cfg = Self::with_default_cert();
-                if let Err(e) =
-                    config_path(user_override).and_then(|p| utils::write_to_disk(&p, &cfg))
-                {
-                    info!("Failed to write config to the disk: {}", e);
-                }
-
-                cfg
-            }
-        }
-    }
-
-    /// Read the Config off the disk
-    pub fn read_config(user_override: Option<&Dirs>) -> R<Config> {
+    /// Try and read the config off the disk first. If such a file-path doesn't exist it'll create
+    /// a default one with random certificate and write that to the disk, eventually returning that
+    /// config to the caller.
+    pub fn read_or_construct_default(user_override: Option<&Dirs>) -> R<Config> {
         let config_path = config_path(user_override)?;
 
         if config_path.exists() {
             Ok(utils::read_from_disk(&config_path)?)
         } else {
-            Err(From::from(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Given config path does not exist",
-            )))
+            let config_dir = config_path
+                .parent()
+                .ok_or_else(|| io::ErrorKind::NotFound.into())
+                .map_err(Error::Io)?;
+            fs::create_dir_all(&config_dir)?;
+
+            let cfg = Config::with_default_cert();
+            utils::write_to_disk(&config_path, &cfg)?;
+
+            Ok(cfg)
         }
     }
 
@@ -91,7 +81,7 @@ impl Config {
 
 /// To be used to read and write our certificate and private key to disk esp. as a part of our
 /// configuration file
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct SerialisableCertificate {
     pub cert_der: Vec<u8>,
     pub key_der: Vec<u8>,
@@ -115,6 +105,16 @@ impl Default for SerialisableCertificate {
             cert_der: cert.serialize_der(),
             key_der: cert.serialize_private_key_der(),
         }
+    }
+}
+
+impl fmt::Debug for SerialisableCertificate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "SerialisableCertificate {{ cert_der: {}, key_der: <HIDDEN> }}",
+            utils::bin_data_format(&self.cert_der)
+        )
     }
 }
 
@@ -145,4 +145,24 @@ fn config_path(user_override: Option<&Dirs>) -> R<PathBuf> {
     )?;
 
     Ok(cfg_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils;
+    use crate::utils::testing::test_dirs;
+
+    #[test]
+    fn config_create_read_and_write() {
+        let dir = test_dirs();
+        let config_path = unwrap!(config_path(Some(&dir)));
+
+        assert!(utils::read_from_disk::<Config>(&config_path).is_err());
+
+        let cfg = unwrap!(Config::read_or_construct_default(Some(&dir)));
+        let read_cfg = unwrap!(utils::read_from_disk(&config_path));
+
+        assert_eq!(cfg, read_cfg);
+    }
 }
