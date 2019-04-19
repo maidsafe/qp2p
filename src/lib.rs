@@ -144,7 +144,13 @@ pub struct QuicP2p {
 }
 
 impl QuicP2p {
-    /// Bootstrap to a proxy
+    /// Bootstrap to the network.
+    ///
+    /// Bootstrap concept is different from "connect" in several ways: `bootstrap()` will try to
+    /// connect to all peers which are specified in the config (`hard_coded_contacts`) or were
+    /// previously cached. If one bootstrap connection succeeds, all other connections will be dropped.
+    ///
+    /// In case of success `Event::BootstrapedTo` will be fired. On error quic-p2p will fire `Event::BootstrapFailure`.
     pub fn bootstrap(&mut self) {
         self.el.post(|| {
             bootstrap::start();
