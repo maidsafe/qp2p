@@ -72,7 +72,7 @@ where
     D: DeserializeOwned,
 {
     Ok(File::open(file_path)
-        .map_err(|e| e.into())
+        .map_err(Into::into)
         .map(BufReader::new)
         .and_then(|mut rdr| bincode::deserialize_from(&mut rdr))?)
 }
@@ -83,7 +83,7 @@ where
     S: Serialize,
 {
     File::create(file_path)
-        .map_err(|e| e.into())
+        .map_err(Into::into)
         .map(BufWriter::new)
         .and_then(|mut rdr| bincode::serialize_into(&mut rdr, s))?;
 

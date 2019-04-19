@@ -57,10 +57,13 @@ impl fmt::Display for WireMsg {
 
 /// Type of Handshake.
 ///
-/// If the peer is a client then we allow a single connection between us, otherwise we will have 2
-/// connections with a uni-directional stream in each.
+/// If the peer is a client then we allow a single connection between us. This can have multiple
+/// uni-directional streams from either side to the other. For Node-Node however we will have 2
+/// connections with each allowing multiple uni-directional streams but only in one direction - the
+/// active connection to a peer will allow only outgoing uni-directional streams from it and a
+/// passive connection from a peer will allow only incoming uni-directional streams from it.
 ///
-/// This information will be given to the user for them to deal with it appropriately.
+/// Depending on the handshake we will categorise the peer and give this information to the user.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Handshake {
     /// The connecting peer is a node. Certificate is needed for allowing connection back to the
