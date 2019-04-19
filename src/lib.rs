@@ -193,7 +193,15 @@ impl fmt::Display for NodeInfo {
 }
 
 impl QuicP2p {
-    /// Bootstrap to a proxy
+    /// Bootstrap to the network.
+    ///
+    /// Bootstrap concept is interchangeable with "connect" except in the context quic-p2p
+    /// bootstrapping is more powerful than a simple `connect_to()`. `bootstrap()` will try to
+    /// connect to all peers that are specified in config (`hard_coded_contacts`) or were
+    /// previously cached.
+    ///
+    /// In case of success `Event::BootstrapedTo` will be fired. On error quic-p2p will fire
+    /// `Event::BootstrapFailure`.
     pub fn bootstrap(&mut self) {
         self.el.post(|| {
             bootstrap::initiate();
