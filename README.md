@@ -1,8 +1,8 @@
-# p2p-quic
+# quic-p2p
 
 |Crate|Documentation|Linux/macOS/Windows|
 |:---:|:-----------:|:-----------------:|
-|[![](http://meritbadge.herokuapp.com/p2p-quic)](https://crates.io/crates/p2p-quic)|[![Documentation](https://docs.rs/p2p-quic/badge.svg)](https://docs.rs/p2p-quic)|[![Build Status](https://travis-ci.com/ustulation/using-quinn.svg?branch=master)](https://travis-ci.com/maidsafe/config_file_handler)|
+|[![](http://meritbadge.herokuapp.com/quic-p2p)](https://crates.io/crates/quic-p2p)|[![Documentation](https://docs.rs/quic-p2p/badge.svg)](https://docs.rs/quic-p2p)|[![Build Status](https://travis-ci.com/ustulation/using-quinn.svg?branch=master)](https://travis-ci.com/maidsafe/config_file_handler)|
 
 | [MaidSafe website](https://maidsafe.net) | [SAFE Dev Forum](https://forum.safedev.org) | [SAFE Network Forum](https://safenetforum.org) |
 |:-------------------------------------:|:---------------------------------------:|:------------------------------------------:|
@@ -31,18 +31,18 @@ quic proved connection security via the use of TLS 1.3. This library allows 3 di
 2. Allow use of a private certificate authority.
 3. Allow no identity validation of peers, but do encrypt connections.
 
-This should satisfy the requirements of many p2p networks, whether they trust any clearnet certificate authority (which may be a centralised attack source) or whether they pass the identity management up to a different layer to validate identities and simply use p2p-quic as a secured network in terms of encrypted connections.
+This should satisfy the requirements of many p2p networks, whether they trust any clearnet certificate authority (which may be a centralised attack source) or whether they pass the identity management up to a different layer to validate identities and simply use quic-p2p as a secured network in terms of encrypted connections.
 
 ### Bootstrap Cache
 
-p2p-quic will save any endpoints and certificates of nodes that are connectible
+quic-p2p will save any endpoints and certificates of nodes that are connectible
 without any setup such as is required via NAT hole punching. The most recently
 connected 200 nodes are stored and these are then used to re-join the network
 after any restart.
 
 ### Connectivity types
 
-p2p-quic sets 2 connection types when in p2p mode. This allows the connections to be defined as:
+quic-p2p sets 2 connection types when in p2p mode. This allows the connections to be defined as:
 
 1. A bi-directional connection.
 
