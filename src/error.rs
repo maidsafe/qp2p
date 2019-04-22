@@ -59,6 +59,9 @@ quick_error! {
              display("Bincode error: {}", e)
              from()
          }
+         Configuration(e: String) {
+             display("Configuration error: {}", e)
+         }
          OperationNotAllowed {
              display("This operation is not allowed for us")
          }

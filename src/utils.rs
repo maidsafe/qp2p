@@ -13,7 +13,7 @@ use crate::error::Error;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter};
+use std::io::{BufReader, BufWriter};
 use std::net::SocketAddr;
 use std::path::Path;
 
@@ -28,11 +28,34 @@ pub fn connect_terminator() -> (ConnectTerminator, tokio::sync::mpsc::Receiver<(
 }
 
 /// Get the project directory
+#[cfg(any(
+    all(
+        unix,
+        not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+    ),
+    windows
+))]
 #[inline]
 pub fn project_dir() -> R<Dirs> {
     let dirs = directories::ProjectDirs::from("net", "MaidSafe", "quic-p2p")
-        .ok_or_else(|| Error::Io(io::ErrorKind::NotFound.into()))?;
+        .ok_or_else(|| Error::Io(::std::io::ErrorKind::NotFound.into()))?;
     Ok(Dirs::Desktop(dirs))
+}
+
+/// Get the project directory
+#[cfg(not(any(
+    all(
+        unix,
+        not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+    ),
+    windows
+)))]
+#[inline]
+pub fn project_dir() -> R<Dirs> {
+    Err(Error::Configuration(
+        "No default project dir on non-desktop platforms. User must provide an override path."
+            .to_string(),
+    ))
 }
 
 /// Convert binary data to a diplay-able format

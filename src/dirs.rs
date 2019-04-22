@@ -7,6 +7,13 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+#[cfg(any(
+    all(
+        unix,
+        not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+    ),
+    windows
+))]
 use directories::ProjectDirs;
 use std::path::{Path, PathBuf};
 
@@ -29,7 +36,13 @@ impl OverRide {
 pub enum Dirs {
     #[allow(unused)]
     Overide(OverRide),
-    #[cfg(not(any(target_os = "android", target_os = "androideabi", target_os = "ios")))]
+    #[cfg(any(
+        all(
+            unix,
+            not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+        ),
+        windows
+    ))]
     Desktop(ProjectDirs),
 }
 
@@ -39,7 +52,13 @@ impl Dirs {
         use Dirs::*;
         match *self {
             Overide(ref x) => x.path.as_path(),
-            #[cfg(not(any(target_os = "android", target_os = "androideabi", target_os = "ios")))]
+            #[cfg(any(
+                all(
+                    unix,
+                    not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+                ),
+                windows
+            ))]
             Desktop(ref x) => x.config_dir(),
         }
     }
@@ -49,7 +68,13 @@ impl Dirs {
         use Dirs::*;
         match *self {
             Overide(ref x) => x.path.as_path(),
-            #[cfg(not(any(target_os = "android", target_os = "androideabi", target_os = "ios")))]
+            #[cfg(any(
+                all(
+                    unix,
+                    not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+                ),
+                windows
+            ))]
             Desktop(ref x) => x.cache_dir(),
         }
     }
@@ -60,7 +85,13 @@ impl Dirs {
         use Dirs::*;
         match *self {
             Overide(ref x) => x.path.as_path(),
-            #[cfg(not(any(target_os = "android", target_os = "androideabi", target_os = "ios")))]
+            #[cfg(any(
+                all(
+                    unix,
+                    not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+                ),
+                windows
+            ))]
             Desktop(ref x) => x.data_dir(),
         }
     }

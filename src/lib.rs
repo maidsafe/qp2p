@@ -7,6 +7,9 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+// Required for the quick_error! macro
+#![recursion_limit = "128"]
+
 #[macro_use]
 extern crate log;
 #[macro_use]
