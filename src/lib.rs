@@ -404,7 +404,7 @@ mod tests {
     use std::collections::HashSet;
     use std::sync::mpsc::{self, TryRecvError};
     use std::time::Duration;
-    use test_utils::{new_random_qp2p_for_unit_test, TestClient};
+    use test_utils::new_random_qp2p_for_unit_test;
 
     #[test]
     fn dropping_qp2p_handle_gracefully_shutsdown_event_loop() {
@@ -587,16 +587,18 @@ mod tests {
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
         let (tx1, _rx1) = mpsc::channel();
-        let mut malicious_client = TestClient::new(tx1);
-        unwrap!(malicious_client.activate(OurType::Node));
-        malicious_client.send(
+        let mut malicious_client = unwrap!(Builder::new(tx1)
+            .with_config(Config {
+                our_type: OurType::Node,
+                ..Default::default()
+            })
+            .build());
+        malicious_client.send_wire_msg(
             qp2p0_info.clone().into(),
             WireMsg::Handshake(Handshake::Client),
         );
 
-        std::thread::sleep(Duration::from_millis(10));
-
-        match rx0.try_recv() {
+        match rx0.recv() {
             Ok(Event::ConnectedTo {
                 peer: Peer::Node { .. },
             }) => {}
@@ -619,16 +621,18 @@ mod tests {
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
         let (tx1, _rx1) = mpsc::channel();
-        let mut malicious_client = TestClient::new(tx1);
-        unwrap!(malicious_client.activate(OurType::Client));
-        malicious_client.send(
+        let mut malicious_client = unwrap!(Builder::new(tx1)
+            .with_config(Config {
+                our_type: OurType::Client,
+                ..Default::default()
+            })
+            .build());
+        malicious_client.send_wire_msg(
             qp2p0_info.clone().into(),
             WireMsg::Handshake(Handshake::Node { cert_der: vec![] }),
         );
 
-        std::thread::sleep(Duration::from_millis(10));
-
-        match rx0.try_recv() {
+        match rx0.recv() {
             Ok(Event::ConnectedTo {
                 peer: Peer::Client { .. },
             }) => {}
