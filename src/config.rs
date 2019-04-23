@@ -11,6 +11,8 @@ use crate::dirs::Dirs;
 use crate::error::Error;
 use crate::utils;
 use crate::{NodeInfo, R};
+use base64;
+use bincode;
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -51,8 +53,9 @@ pub struct Config {
     /// The interval is in milliseconds. A value of 0 disables this feature.
     #[structopt(long)]
     pub keep_alive_interval_msec: Option<u32>,
-    /// Path to our TLS Certificate. This file must contain `SerialisableCertificate` as content
-    #[structopt(long, parse(try_from_str = "serde_json::from_str"))]
+    /// Our TLS Certificate. If passed as a command line argument, it should be encoded in base64
+    /// (see `SerialisableCertificate::to_string`).
+    #[structopt(long, parse(try_from_str))]
     pub our_complete_cert: Option<SerialisableCertificate>,
     /// Specify if we are a client or a node
     #[structopt(short = "t", long, default_value = "node")]
@@ -119,6 +122,25 @@ impl Default for SerialisableCertificate {
             cert_der: cert.serialize_der(),
             key_der: cert.serialize_private_key_der(),
         }
+    }
+}
+
+impl FromStr for SerialisableCertificate {
+    type Err = Error;
+
+    /// Decode `SerialisableCertificate` from a base64-encoded string.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let cert = base64::decode(s)?;
+        let (cert_der, key_der) = bincode::deserialize(&cert)?;
+        Ok(Self { cert_der, key_der })
+    }
+}
+
+impl ToString for SerialisableCertificate {
+    /// Convert `SerialisableCertificate` into a base64-encoded string.
+    fn to_string(&self) -> String {
+        let cert = unwrap!(bincode::serialize(&(&self.cert_der, &self.key_der)));
+        base64::encode(&cert)
     }
 }
 
