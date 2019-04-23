@@ -24,83 +24,44 @@ extern crate unwrap;
 extern crate serde_derive;
 
 mod common;
-use common::Rpc;
-
-use quic_p2p::{Builder, Config, Event, NodeInfo, Peer, SerialisableCertificate};
-
 use bincode;
 use bytes::Bytes;
-use config_file_handler::FileHandler;
+use common::Rpc;
 use env_logger;
+use quic_p2p::{Builder, Config, Event, Peer};
 use serde_json;
 use std::collections::HashMap;
+use std::io;
 use std::sync::mpsc::channel;
-use std::{
-    io,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-};
+use structopt::StructOpt;
 
 /// Configuration for the bootstrap node
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, StructOpt)]
 pub struct BootstrapNodeConfig {
-    /// IP address that the bootstrap node should listen on
-    ip: Ipv4Addr,
-    /// Port that the bootstrap node should listen on
-    port: u16,
     /// A number of expected connections.
     /// Once this number is reached, we'll send a list of all connections to every connected peer.
+    #[structopt(short, long)]
     expected_conns: usize,
-}
-
-impl Default for BootstrapNodeConfig {
-    fn default() -> Self {
-        BootstrapNodeConfig {
-            ip: unwrap!("127.0.0.1".parse()),
-            port: 5000,
-            expected_conns: 3,
-        }
-    }
+    #[structopt(flatten)]
+    quic_p2p_opts: Config,
 }
 
 fn main() -> Result<(), io::Error> {
     env_logger::init();
 
     // Initialise configuration
-    let cfg_file_handler = FileHandler::<BootstrapNodeConfig>::new("bootstrap.config", true)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-
-    let bootstrap_node_config = cfg_file_handler.read_file().unwrap_or_else(|_e| {
-        info!("Using default bootstrap node config.");
-        BootstrapNodeConfig::default()
-    });
+    let bootstrap_node_config = BootstrapNodeConfig::from_args();
 
     // Initialise QuicP2p
     let (ev_tx, ev_rx) = channel();
 
-    let (mut qp2p, our_cert_der) = {
-        let our_complete_cert = SerialisableCertificate::default();
-        let cert_der = our_complete_cert.cert_der.clone();
-        (
-            unwrap!(Builder::new(ev_tx)
-                .with_config(Config {
-                    our_complete_cert: Some(our_complete_cert),
-                    port: Some(bootstrap_node_config.port),
-                    ip: Some(IpAddr::V4(bootstrap_node_config.ip)),
-                    ..Default::default()
-                },)
-                .build()),
-            cert_der,
-        )
-    };
+    let mut qp2p = unwrap!(Builder::new(ev_tx)
+        .with_config(bootstrap_node_config.quic_p2p_opts)
+        .build());
 
-    info!("QuicP2p started on port {}", bootstrap_node_config.port);
+    let our_conn_info = unwrap!(qp2p.our_connection_info());
+    info!("QuicP2p started on {}", our_conn_info.peer_addr);
 
-    let our_conn_info = NodeInfo {
-        peer_addr: SocketAddr::from((bootstrap_node_config.ip, bootstrap_node_config.port)),
-        peer_cert_der: our_cert_der,
-    };
-
-    // let our_conn_info = unwrap!(qp2p.our_connection_info());
     println!(
         "Our connection info:\n{}\n",
         unwrap!(serde_json::to_string(&our_conn_info)),

@@ -11,37 +11,54 @@ use crate::dirs::Dirs;
 use crate::error::Error;
 use crate::utils;
 use crate::{NodeInfo, R};
+use base64;
+use bincode;
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::{fmt, fs, io};
 
 /// QuicP2p configurations
-#[derive(Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, Eq, PartialEq, StructOpt)]
 pub struct Config {
     /// Hard Coded contacts
+    #[structopt(
+        short,
+        long,
+        default_value = "[]",
+        parse(try_from_str = "serde_json::from_str")
+    )]
     pub hard_coded_contacts: HashSet<NodeInfo>,
     /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
+    #[structopt(short, long)]
     pub port: Option<u16>,
     /// IP address for the listener. If none supplied we'll use the default address (0.0.0.0).
+    #[structopt(long)]
     pub ip: Option<IpAddr>,
     /// This is the maximum message size we'll allow the peer to send to us. Any bigger message and
     /// we'll error out probably shutting down the connection to the peer. If none supplied we'll
     /// default to the documented constant.
+    #[structopt(long)]
     pub max_msg_size_allowed: Option<u32>,
     /// If we hear nothing from the peer in the given interval we declare it offline to us. If none
     /// supplied we'll default to the documented constant.
     ///
     /// The interval is in milliseconds. A value of 0 disables this feature.
+    #[structopt(long)]
     pub idle_timeout_msec: Option<u64>,
     /// Interval to send keep-alives if we are idling so that the peer does not disconnect from us
     /// declaring us offline. If none is supplied we'll default to the documented constant.
     ///
     /// The interval is in milliseconds. A value of 0 disables this feature.
+    #[structopt(long)]
     pub keep_alive_interval_msec: Option<u32>,
-    /// Path to our TLS Certificate. This file must contain `SerialisableCertificate` as content
+    /// Our TLS Certificate. If passed as a command line argument, it should be encoded in base64
+    /// (see `SerialisableCertificate::to_string`).
+    #[structopt(long, parse(try_from_str))]
     pub our_complete_cert: Option<SerialisableCertificate>,
     /// Specify if we are a client or a node
+    #[structopt(short = "t", long, default_value = "node")]
     pub our_type: OurType,
 }
 
@@ -108,6 +125,25 @@ impl Default for SerialisableCertificate {
     }
 }
 
+impl FromStr for SerialisableCertificate {
+    type Err = Error;
+
+    /// Decode `SerialisableCertificate` from a base64-encoded string.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let cert = base64::decode(s)?;
+        let (cert_der, key_der) = bincode::deserialize(&cert)?;
+        Ok(Self { cert_der, key_der })
+    }
+}
+
+impl ToString for SerialisableCertificate {
+    /// Convert `SerialisableCertificate` into a base64-encoded string.
+    fn to_string(&self) -> String {
+        let cert = unwrap!(bincode::serialize(&(&self.cert_der, &self.key_der)));
+        base64::encode(&cert)
+    }
+}
+
 impl fmt::Debug for SerialisableCertificate {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -125,6 +161,22 @@ pub enum OurType {
     Client,
     /// We are a node
     Node,
+}
+
+impl FromStr for OurType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "client" => Ok(OurType::Client),
+            "node" => Ok(OurType::Node),
+            x => {
+                let err = format!("Unknown client type: {}", x);
+                warn!("{}", err);
+                Err(err)
+            }
+        }
+    }
 }
 
 impl Default for OurType {

@@ -9,23 +9,18 @@
 
 //! Basic chat like example that demonstrates how to connect with peers and exchange data.
 
-#[macro_use]
-extern crate unwrap;
-
-use std::net::IpAddr;
-use std::sync::mpsc::{channel, Receiver};
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
-
 use bytes::Bytes;
-use clap::{App, Arg};
+use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
 use rand::{self, RngCore};
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use serde_json;
-
-use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
+use std::sync::mpsc::{channel, Receiver};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use structopt::StructOpt;
+use unwrap::unwrap;
 
 struct PeerList {
     peers: Vec<Peer>,
@@ -67,23 +62,19 @@ impl PeerList {
     }
 }
 
-#[derive(Debug)]
+/// This chat app connects two machines directly without intermediate servers and allows
+/// to exchange messages securely. All the messages are end to end encrypted.
+#[derive(Debug, StructOpt)]
 struct CliArgs {
-    port: Option<u16>,
-    our_ip: Option<IpAddr>,
+    #[structopt(flatten)]
+    quic_p2p_opts: Config,
 }
 
 fn main() {
-    let CliArgs { port, our_ip } = parse_cli_args();
+    let CliArgs { quic_p2p_opts } = CliArgs::from_args();
     let (ev_tx, ev_rx) = channel();
 
-    let mut qp2p = unwrap!(Builder::new(ev_tx)
-        .with_config(Config {
-            port,
-            ip: our_ip,
-            ..Default::default()
-        },)
-        .build());
+    let mut qp2p = unwrap!(Builder::new(ev_tx).with_config(quic_p2p_opts).build());
 
     print_logo();
     println!("Type 'help' to get started.");
@@ -214,44 +205,6 @@ fn print_ourinfo(qp2p: &mut QuicP2p) {
         "Our info:\n\n{}\n",
         serde_json::to_string(&ourinfo).unwrap()
     );
-}
-
-fn parse_cli_args() -> CliArgs {
-    let matches = App::new("Simple chat app built on Crust")
-        .about(
-            "This chat app connects two machines directly without intermediate servers and allows \
-             to exchange messages securely. All the messages are end to end encrypted.",
-        )
-        .arg(
-            Arg::with_name("listening_port")
-                .help(
-                    "Optional server Crust will be listening for incoming connections ON. If \
-                     unspecified, random port will be used.",
-                )
-                .short("p")
-                .value_name("PORT")
-                .takes_value(true)
-                .validator(|v| v.parse::<u16>().and(Ok(())).or(Err("Invalid port".into()))),
-        )
-        .arg(
-            Arg::with_name("our_ip")
-                .help(
-                    "Our IP address to use when constructing our connection info. If unspecified \
-                     , Crust will try to use bootstrap node to determine our IP.",
-                )
-                .short("a")
-                .long("our-ip")
-                .value_name("OUR_IP")
-                .takes_value(true),
-        )
-        .get_matches();
-
-    let port = matches
-        .value_of("listening_port")
-        .and_then(|v| v.parse().ok());
-    let our_ip = matches.value_of("our_ip").map(|addr| unwrap!(addr.parse()));
-
-    CliArgs { port, our_ip }
 }
 
 fn print_logo() {
