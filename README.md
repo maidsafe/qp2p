@@ -2,7 +2,7 @@
 
 |Crate|Documentation|Linux/macOS/Windows|
 |:---:|:-----------:|:-----------------:|
-|[![](http://meritbadge.herokuapp.com/quic-p2p)](https://crates.io/crates/quic-p2p)|[![Documentation](https://docs.rs/quic-p2p/badge.svg)](https://docs.rs/quic-p2p)|[![Build Status](https://travis-ci.com/ustulation/using-quinn.svg?branch=master)](https://travis-ci.com/maidsafe/config_file_handler)|
+|[![](http://meritbadge.herokuapp.com/quic-p2p)](https://crates.io/crates/quic-p2p)|[![Documentation](https://docs.rs/quic-p2p/badge.svg)](https://docs.rs/quic-p2p)|[![Build Status](https://travis-ci.com/maidsafe/quic-p2p.svg?branch=master)](https://travis-ci.com/maidsafe/quic-p2p)|
 
 | [MaidSafe website](https://maidsafe.net) | [SAFE Dev Forum](https://forum.safedev.org) | [SAFE Network Forum](https://safenetforum.org) |
 |:-------------------------------------:|:---------------------------------------:|:------------------------------------------:|
