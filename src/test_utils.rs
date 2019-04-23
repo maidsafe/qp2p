@@ -7,20 +7,53 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::bootstrap_cache::BootstrapCache;
-use crate::config::{Config, OurType, SerialisableCertificate};
+use crate::config::{Config, SerialisableCertificate};
 use crate::connection::{FromPeer, QConn, ToPeer};
-use crate::context::{ctx, initialise_ctx, Context};
+use crate::context::ctx;
+use crate::dirs::{Dirs, OverRide};
 use crate::event::Event;
-use crate::event_loop::EventLoop;
 use crate::wire_msg::WireMsg;
-use crate::{communicate, listener, peer_config, Builder, NodeInfo, Peer, QuicP2p, R};
+use crate::{communicate, Builder, NodeInfo, Peer, QuicP2p};
+use rand::Rng;
 use std::collections::HashSet;
-use std::mem;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::env;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::path::PathBuf;
+use std::sync::mpsc::{self, Receiver};
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
+
+/// Extend `QuicP2p` with test functions.
+impl QuicP2p {
+    /// Send an arbitrary message. Used for testing malicious nodes and clients.
+    pub(crate) fn send_wire_msg(&mut self, peer: Peer, msg: WireMsg) {
+        self.el.post(move || {
+            communicate::try_write_to_peer(peer, msg);
+        });
+    }
+}
+
+pub(crate) fn test_dirs() -> Dirs {
+    Dirs::Overide(OverRide::new(&unwrap!(tmp_rand_dir().to_str())))
+}
+
+pub(crate) fn rand_node_info() -> NodeInfo {
+    let peer_cert_der = SerialisableCertificate::default().cert_der;
+    let mut rng = rand::thread_rng();
+    let port: u16 = rng.gen();
+    let peer_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
+    NodeInfo {
+        peer_addr,
+        peer_cert_der,
+    }
+}
+
+fn tmp_rand_dir() -> PathBuf {
+    let fname = format!("quic_p2p_tests_{:016x}", rand::random::<u64>());
+    let mut path = env::temp_dir();
+    path.push(fname);
+    path
+}
 
 /// Creates a new `QuicP2p` instance for testing.
 pub(crate) fn new_random_qp2p_for_unit_test(
@@ -88,90 +121,4 @@ pub(crate) fn write_to_bi_stream(peer_addr: SocketAddr, wire_msg: WireMsg) {
             }
         }
     })
-}
-
-/// Mock `QuicP2p`, used for testing malicious client scenarios.
-pub(crate) struct TestClient {
-    event_tx: Sender<Event>,
-    el: EventLoop,
-}
-
-impl TestClient {
-    /// Create a test client
-    pub fn new(event_tx: Sender<Event>) -> Self {
-        let el = EventLoop::spawn();
-        Self { event_tx, el }
-    }
-
-    /// Must be called only once. There can only be one context per `TestClient` instance.
-    pub fn activate(&mut self, our_type: OurType) -> R<()> {
-        let tx = self.event_tx.clone();
-
-        let ((key, cert), our_complete_cert) = {
-            let our_complete_cert: SerialisableCertificate = Default::default();
-            (
-                our_complete_cert.obtain_priv_key_and_cert(),
-                our_complete_cert,
-            )
-        };
-
-        let (err_tx, err_rx) = mpsc::channel::<R<()>>();
-        self.el.post(move || {
-            let our_cfg = unwrap!(peer_config::new_our_cfg(
-                peer_config::DEFAULT_IDLE_TIMEOUT_MSEC,
-                peer_config::DEFAULT_KEEP_ALIVE_INTERVAL_MSEC,
-                cert,
-                key
-            ));
-
-            let mut ep_builder = quinn::Endpoint::builder();
-            ep_builder.listen(our_cfg);
-            let (dr, ep, incoming_connections) = {
-                match UdpSocket::bind(&(Ipv4Addr::LOCALHOST, 0)) {
-                    Ok(udp) => unwrap!(ep_builder.with_socket(udp)),
-                    Err(e) => {
-                        panic!("Could not bind a random port! Error: {:?}- {}", e, e);
-                    }
-                }
-            };
-
-            let mut bootstrap_cache =
-                unwrap!(BootstrapCache::new(Default::default(), Default::default()));
-
-            // Do not use the bootstrap cache.
-            mem::replace(bootstrap_cache.peers_mut(), Default::default());
-
-            let ctx = Context::new(
-                tx,
-                our_complete_cert,
-                crate::DEFAULT_MAX_ALLOWED_MSG_SIZE,
-                peer_config::DEFAULT_IDLE_TIMEOUT_MSEC,
-                peer_config::DEFAULT_KEEP_ALIVE_INTERVAL_MSEC,
-                our_type,
-                bootstrap_cache,
-                ep,
-            );
-
-            initialise_ctx(ctx);
-
-            current_thread::spawn(dr.map_err(|e| warn!("Error in quinn Driver: {:?}", e)));
-
-            if our_type != OurType::Client {
-                listener::listen(incoming_connections);
-            }
-
-            let _ = err_tx.send(Ok(()));
-        });
-
-        (err_rx.recv()?)?;
-
-        Ok(())
-    }
-
-    /// Send an arbitrary message.
-    pub fn send(&mut self, peer: Peer, msg: WireMsg) {
-        self.el.post(move || {
-            communicate::try_write_to_peer(peer, msg);
-        });
-    }
 }

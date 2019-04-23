@@ -202,8 +202,8 @@ fn config_path(user_override: Option<&Dirs>) -> R<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::test_dirs;
     use crate::utils;
-    use crate::utils::testing::test_dirs;
 
     #[test]
     fn config_create_read_and_write() {

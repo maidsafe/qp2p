@@ -121,7 +121,7 @@ impl BootstrapCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::testing::{rand_node_info, test_dirs};
+    use crate::test_utils::{rand_node_info, test_dirs};
 
     mod add_peer {
         use super::*;
