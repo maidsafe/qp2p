@@ -10,6 +10,7 @@
 use crate::ctx_mut;
 use crate::dirs::Dirs;
 use crate::error::Error;
+use crate::event::Event;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs::File;
@@ -81,12 +82,24 @@ pub fn bin_data_format(data: &[u8]) -> String {
 
 /// Handle error in communication.
 #[inline]
-pub fn handle_communication_err(peer_addr: SocketAddr, e: &Error, details: &str) {
+pub fn handle_communication_err(
+    peer_addr: SocketAddr,
+    e: &Error,
+    details: &str,
+    unsent_user_msg: Option<bytes::Bytes>,
+) {
     debug!(
         "ERROR in communication with peer {}: {:?} - {}. Details: {}",
         peer_addr, e, e, details
     );
-    let _ = ctx_mut(|c| c.connections.remove(&peer_addr));
+    ctx_mut(|c| {
+        let _ = c.connections.remove(&peer_addr);
+        if let Some(m) = unsent_user_msg {
+            let _ = c
+                .event_tx
+                .send(Event::UnsentUserMessage { peer_addr, msg: m });
+        }
+    });
 }
 
 /// Try reading from the disk into the given structure.

@@ -109,19 +109,37 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
 
 /// Write to the peer, given the QUIC connection to it
 pub fn write_to_peer_connection(peer_addr: SocketAddr, conn: &QConn, wire_msg: WireMsg) {
+    let user_msg = if let WireMsg::UserMsg(ref m) = wire_msg {
+        Some(m.clone())
+    } else {
+        None
+    };
+    let user_msg0 = user_msg.clone();
+    let user_msg1 = user_msg.clone();
+
     let leaf = conn
         .open_uni()
         .map_err(move |e| {
-            utils::handle_communication_err(peer_addr, &From::from(e), "Open-Unidirectional")
+            utils::handle_communication_err(
+                peer_addr,
+                &From::from(e),
+                "Open-Unidirectional",
+                user_msg,
+            )
         })
         .and_then(move |o_stream| {
             tokio::io::write_all(o_stream, wire_msg.into()).map_err(move |e| {
-                utils::handle_communication_err(peer_addr, &From::from(e), "Write-All")
+                utils::handle_communication_err(peer_addr, &From::from(e), "Write-All", user_msg0)
             })
         })
         .and_then(move |(o_stream, _): (_, bytes::Bytes)| {
             tokio::io::shutdown(o_stream).map_err(move |e| {
-                utils::handle_communication_err(peer_addr, &From::from(e), "Shutdown-after-write")
+                utils::handle_communication_err(
+                    peer_addr,
+                    &From::from(e),
+                    "Shutdown-after-write",
+                    user_msg1,
+                )
             })
         })
         .map(|_| ());
@@ -133,7 +151,12 @@ pub fn write_to_peer_connection(peer_addr: SocketAddr, conn: &QConn, wire_msg: W
 pub fn read_from_peer(peer_addr: SocketAddr, incoming_streams: quinn::IncomingStreams) {
     let leaf = incoming_streams
         .map_err(move |e| {
-            utils::handle_communication_err(peer_addr, &From::from(e), "Incoming streams failed");
+            utils::handle_communication_err(
+                peer_addr,
+                &From::from(e),
+                "Incoming streams failed",
+                None,
+            );
         })
         .for_each(move |quic_stream| {
             read_peer_stream(peer_addr, quic_stream).map_err(|e| {
@@ -151,7 +174,7 @@ fn read_peer_stream(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<(
     let i_stream = match quic_stream {
         quinn::NewStream::Bi(_, _) => {
             let e = Error::BiDirectionalStreamAttempted(peer_addr);
-            utils::handle_communication_err(peer_addr, &e, "Receiving Stream");
+            utils::handle_communication_err(peer_addr, &e, "Receiving Stream", None);
             return Err(e);
         }
         quinn::NewStream::Uni(uni) => uni,
@@ -159,10 +182,12 @@ fn read_peer_stream(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<(
 
     let leaf = i_stream
         .read_to_end(ctx(|c| c.max_msg_size_allowed))
-        .map_err(move |e| utils::handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
+        .map_err(move |e| {
+            utils::handle_communication_err(peer_addr, &From::from(e), "Read-To-End", None)
+        })
         .and_then(move |(_i_stream, raw)| {
             WireMsg::from_raw(raw)
-                .map_err(|e| utils::handle_communication_err(peer_addr, &e, "Raw to WireMsg"))
+                .map_err(|e| utils::handle_communication_err(peer_addr, &e, "Raw to WireMsg", None))
                 .map(|wire_msg| handle_wire_msg(peer_addr, wire_msg))
         });
 
