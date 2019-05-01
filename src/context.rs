@@ -26,7 +26,7 @@ pub fn initialise_ctx(context: Context) {
     CTX.with(|ctx_refcell| {
         let mut ctx = ctx_refcell.borrow_mut();
         if ctx.is_some() {
-            panic!("Context already initialised !");
+            panic!("Context already initialised!");
         } else {
             *ctx = Some(context);
         }
@@ -42,7 +42,7 @@ pub fn is_ctx_initialised() -> bool {
     })
 }
 
-/// Obtain a referece to the `Context`. This will panic if the `Context` has not be set in the
+/// Obtain a reference to the `Context`. This will panic if the `Context` has not been set in the
 /// current thread context.
 pub fn ctx<F, R>(f: F) -> R
 where
@@ -53,12 +53,12 @@ where
         if let Some(ctx) = ctx.as_ref() {
             f(ctx)
         } else {
-            panic!("Context not initialised !");
+            panic!("Context not initialised!");
         }
     })
 }
 
-/// Obtain a mutable referece to the `Context`. This will panic if the `Context` has not be set in
+/// Obtain a mutable reference to the `Context`. This will panic if the `Context` has not been set in
 /// the current thread context.
 pub fn ctx_mut<F, R>(f: F) -> R
 where
@@ -69,7 +69,7 @@ where
         if let Some(ctx) = ctx.as_mut() {
             f(ctx)
         } else {
-            panic!("Context not initialised !");
+            panic!("Context not initialised!");
         }
     })
 }
@@ -86,7 +86,7 @@ pub struct Context {
     pub keep_alive_interval_msec: u32,
     pub our_type: OurType,
     pub bootstrap_cache: BootstrapCache,
-    quic_ep: quinn::Endpoint,
+    pub(crate) quic_ep: quinn::Endpoint,
 }
 
 impl Context {
@@ -115,6 +115,7 @@ impl Context {
         }
     }
 
+    #[cfg(not(test))]
     pub fn quic_ep(&self) -> &quinn::Endpoint {
         &self.quic_ep
     }
