@@ -63,7 +63,8 @@ impl fmt::Debug for FromPeer {
                 "FromPeer::Established with {} pending reads",
                 pending_reads.len()
             ),
-            ref blah => write!(f, "{:?}", blah),
+            FromPeer::NoConnection => write!(f, "FromPeer::NoConnection"),
+            FromPeer::NotNeeded => write!(f, "FromPeer::NotNeeded"),
         }
     }
 }

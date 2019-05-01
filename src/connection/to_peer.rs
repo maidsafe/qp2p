@@ -79,7 +79,8 @@ impl fmt::Debug for ToPeer {
                 pending_sends.len()
             ),
             ToPeer::Established { .. } => write!(f, "ToPeer::Established"),
-            ref blah => write!(f, "{:?}", blah),
+            ToPeer::NoConnection => write!(f, "ToPeer::NoConnection"),
+            ToPeer::NotNeeded => write!(f, "ToPeer::NotNeeded"),
         }
     }
 }
