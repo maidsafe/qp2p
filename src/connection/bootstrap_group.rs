@@ -14,10 +14,12 @@
 //! currently being made by the members of the group and thus an eventual destruction of all such
 //! members to not continue to use resources as we no longer require them.
 
+use crate::context::ctx_mut;
 use crate::event::Event;
 use crate::utils::ConnectTerminator;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::mem;
 use std::net::SocketAddr;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
@@ -80,15 +82,29 @@ impl BootstrapGroupRef {
     /// is because the bootstrapping was successful (in which case no failure event will be
     /// auto-fired).
     pub fn terminate_group(&self, is_due_to_success: bool) {
-        let mut group = self.group.borrow_mut();
+        let mut terminators = {
+            let mut group = self.group.borrow_mut();
+            if is_due_to_success {
+                group.is_bootstrap_successful_yet = true;
+            }
 
-        if is_due_to_success {
-            group.is_bootstrap_successful_yet = true;
-        }
+            // We use a `mem::replace` here because `self.group` can be mutably borrowed
+            // twice during `BootstrapGroupRef::drop` (it's called when we remove a connection)
+            mem::replace(&mut group.terminators, Default::default())
+        };
 
-        for (_, mut terminator) in group.terminators.drain() {
-            let _ = terminator.try_send(());
-        }
+        let _ = terminators.remove(&self.peer_addr);
+
+        ctx_mut(|c| {
+            for (peer_addr, mut terminator) in terminators.drain() {
+                let _ = terminator.try_send(());
+                let _conn = c.connections.remove(&peer_addr);
+            }
+        });
+    }
+
+    pub fn is_bootstrap_successful_yet(&self) -> bool {
+        self.group.borrow().is_bootstrap_successful_yet
     }
 }
 
