@@ -222,10 +222,10 @@ fn random_data_with_hash(size: usize) -> Vec<u8> {
 }
 
 fn hash_correct(data: &[u8]) -> bool {
-    let encoded_hash = ((data[0] as u32) << 24)
-        | ((data[1] as u32) << 16)
-        | ((data[2] as u32) << 8)
-        | data[3] as u32;
+    let encoded_hash = (u32::from(data[0]) << 24)
+        | (u32::from(data[1]) << 16)
+        | (u32::from(data[2]) << 8)
+        | u32::from(data[3]);
     let actual_hash = crc32::checksum_ieee(&data[4..]);
     encoded_hash == actual_hash
 }
