@@ -95,11 +95,17 @@ fn main() {
                 };
                 let mut peerlist = peerlist.lock().unwrap();
                 let result = match cmd {
-                    "ourinfo" => Ok(print_ourinfo(&mut qp2p)),
+                    "ourinfo" => {
+                        print_ourinfo(&mut qp2p);
+                        Ok(())
+                    }
                     "addpeer" => peerlist
                         .insert_from_json(&args.collect::<Vec<_>>().join(" "))
                         .and(Ok(())),
-                    "listpeers" => Ok(peerlist.list()),
+                    "listpeers" => {
+                        peerlist.list();
+                        Ok(())
+                    }
                     "delpeer" => args
                         .next()
                         .ok_or("Missing index argument")
@@ -109,9 +115,12 @@ fn main() {
                     "send" => on_cmd_send(&mut args, &peerlist, &mut qp2p),
                     "sendrand" => on_cmd_send_rand(&mut args, &peerlist, &mut qp2p),
                     "quit" | "exit" => break 'outer,
-                    "help" => Ok(println!(
-                        "Commands: ourinfo, addpeer, listpeers, delpeer, send, quit, exit, help"
-                    )),
+                    "help" => {
+                        println!(
+                            "Commands: ourinfo, addpeer, listpeers, delpeer, send, quit, exit, help"
+                        );
+                        Ok(())
+                    }
                     _ => Err("Unknown command"),
                 };
                 if let Err(msg) = result {
