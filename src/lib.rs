@@ -410,7 +410,7 @@ mod tests {
     use std::collections::HashSet;
     use std::sync::mpsc::{self, TryRecvError};
     use std::time::Duration;
-    use test_utils::new_random_qp2p_for_unit_test;
+    use test_utils::new_random_qp2p;
 
     #[test]
     fn dropping_qp2p_handle_gracefully_shutsdown_event_loop() {
@@ -420,7 +420,7 @@ mod tests {
 
     #[test]
     fn echo_service() {
-        let (mut qp2p0, _rx) = new_random_qp2p_for_unit_test(false, Default::default());
+        let (mut qp2p0, _rx) = new_random_qp2p(false, Default::default());
 
         // Confirm there's no echo service available for us
         match qp2p0.query_ip_echo_service() {
@@ -436,7 +436,7 @@ mod tests {
         let (mut qp2p1, rx1) = {
             let mut hcc: HashSet<_> = Default::default();
             assert!(hcc.insert(qp2p0_info.clone()));
-            new_random_qp2p_for_unit_test(true, hcc)
+            new_random_qp2p(true, hcc)
         };
 
         // Echo service is availabe through qp2p0
@@ -449,7 +449,7 @@ mod tests {
         let (mut qp2p2, _rx) = {
             let mut hcc: HashSet<_> = Default::default();
             assert!(hcc.insert(qp2p0_info.clone()));
-            new_random_qp2p_for_unit_test(true, hcc)
+            new_random_qp2p(true, hcc)
         };
         let qp2p2_info = unwrap!(qp2p2.our_connection_info());
 
@@ -480,13 +480,13 @@ mod tests {
 
     #[test]
     fn multistreaming_and_no_head_of_queue_blocking() {
-        let (mut qp2p0, rx0) = new_random_qp2p_for_unit_test(false, Default::default());
+        let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
         let (mut qp2p1, rx1) = {
             let mut hcc: HashSet<_> = Default::default();
             assert!(hcc.insert(qp2p0_info.clone()));
-            new_random_qp2p_for_unit_test(true, hcc)
+            new_random_qp2p(true, hcc)
         };
         let qp2p1_info = unwrap!(qp2p1.our_connection_info());
 
@@ -589,7 +589,7 @@ mod tests {
     // be changed.
     #[test]
     fn double_handshake_node() {
-        let (mut qp2p0, rx0) = new_random_qp2p_for_unit_test(false, Default::default());
+        let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
         let (tx1, rx1) = mpsc::channel();
@@ -649,7 +649,7 @@ mod tests {
     // be changed.
     #[test]
     fn double_handshake_client() {
-        let (mut qp2p0, rx0) = new_random_qp2p_for_unit_test(false, Default::default());
+        let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
         let (tx1, _rx1) = mpsc::channel();
@@ -691,11 +691,11 @@ mod tests {
 
     #[test]
     fn connect_to_marks_that_we_attempted_to_contact_the_peer() {
-        let (mut peer1, _) = new_random_qp2p_for_unit_test(false, Default::default());
+        let (mut peer1, _) = new_random_qp2p(false, Default::default());
         let peer1_conn_info = unwrap!(peer1.our_connection_info());
         let peer1_addr = peer1_conn_info.peer_addr;
 
-        let (mut peer2, ev_rx) = new_random_qp2p_for_unit_test(false, Default::default());
+        let (mut peer2, ev_rx) = new_random_qp2p(false, Default::default());
         peer2.connect_to(peer1_conn_info);
 
         for event in ev_rx.iter() {
