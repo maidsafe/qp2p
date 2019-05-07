@@ -8,7 +8,9 @@
 // Software.
 
 use crate::config::OurType;
-use crate::connection::{BootstrapGroupMaker, Connection, FromPeer, QConn, ToPeer};
+use crate::connection::{
+    BootstrapGroupMaker, BootstrapGroupRef, Connection, FromPeer, QConn, ToPeer,
+};
 use crate::context::ctx_mut;
 use crate::error::Error;
 use crate::event::Event;
@@ -136,6 +138,7 @@ fn handle_new_connection_res(
     trace!("Successfully connected to peer: {}", peer_addr);
 
     let mut should_accept_incoming = false;
+    let mut terminate_bootstrap_group: Option<BootstrapGroupRef> = None;
 
     ctx_mut(|c| {
         let conn = match c.connections.get_mut(&peer_addr) {
@@ -195,7 +198,7 @@ fn handle_new_connection_res(
                 );
 
                 let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
-                    bootstrap_group_ref.terminate_group(true);
+                    terminate_bootstrap_group = Some(bootstrap_group_ref);
                     Event::BootstrappedTo { node: node_info }
                 } else {
                     Event::ConnectedTo {
@@ -214,7 +217,7 @@ fn handle_new_connection_res(
                 ..
             } => {
                 let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
-                    bootstrap_group_ref.terminate_group(true);
+                    terminate_bootstrap_group = Some(bootstrap_group_ref);
                     Event::BootstrappedTo {
                         node: node_info.clone(),
                     }
@@ -253,6 +256,10 @@ fn handle_new_connection_res(
             q_conn,
         };
     });
+
+    if let Some(bootstrap_group_ref) = terminate_bootstrap_group {
+        bootstrap_group_ref.terminate_group(true);
+    }
 
     if should_accept_incoming {
         communicate::read_from_peer(peer_addr, incoming_streams);
