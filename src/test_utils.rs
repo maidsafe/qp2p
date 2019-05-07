@@ -92,6 +92,8 @@ impl<'a> EndpointWrap<'a> {
         >,
         quinn::ConnectError,
     > {
+        test_ctx_mut(|ctx| ctx.attempted_connections.push(addr.clone()));
+
         let connecting_res = self.0.connect_with(config, addr, server_name)?;
         let delay_ms = test_ctx(|ctx| ctx.connect_delay);
         if delay_ms > 0 {
@@ -122,6 +124,7 @@ impl Context {
 #[derive(Default)]
 pub(crate) struct TestContext {
     connect_delay: u64,
+    attempted_connections: Vec<SocketAddr>,
 }
 
 /// Extend `QuicP2p` with test functions.
@@ -129,6 +132,16 @@ impl QuicP2p {
     pub(crate) fn set_connect_delay(&mut self, delay_ms: u64) {
         self.el
             .post(move || test_ctx_mut(|ctx| ctx.connect_delay = delay_ms));
+    }
+
+    /// Get a list of attempted connections.
+    pub(crate) fn attempted_connections(&mut self) -> R<Vec<SocketAddr>> {
+        let (tx, rx) = mpsc::channel();
+        self.el.post(move || {
+            let res = test_ctx(|ctx| ctx.attempted_connections.clone());
+            let _ = tx.send(res);
+        });
+        Ok(rx.recv()?)
     }
 
     /// Send an arbitrary message. Used for testing malicious nodes and clients.
