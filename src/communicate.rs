@@ -441,22 +441,20 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAdd
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{
-        new_random_qp2p_for_unit_test, rand_node_info, test_dirs, write_to_bi_stream,
-    };
+    use crate::test_utils::{new_random_qp2p, rand_node_info, test_dirs, write_to_bi_stream};
     use std::collections::HashSet;
     use std::sync::mpsc;
 
     // Test for the case of bi-directional stream usage attempt.
     #[test]
     fn disallow_bidirectional_streams() {
-        let (mut qp2p0, rx0) = new_random_qp2p_for_unit_test(false, Default::default());
+        let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
         let (mut qp2p1, rx1) = {
             let mut hcc: HashSet<_> = Default::default();
             assert!(hcc.insert(qp2p0_info.clone()));
-            new_random_qp2p_for_unit_test(true, hcc)
+            new_random_qp2p(true, hcc)
         };
         let qp2p1_info = unwrap!(qp2p1.our_connection_info());
 

@@ -188,7 +188,7 @@ fn tmp_rand_dir() -> PathBuf {
 }
 
 /// Creates a new `QuicP2p` instance for testing.
-pub(crate) fn new_random_qp2p_for_unit_test(
+pub(crate) fn new_random_qp2p(
     is_addr_unspecified: bool,
     contacts: HashSet<NodeInfo>,
 ) -> (QuicP2p, Receiver<Event>) {
