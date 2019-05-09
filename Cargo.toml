@@ -11,29 +11,29 @@ authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 edition = "2018"
 
 [dependencies]
-quinn = "0.3.0"
-tokio = "*"
-unwrap = "*"
-bincode = "1.1.2"
-bytes = { version = "*", features = ["serde"] }
-serde = "*"
-serde_derive = "1.0.89"
-serde_json = "1.0.39"
-structopt = "0.2"
-quick-error = "*"
-rcgen = "*"
-rustls = "*"
-log = "0.4.6"
-base64 = "0.10.1"
+quinn = "~0.3.0"
+tokio = "~0.1.19"
+unwrap = "~1.2.1"
+bincode = "~1.1.2"
+bytes = { version = "~0.4.12", features = ["serde"] }
+serde = "~1.0.91"
+serde_derive = "~1.0.91"
+serde_json = "~1.0.39"
+structopt = "~0.2.15"
+quick-error = "~1.2.2"
+rcgen = "~0.2.1"
+rustls = "~0.15.2"
+log = "~0.4.6"
+base64 = "~0.10.1"
 
 [dev-dependencies]
-clap = "2.32.0"
-crc = "1.8.1"
-env_logger = "0.6.1"
-rustyline = "*"
-unwrap = "1.2.1"
-rand = "0.6.5"
+clap = "~2.32.0"
+crc = "~1.8.1"
+env_logger = "~0.6.1"
+rustyline = "~4.0.0"
+unwrap = "~1.2.1"
+rand = "~0.6.5"
 
 # Mobile and embedded platforms should not include these dependencies to override config file paths
 [target.'cfg(any(all(unix, not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))), windows))'.dependencies]
-directories = "1.0.2"
+directories = "~1.0.2"
