@@ -9,29 +9,29 @@
 
 ## Overview
 
-This library provides a mechanism for peers on p2p networks to communicate
+This library provides a mechanism for peers on P2P networks to communicate
 securely. It also allows the network peers to re-join the network without
 requiring them to re-connect to any known peers. These peers such as hard coded
 peers or DNS defined peers as these are obviously a security concern and
 a centralised set of peers that can easily be attacked or even torn down. There
-are several informative posts describing both quic and TLS 1.3.
+are several informative posts describing both QUIC and TLS 1.3.
 
-[The IETF draft specification](https://tools.ietf.org/html/draft-ietf-quic-transport-03#section-7.1)
+[The IETF draft specification](https://tools.ietf.org/html/draft-ietf-quic-transport-20#section-6)
 [Cloudflare intro to quic](https://blog.cloudflare.com/the-road-to-quic/)
 [cloudflare intro to TLS 1.3](https://www.cloudflare.com/learning-resources/tls-1-3/)
 
 These are highly recommended to be able to better understand this library, in
-particular the cloudflare blog posts (10 minute read).
+particular the Cloudflare blog posts (10 minute read).
 
 ### Encryption of connections
 
-quic proved connection security via the use of TLS 1.3. This library allows 3 different connection types with regard to encryption and validation.
+QUIC proved connection security via the use of TLS 1.3. This library allows 3 different connection types with regard to encryption and validation.
 
 1. Require peers have certificates from an agreed certificate authority.
 2. Allow use of a private certificate authority.
 3. Allow no identity validation of peers, but do encrypt connections.
 
-This should satisfy the requirements of many p2p networks, whether they trust any clearnet certificate authority (which may be a centralised attack source) or whether they pass the identity management up to a different layer to validate identities and simply use quic-p2p as a secured network in terms of encrypted connections.
+This should satisfy the requirements of many P2P networks, whether they trust any clearnet certificate authority (which may be a centralised attack source) or whether they pass the identity management up to a different layer to validate identities and simply use quic-p2p as a secured network in terms of encrypted connections.
 
 ### Bootstrap Cache
 
@@ -42,15 +42,15 @@ after any restart.
 
 ### Connectivity types
 
-quic-p2p sets 2 connection types when in p2p mode. This allows the connections to be defined as:
+quic-p2p sets 2 connection types when in P2P mode. This allows the connections to be defined as:
 
 1. A bi-directional connection.
 
 2. A uni-directional connection.
 
 Where 1 allows connections from consumers of the network, such as clients or
-perhaps p2p nodes who are simply obtaining information, such as bootstrapping,
-2 is used where the network is allowing another p2p worker. These peers must be
+perhaps P2P nodes who are simply obtaining information, such as bootstrapping,
+2 is used where the network is allowing another P2P worker. These peers must be
 both able to connect and be able to be connected to. Using a uni-directional
 stream per connection forces the node to confirm both incoming and outgoing
 connectivity is available.
