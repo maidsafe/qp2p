@@ -12,8 +12,8 @@
 //!
 //! Usage:
 //! ```
-//! $ RUST_LOG=client_node=info cargo run --example client_node -- -b '{"peer_addr":
-//! "127.0.0.1:5000","peer_cert_der":[48,130,..]}'
+//! $ RUST_LOG=client_node=info cargo run --example client_node -- -b '[{"peer_addr":
+//! "127.0.0.1:5000","peer_cert_der":[48,130,..]}]'
 //! ```
 
 #[macro_use]
@@ -24,20 +24,23 @@ extern crate unwrap;
 mod common;
 
 use bytes::Bytes;
-use clap::{self, App, Arg};
 use common::Rpc;
 use crc::crc32;
 use env_logger;
 use quic_p2p::{Builder, Config, Event, NodeInfo, Peer, QuicP2p};
-use rand::{self, RngCore};
-use serde_json;
+use rand::{self, seq::IteratorRandom, RngCore};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::mpsc::{channel, Receiver};
+use structopt::StructOpt;
 
-#[derive(Debug)]
+/// Client node will be connecting to bootstrap node from which it will receive contacts
+/// of other client nodes. Then this node will connect with all other client nodes and
+/// try to exchange some data with them.
+#[derive(Debug, StructOpt)]
 struct CliArgs {
-    bootstrap_node_info: NodeInfo,
+    #[structopt(flatten)]
+    quic_p2p_opts: Config,
 }
 
 struct ClientNode {
@@ -62,28 +65,28 @@ const SMALL_MSG_SIZE: usize = 16 * 1024; // 16 KB
 
 fn main() {
     env_logger::init();
-    let args = match parse_cli_args() {
-        Ok(args) => args,
-        Err(e) => e.exit(),
-    };
-    ClientNode::new(args.bootstrap_node_info).run();
+
+    let config = CliArgs::from_args();
+    println!("{:?}", config);
+
+    match ClientNode::new(config.quic_p2p_opts) {
+        Ok(mut c) => c.run(),
+        Err(e) => eprintln!("{}", e),
+    }
 }
 
 impl ClientNode {
-    fn new(bootstrap_node_info: NodeInfo) -> Self {
+    fn new(config: Config) -> Result<Self, String> {
+        // Choose a random bootstrap node.
+        let bootstrap_node_info = config
+            .hard_coded_contacts
+            .iter()
+            .choose(&mut rand::thread_rng())
+            .ok_or_else(|| "No valid bootstrap node was provided.".to_string())?
+            .clone();
+
         let (event_tx, event_rx) = channel();
-        let mut qp2p = unwrap!(Builder::new(event_tx)
-            .with_config(Config {
-                port: Some(0),
-                hard_coded_contacts: {
-                    let mut hcc: HashSet<_> = Default::default();
-                    assert!(hcc.insert(bootstrap_node_info.clone()));
-                    hcc
-                },
-                idle_timeout_msec: Some(0),
-                ..Default::default()
-            },)
-            .build());
+        let mut qp2p = unwrap!(Builder::new(event_tx).with_config(config).build());
 
         let large_msg = Bytes::from(random_data_with_hash(LARGE_MSG_SIZE));
         assert!(hash_correct(&large_msg));
@@ -93,7 +96,7 @@ impl ClientNode {
 
         let our_ci = unwrap!(qp2p.our_connection_info());
 
-        Self {
+        Ok(Self {
             qp2p,
             bootstrap_node_info,
             large_msg,
@@ -104,7 +107,7 @@ impl ClientNode {
             peer_states: Default::default(),
             sent_messages: 0,
             received_messages: 0,
-        }
+        })
     }
 
     /// Blocks and reacts to qp2p events.
@@ -207,36 +210,6 @@ impl ClientNode {
     }
 }
 
-fn parse_cli_args() -> Result<CliArgs, clap::Error> {
-    let matches = App::new("QuicP2p client node example")
-        .about(
-            "Client node will be connecting to bootstrap node from which it will receive contacts
-            of other client nodes. Then this node will connect with all other client nodes and
-            try to exchange some data with them.",
-        )
-        .arg(
-            Arg::with_name("bootstrap-node-info")
-                .long("bootstrap-node-info")
-                .short("b")
-                .value_name("CONN_INFO")
-                .help("Bootstrap node connection info.")
-                .takes_value(true),
-        )
-        .get_matches();
-    let bootstrap_node_info = matches
-        .value_of("bootstrap-node-info")
-        .map(|str_info| unwrap!(serde_json::from_str(str_info)))
-        .ok_or_else(|| {
-            clap::Error::with_description(
-                "Bootstrap node connection info must be given",
-                clap::ErrorKind::MissingRequiredArgument,
-            )
-        })?;
-    Ok(CliArgs {
-        bootstrap_node_info,
-    })
-}
-
 fn random_data_with_hash(size: usize) -> Vec<u8> {
     let mut data = random_vec(size + 4);
     let hash = crc32::checksum_ieee(&data[4..]);
@@ -249,10 +222,10 @@ fn random_data_with_hash(size: usize) -> Vec<u8> {
 }
 
 fn hash_correct(data: &[u8]) -> bool {
-    let encoded_hash = ((data[0] as u32) << 24)
-        | ((data[1] as u32) << 16)
-        | ((data[2] as u32) << 8)
-        | data[3] as u32;
+    let encoded_hash = (u32::from(data[0]) << 24)
+        | (u32::from(data[1]) << 16)
+        | (u32::from(data[2]) << 8)
+        | u32::from(data[3]);
     let actual_hash = crc32::checksum_ieee(&data[4..]);
     encoded_hash == actual_hash
 }

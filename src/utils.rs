@@ -10,10 +10,11 @@
 use crate::ctx_mut;
 use crate::dirs::Dirs;
 use crate::error::Error;
+use crate::event::Event;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter};
+use std::io::{BufReader, BufWriter};
 use std::net::SocketAddr;
 use std::path::Path;
 
@@ -28,11 +29,34 @@ pub fn connect_terminator() -> (ConnectTerminator, tokio::sync::mpsc::Receiver<(
 }
 
 /// Get the project directory
+#[cfg(any(
+    all(
+        unix,
+        not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+    ),
+    windows
+))]
 #[inline]
 pub fn project_dir() -> R<Dirs> {
     let dirs = directories::ProjectDirs::from("net", "MaidSafe", "quic-p2p")
-        .ok_or_else(|| Error::Io(io::ErrorKind::NotFound.into()))?;
+        .ok_or_else(|| Error::Io(::std::io::ErrorKind::NotFound.into()))?;
     Ok(Dirs::Desktop(dirs))
+}
+
+/// Get the project directory
+#[cfg(not(any(
+    all(
+        unix,
+        not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+    ),
+    windows
+)))]
+#[inline]
+pub fn project_dir() -> R<Dirs> {
+    Err(Error::Configuration(
+        "No default project dir on non-desktop platforms. User must provide an override path."
+            .to_string(),
+    ))
 }
 
 /// Convert binary data to a diplay-able format
@@ -58,12 +82,24 @@ pub fn bin_data_format(data: &[u8]) -> String {
 
 /// Handle error in communication.
 #[inline]
-pub fn handle_communication_err(peer_addr: SocketAddr, e: &Error, details: &str) {
+pub fn handle_communication_err(
+    peer_addr: SocketAddr,
+    e: &Error,
+    details: &str,
+    unsent_user_msg: Option<bytes::Bytes>,
+) {
     debug!(
         "ERROR in communication with peer {}: {:?} - {}. Details: {}",
         peer_addr, e, e, details
     );
-    let _ = ctx_mut(|c| c.connections.remove(&peer_addr));
+    ctx_mut(|c| {
+        let _ = c.connections.remove(&peer_addr);
+        if let Some(m) = unsent_user_msg {
+            let _ = c
+                .event_tx
+                .send(Event::UnsentUserMessage { peer_addr, msg: m });
+        }
+    });
 }
 
 /// Try reading from the disk into the given structure.
@@ -88,37 +124,4 @@ where
         .and_then(|mut rdr| bincode::serialize_into(&mut rdr, s))?;
 
     Ok(())
-}
-
-#[cfg(test)]
-pub mod testing {
-    use crate::config::SerialisableCertificate;
-    use crate::dirs::{Dirs, OverRide};
-    use crate::NodeInfo;
-    use rand::Rng;
-    use std::env;
-    use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-    use std::path::PathBuf;
-
-    pub fn test_dirs() -> Dirs {
-        Dirs::Overide(OverRide::new(&unwrap!(tmp_rand_dir().to_str())))
-    }
-
-    pub fn rand_node_info() -> NodeInfo {
-        let peer_cert_der = SerialisableCertificate::default().cert_der;
-        let mut rng = rand::thread_rng();
-        let port: u16 = rng.gen();
-        let peer_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
-        NodeInfo {
-            peer_addr,
-            peer_cert_der,
-        }
-    }
-
-    fn tmp_rand_dir() -> PathBuf {
-        let fname = format!("quic_p2p_tests_{:016x}", rand::random::<u64>());
-        let mut path = env::temp_dir();
-        path.push(fname);
-        path
-    }
 }

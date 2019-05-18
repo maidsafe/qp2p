@@ -109,19 +109,37 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
 
 /// Write to the peer, given the QUIC connection to it
 pub fn write_to_peer_connection(peer_addr: SocketAddr, conn: &QConn, wire_msg: WireMsg) {
+    let user_msg = if let WireMsg::UserMsg(ref m) = wire_msg {
+        Some(m.clone())
+    } else {
+        None
+    };
+    let user_msg0 = user_msg.clone();
+    let user_msg1 = user_msg.clone();
+
     let leaf = conn
         .open_uni()
         .map_err(move |e| {
-            utils::handle_communication_err(peer_addr, &From::from(e), "Open-Unidirectional")
+            utils::handle_communication_err(
+                peer_addr,
+                &From::from(e),
+                "Open-Unidirectional",
+                user_msg,
+            )
         })
         .and_then(move |o_stream| {
             tokio::io::write_all(o_stream, wire_msg.into()).map_err(move |e| {
-                utils::handle_communication_err(peer_addr, &From::from(e), "Write-All")
+                utils::handle_communication_err(peer_addr, &From::from(e), "Write-All", user_msg0)
             })
         })
         .and_then(move |(o_stream, _): (_, bytes::Bytes)| {
             tokio::io::shutdown(o_stream).map_err(move |e| {
-                utils::handle_communication_err(peer_addr, &From::from(e), "Shutdown-after-write")
+                utils::handle_communication_err(
+                    peer_addr,
+                    &From::from(e),
+                    "Shutdown-after-write",
+                    user_msg1,
+                )
             })
         })
         .map(|_| ());
@@ -133,7 +151,12 @@ pub fn write_to_peer_connection(peer_addr: SocketAddr, conn: &QConn, wire_msg: W
 pub fn read_from_peer(peer_addr: SocketAddr, incoming_streams: quinn::IncomingStreams) {
     let leaf = incoming_streams
         .map_err(move |e| {
-            utils::handle_communication_err(peer_addr, &From::from(e), "Incoming streams failed");
+            utils::handle_communication_err(
+                peer_addr,
+                &From::from(e),
+                "Incoming streams failed",
+                None,
+            );
         })
         .for_each(move |quic_stream| {
             read_peer_stream(peer_addr, quic_stream).map_err(|e| {
@@ -151,7 +174,7 @@ fn read_peer_stream(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<(
     let i_stream = match quic_stream {
         quinn::NewStream::Bi(_, _) => {
             let e = Error::BiDirectionalStreamAttempted(peer_addr);
-            utils::handle_communication_err(peer_addr, &e, "Receiving Stream");
+            utils::handle_communication_err(peer_addr, &e, "Receiving Stream", None);
             return Err(e);
         }
         quinn::NewStream::Uni(uni) => uni,
@@ -159,10 +182,12 @@ fn read_peer_stream(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<(
 
     let leaf = i_stream
         .read_to_end(ctx(|c| c.max_msg_size_allowed))
-        .map_err(move |e| utils::handle_communication_err(peer_addr, &From::from(e), "Read-To-End"))
+        .map_err(move |e| {
+            utils::handle_communication_err(peer_addr, &From::from(e), "Read-To-End", None)
+        })
         .and_then(move |(_i_stream, raw)| {
             WireMsg::from_raw(raw)
-                .map_err(|e| utils::handle_communication_err(peer_addr, &e, "Raw to WireMsg"))
+                .map_err(|e| utils::handle_communication_err(peer_addr, &e, "Raw to WireMsg", None))
                 .map(|wire_msg| handle_wire_msg(peer_addr, wire_msg))
         });
 
@@ -193,7 +218,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                         // Means we are a client
                         ToPeer::NoConnection | ToPeer::NotNeeded | ToPeer::Initiated { .. } => {
                             trace!(
-                                "TODO Ignoring as we received something from some we are no \
+                                "TODO Ignoring as we received something from someone we are no \
                                  longer or not yet connected to"
                             );
                         }
@@ -416,8 +441,40 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAdd
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::testing::{rand_node_info, test_dirs};
+    use crate::test_utils::{new_random_qp2p, rand_node_info, test_dirs, write_to_bi_stream};
+    use std::collections::HashSet;
     use std::sync::mpsc;
+
+    // Test for the case of bi-directional stream usage attempt.
+    #[test]
+    fn disallow_bidirectional_streams() {
+        let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
+        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
+
+        let (mut qp2p1, rx1) = {
+            let mut hcc: HashSet<_> = Default::default();
+            assert!(hcc.insert(qp2p0_info.clone()));
+            new_random_qp2p(true, hcc)
+        };
+        let qp2p1_info = unwrap!(qp2p1.our_connection_info());
+
+        // Drain the message queues
+        while let Ok(_) = rx1.try_recv() {}
+        while let Ok(_) = rx0.try_recv() {}
+
+        // Create a bi-directional stream and write data
+        qp2p1.el.post(move || {
+            write_to_bi_stream(qp2p0_info.peer_addr, WireMsg::UserMsg(From::from("123")));
+        });
+
+        // The connection should fail because we don't allow bi-directional streams
+        match rx0.recv() {
+            Ok(Event::ConnectionFailure { peer_addr }) => {
+                assert_eq!(peer_addr, qp2p1_info.peer_addr);
+            }
+            r => panic!("Unexpected result {:?}", r),
+        }
+    }
 
     mod handle_user_msg {
         use super::*;

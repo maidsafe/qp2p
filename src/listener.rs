@@ -8,10 +8,11 @@
 // Software.
 
 use crate::communicate;
-use crate::connection::{Connection, FromPeer, QConn, ToPeer};
+use crate::connection::{BootstrapGroupRef, Connection, FromPeer, QConn, ToPeer};
 use crate::context::ctx_mut;
 use crate::event::Event;
 use crate::utils;
+use crate::Error;
 use crate::NodeInfo;
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
@@ -28,6 +29,12 @@ pub fn listen(incoming_connections: quinn::Incoming) {
     current_thread::spawn(leaf);
 }
 
+enum Action {
+    HandleDuplicate(QConn),
+    HandleAlreadyBootstrapped,
+    Continue(Option<BootstrapGroupRef>),
+}
+
 fn handle_new_conn(
     conn_driver: quinn::ConnectionDriver,
     q_conn: quinn::Connection,
@@ -38,10 +45,10 @@ fn handle_new_conn(
     let peer_addr = q_conn.remote_address();
 
     current_thread::spawn(conn_driver.map_err(move |e| {
-        utils::handle_communication_err(peer_addr, &From::from(e), "Driver failed");
+        utils::handle_communication_err(peer_addr, &From::from(e), "Driver failed", None);
     }));
 
-    let is_duplicate = ctx_mut(|c| {
+    let state = ctx_mut(|c| {
         let event_tx = c.event_tx.clone();
         let conn = c
             .connections
@@ -53,7 +60,7 @@ fn handle_new_conn(
                 pending_reads: Default::default(),
             };
 
-            if let ToPeer::Established {
+            let bootstrap_group = if let ToPeer::Established {
                 ref peer_cert_der, ..
             } = conn.to_peer
             {
@@ -61,11 +68,15 @@ fn handle_new_conn(
                     peer_addr,
                     peer_cert_der: peer_cert_der.clone(),
                 };
+                let mut bootstrap_group = None;
 
                 // TODO come back to all the connected-to events and see if we are handling all
                 // cases
                 let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
-                    bootstrap_group_ref.terminate_group(true);
+                    if bootstrap_group_ref.is_bootstrap_successful_yet() {
+                        return Action::HandleAlreadyBootstrapped;
+                    }
+                    bootstrap_group = Some(bootstrap_group_ref);
                     Event::BootstrappedTo { node: node_info }
                 } else {
                     Event::ConnectedTo {
@@ -76,17 +87,32 @@ fn handle_new_conn(
                 if let Err(e) = c.event_tx.send(event) {
                     info!("ERROR in informing user about a new peer: {:?} - {}", e, e);
                 }
-            }
-            None
+
+                bootstrap_group
+            } else {
+                None
+            };
+            Action::Continue(bootstrap_group)
         } else {
-            Some(q_conn)
+            Action::HandleDuplicate(q_conn)
         }
     });
 
-    if let Some(_q_conn) = is_duplicate {
-        debug!("Not allowing duplicate connection from peer: {}", peer_addr);
-        return;
+    match state {
+        Action::HandleDuplicate(_q_conn) => {
+            debug!("Not allowing duplicate connection from peer: {}", peer_addr);
+        }
+        Action::HandleAlreadyBootstrapped => crate::utils::handle_communication_err(
+            peer_addr,
+            &Error::ConnectionCancelled,
+            "Connection already bootstrapped",
+            None,
+        ),
+        Action::Continue(bootstrap_group) => {
+            if let Some(bootstrap_group_ref) = bootstrap_group {
+                bootstrap_group_ref.terminate_group(true);
+            }
+            communicate::read_from_peer(peer_addr, incoming_streams);
+        }
     }
-
-    communicate::read_from_peer(peer_addr, incoming_streams);
 }

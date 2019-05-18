@@ -12,6 +12,10 @@ pub enum Event {
     ConnectionFailure {
         peer_addr: SocketAddr,
     },
+    UnsentUserMessage {
+        peer_addr: SocketAddr,
+        msg: bytes::Bytes,
+    },
     ConnectedTo {
         peer: Peer,
     },

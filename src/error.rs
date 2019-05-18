@@ -59,6 +59,13 @@ quick_error! {
              display("Bincode error: {}", e)
              from()
          }
+         Base64(e: base64::DecodeError) {
+             display("Base64 decoding error: {}", e)
+             from()
+         }
+         Configuration(e: String) {
+             display("Configuration error: {}", e)
+         }
          OperationNotAllowed {
              display("This operation is not allowed for us")
          }
