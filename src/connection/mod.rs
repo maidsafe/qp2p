@@ -14,10 +14,10 @@ pub use self::to_peer::ToPeer;
 
 use crate::context::ctx_mut;
 use crate::event::Event;
+use crossbeam_channel as mpmc;
 use std::collections::hash_map::Entry;
 use std::fmt;
 use std::net::SocketAddr;
-use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
@@ -47,14 +47,14 @@ pub struct Connection {
     /// end of this connection.
     pub we_contacted_peer: bool,
     peer_addr: SocketAddr,
-    event_tx: Sender<Event>,
+    event_tx: mpmc::Sender<Event>,
 }
 
 impl Connection {
     /// New Connection with defaults
     pub fn new(
         peer_addr: SocketAddr,
-        event_tx: Sender<Event>,
+        event_tx: mpmc::Sender<Event>,
         bootstrap_group_ref: Option<BootstrapGroupRef>,
     ) -> Self {
         spawn_incomplete_conn_killer(peer_addr);

@@ -27,12 +27,12 @@ mod common;
 use bincode;
 use bytes::Bytes;
 use common::Rpc;
+use crossbeam_channel as mpmc;
 use env_logger;
 use quic_p2p::{Builder, Config, Event, Peer};
 use serde_json;
 use std::collections::HashMap;
 use std::io;
-use std::sync::mpsc::channel;
 use structopt::StructOpt;
 
 /// Configuration for the bootstrap node
@@ -53,7 +53,7 @@ fn main() -> Result<(), io::Error> {
     let bootstrap_node_config = BootstrapNodeConfig::from_args();
 
     // Initialise QuicP2p
-    let (ev_tx, ev_rx) = channel();
+    let (ev_tx, ev_rx) = mpmc::unbounded();
 
     let mut qp2p = unwrap!(Builder::new(ev_tx)
         .with_config(bootstrap_node_config.quic_p2p_opts)

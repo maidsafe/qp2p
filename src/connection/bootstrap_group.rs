@@ -17,12 +17,12 @@
 use crate::context::ctx_mut;
 use crate::event::Event;
 use crate::utils::ConnectTerminator;
+use crossbeam_channel as mpmc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem;
 use std::net::SocketAddr;
 use std::rc::Rc;
-use std::sync::mpsc::Sender;
 
 /// Creator of a `BootstrapGroup`. Use this to obtain the reference to the undelying group.
 ///
@@ -34,7 +34,7 @@ pub struct BootstrapGroupMaker {
 
 impl BootstrapGroupMaker {
     /// Create a handle that refers to a newly created underlying group.
-    pub fn new(event_tx: Sender<Event>) -> Self {
+    pub fn new(event_tx: mpmc::Sender<Event>) -> Self {
         Self {
             group: Rc::new(RefCell::new(BootstrapGroup {
                 is_bootstrap_successful_yet: false,
@@ -117,7 +117,7 @@ impl Drop for BootstrapGroupRef {
 struct BootstrapGroup {
     is_bootstrap_successful_yet: bool,
     terminators: HashMap<SocketAddr, ConnectTerminator>,
-    event_tx: Sender<Event>,
+    event_tx: mpmc::Sender<Event>,
 }
 
 impl Drop for BootstrapGroup {

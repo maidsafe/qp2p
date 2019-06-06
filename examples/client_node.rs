@@ -26,12 +26,12 @@ mod common;
 use bytes::Bytes;
 use common::Rpc;
 use crc::crc32;
+use crossbeam_channel as mpmc;
 use env_logger;
 use quic_p2p::{Builder, Config, Event, NodeInfo, Peer, QuicP2p};
 use rand::{self, seq::IteratorRandom, RngCore};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::sync::mpsc::{channel, Receiver};
 use structopt::StructOpt;
 
 /// Client node will be connecting to bootstrap node from which it will receive contacts
@@ -47,7 +47,7 @@ struct ClientNode {
     qp2p: QuicP2p,
     bootstrap_node_info: NodeInfo,
     /// It's optional just to fight the borrow checker.
-    event_rx: Option<Receiver<Event>>,
+    event_rx: Option<mpmc::Receiver<Event>>,
     /// Other nodes we will be communicating with.
     client_nodes: HashSet<NodeInfo>,
     our_ci: NodeInfo,
@@ -85,7 +85,7 @@ impl ClientNode {
             .ok_or_else(|| "No valid bootstrap node was provided.".to_string())?
             .clone();
 
-        let (event_tx, event_rx) = channel();
+        let (event_tx, event_rx) = mpmc::unbounded();
         let mut qp2p = unwrap!(Builder::new(event_tx).with_config(config).build());
 
         let large_msg = Bytes::from(random_data_with_hash(LARGE_MSG_SIZE));
