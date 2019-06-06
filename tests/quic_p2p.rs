@@ -1,11 +1,11 @@
+use crossbeam_channel as mpmc;
 use quic_p2p::{Builder, Config, Event, NodeInfo, OurType, Peer, QuicP2p};
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::mpsc;
 use unwrap::unwrap;
 
 /// Waits for `Event::ConnectedTo`.
-fn wait_till_connected(ev_rx: mpsc::Receiver<Event>) -> Peer {
+fn wait_till_connected(ev_rx: mpmc::Receiver<Event>) -> Peer {
     for event in ev_rx.iter() {
         if let Event::ConnectedTo { peer } = event {
             return peer;
@@ -15,15 +15,15 @@ fn wait_till_connected(ev_rx: mpsc::Receiver<Event>) -> Peer {
 }
 
 /// Constructs a `QuicP2p` node with some sane defaults for testing.
-fn test_node() -> (QuicP2p, mpsc::Receiver<Event>) {
+fn test_node() -> (QuicP2p, mpmc::Receiver<Event>) {
     test_peer_with_hcc(Default::default(), OurType::Node)
 }
 
 fn test_peer_with_hcc(
     hard_coded_contacts: HashSet<NodeInfo>,
     our_type: OurType,
-) -> (QuicP2p, mpsc::Receiver<Event>) {
-    let (ev_tx, ev_rx) = mpsc::channel();
+) -> (QuicP2p, mpmc::Receiver<Event>) {
+    let (ev_tx, ev_rx) = mpmc::unbounded();
     let builder = Builder::new(ev_tx)
         .with_config(Config {
             port: Some(0),

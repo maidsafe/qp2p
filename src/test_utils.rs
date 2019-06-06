@@ -16,12 +16,13 @@ use crate::event::Event;
 use crate::utils::R;
 use crate::wire_msg::WireMsg;
 use crate::{communicate, Builder, NodeInfo, Peer, QuicP2p};
+use crossbeam_channel as mpmc;
 use rand::Rng;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc;
 use std::{
     env,
     ops::Deref,
@@ -191,8 +192,8 @@ fn tmp_rand_dir() -> PathBuf {
 pub(crate) fn new_random_qp2p(
     is_addr_unspecified: bool,
     contacts: HashSet<NodeInfo>,
-) -> (QuicP2p, Receiver<Event>) {
-    let (tx, rx) = mpsc::channel();
+) -> (QuicP2p, mpmc::Receiver<Event>) {
+    let (tx, rx) = mpmc::unbounded();
     let qp2p = {
         let mut cfg = Config::with_default_cert();
         cfg.hard_coded_contacts = contacts;

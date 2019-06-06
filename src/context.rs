@@ -11,10 +11,11 @@ use crate::bootstrap_cache::BootstrapCache;
 use crate::config::{OurType, SerialisableCertificate};
 use crate::connection::Connection;
 use crate::event::Event;
+use crossbeam_channel as mpmc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc;
 
 thread_local! {
     pub static CTX: RefCell<Option<Context>> = RefCell::new(None);
@@ -77,9 +78,9 @@ where
 /// The context to the event loop. This holds all the states that are necessary to be persistant
 /// between calls to poll the event loop for the next event.
 pub struct Context {
-    pub event_tx: Sender<Event>,
+    pub event_tx: mpmc::Sender<Event>,
     pub connections: HashMap<SocketAddr, Connection>,
-    pub our_ext_addr_tx: Option<Sender<SocketAddr>>,
+    pub our_ext_addr_tx: Option<mpsc::Sender<SocketAddr>>,
     pub our_complete_cert: SerialisableCertificate,
     pub max_msg_size_allowed: usize,
     pub idle_timeout_msec: u64,
@@ -92,7 +93,7 @@ pub struct Context {
 impl Context {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        event_tx: Sender<Event>,
+        event_tx: mpmc::Sender<Event>,
         our_complete_cert: SerialisableCertificate,
         max_msg_size_allowed: usize,
         idle_timeout_msec: u64,

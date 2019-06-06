@@ -16,8 +16,9 @@ use crate::utils;
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{connect, NodeInfo};
 use crate::{Peer, R};
+use crossbeam_channel as mpmc;
 use std::net::SocketAddr;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc;
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
@@ -291,8 +292,8 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
 pub fn dispatch_wire_msg(
     peer: Peer,
     q_conn: &QConn,
-    inform_tx: Option<Sender<SocketAddr>>,
-    event_tx: &Sender<Event>,
+    inform_tx: Option<mpsc::Sender<SocketAddr>>,
+    event_tx: &mpmc::Sender<Event>,
     wire_msg: WireMsg,
     bootstrap_cache: &mut BootstrapCache,
     we_contacted_peer: bool,
@@ -407,7 +408,7 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
 
 fn handle_user_msg(
     peer: Peer,
-    event_tx: &Sender<Event>,
+    event_tx: &mpmc::Sender<Event>,
     msg: bytes::Bytes,
     bootstrap_cache: &mut BootstrapCache,
     we_contacted_peer: bool,
@@ -430,7 +431,7 @@ fn handle_echo_req(peer_addr: SocketAddr, q_conn: &QConn) {
     write_to_peer_connection(peer_addr, q_conn, msg);
 }
 
-fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<Sender<SocketAddr>>) {
+fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<mpsc::Sender<SocketAddr>>) {
     if let Some(tx) = inform_tx {
         if let Err(e) = tx.send(our_ext_addr) {
             info!("Error informing endpoint echo service response: {:?}", e);
@@ -443,7 +444,6 @@ mod tests {
     use super::*;
     use crate::test_utils::{new_random_qp2p, rand_node_info, test_dirs, write_to_bi_stream};
     use std::collections::HashSet;
-    use std::sync::mpsc;
 
     // Test for the case of bi-directional stream usage attempt.
     #[test]
@@ -481,7 +481,7 @@ mod tests {
 
         #[test]
         fn when_peer_is_node_and_we_contacted_it_before_it_is_moved_to_bootstrap_cache_top() {
-            let (event_tx, _event_rx) = mpsc::channel();
+            let (event_tx, _event_rx) = mpmc::unbounded();
             let peer1 = rand_node_info();
             let peer2 = rand_node_info();
             let peer = Peer::Node {

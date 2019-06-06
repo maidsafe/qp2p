@@ -35,9 +35,9 @@ pub fn start() {
 mod tests {
     use crate::test_utils::new_random_qp2p;
     use crate::{Builder, Config, Event, NodeInfo, OurType, QuicP2p};
+    use crossbeam_channel as mpmc;
     use std::collections::{HashSet, VecDeque};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
-    use std::sync::mpsc;
     use std::thread;
     use std::time::Duration;
 
@@ -132,7 +132,7 @@ mod tests {
             .collect();
 
         // Waiting for all nodes to start
-        let (ev_tx, ev_rx) = mpsc::channel();
+        let (ev_tx, ev_rx) = mpmc::unbounded();
         let mut bootstrapping_node = unwrap!(Builder::new(ev_tx)
             .with_config(Config {
                 port: Some(0),
@@ -176,7 +176,7 @@ mod tests {
         let mut hcc = HashSet::with_capacity(1);
         hcc.insert(bootstrap_ci.clone());
 
-        let (ev_tx, ev_rx) = mpsc::channel();
+        let (ev_tx, ev_rx) = mpmc::unbounded();
         let mut bootstrap_client = unwrap!(Builder::new(ev_tx)
             .with_config(Config {
                 port: Some(0),
@@ -320,9 +320,9 @@ mod tests {
 
     fn test_peer_with_bootstrap_cache(
         mut cached_peers: Vec<NodeInfo>,
-    ) -> (QuicP2p, mpsc::Receiver<Event>) {
+    ) -> (QuicP2p, mpmc::Receiver<Event>) {
         let cached_peers: VecDeque<_> = cached_peers.drain(..).collect();
-        let (ev_tx, ev_rx) = mpsc::channel();
+        let (ev_tx, ev_rx) = mpmc::unbounded();
         let builder = Builder::new(ev_tx)
             .with_config(Config {
                 port: Some(0),
@@ -334,7 +334,7 @@ mod tests {
     }
 
     /// Constructs a `QuicP2p` node with some sane defaults for testing.
-    fn test_node() -> (QuicP2p, mpsc::Receiver<Event>) {
+    fn test_node() -> (QuicP2p, mpmc::Receiver<Event>) {
         test_peer_with_hcc(Default::default(), OurType::Node)
     }
 
@@ -342,8 +342,8 @@ mod tests {
     fn test_peer_with_hcc(
         hard_coded_contacts: HashSet<NodeInfo>,
         our_type: OurType,
-    ) -> (QuicP2p, mpsc::Receiver<Event>) {
-        let (ev_tx, ev_rx) = mpsc::channel();
+    ) -> (QuicP2p, mpmc::Receiver<Event>) {
+        let (ev_tx, ev_rx) = mpmc::unbounded();
         let builder = Builder::new(ev_tx)
             .with_config(Config {
                 port: Some(0),

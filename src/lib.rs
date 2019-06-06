@@ -31,11 +31,12 @@ pub use utils::R;
 use crate::wire_msg::WireMsg;
 use bootstrap_cache::BootstrapCache;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
+use crossbeam_channel as mpmc;
 use event_loop::EventLoop;
 use std::collections::VecDeque;
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
 
@@ -67,7 +68,7 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 
 /// Builder for `QuicP2p`. Convenient for setting various parameters and creating `QuicP2p`.
 pub struct Builder {
-    event_tx: Sender<Event>,
+    event_tx: mpmc::Sender<Event>,
     cfg: Option<Config>,
     proxies: VecDeque<NodeInfo>,
     use_proxies_exclusively: bool,
@@ -75,7 +76,7 @@ pub struct Builder {
 
 impl Builder {
     /// New `Builder`
-    pub fn new(event_tx: Sender<Event>) -> Self {
+    pub fn new(event_tx: mpmc::Sender<Event>) -> Self {
         Self {
             event_tx,
             cfg: Default::default(),
@@ -137,7 +138,7 @@ impl Builder {
 
 /// Main QuicP2p instance to communicate with QuicP2p
 pub struct QuicP2p {
-    event_tx: Sender<Event>,
+    event_tx: mpmc::Sender<Event>,
     cfg: Config,
     us: Option<NodeInfo>,
     el: EventLoop,
@@ -252,14 +253,14 @@ impl QuicP2p {
         Ok(cache)
     }
 
-    fn new(event_tx: Sender<Event>) -> R<Self> {
+    fn new(event_tx: mpmc::Sender<Event>) -> R<Self> {
         Ok(Self::with_config(
             event_tx,
             Config::read_or_construct_default(None)?,
         ))
     }
 
-    fn with_config(event_tx: Sender<Event>, cfg: Config) -> Self {
+    fn with_config(event_tx: mpmc::Sender<Event>, cfg: Config) -> Self {
         let el = EventLoop::spawn();
         Self {
             event_tx,
@@ -407,14 +408,15 @@ impl QuicP2p {
 mod tests {
     use super::*;
     use crate::wire_msg::{Handshake, WireMsg};
+    use crossbeam_channel as mpmc;
     use std::collections::HashSet;
-    use std::sync::mpsc::{self, TryRecvError};
+    use std::sync::mpsc;
     use std::time::Duration;
     use test_utils::new_random_qp2p;
 
     #[test]
     fn dropping_qp2p_handle_gracefully_shutsdown_event_loop() {
-        let (tx, _rx) = mpsc::channel();
+        let (tx, _rx) = mpmc::unbounded();
         let _qp2p = unwrap!(Builder::new(tx).build());
     }
 
@@ -592,7 +594,7 @@ mod tests {
         let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
-        let (tx1, rx1) = mpsc::channel();
+        let (tx1, rx1) = mpmc::unbounded();
         let mut malicious_client = unwrap!(Builder::new(tx1)
             .with_config(Config {
                 our_type: OurType::Node,
@@ -626,11 +628,11 @@ mod tests {
 
         // No more messages expected
         match rx0.try_recv() {
-            Err(TryRecvError::Empty) => {}
+            Err(mpmc::TryRecvError::Empty) => {}
             r => panic!("Unexpected result {:?}", r),
         }
         match rx1.try_recv() {
-            Err(TryRecvError::Empty) => {}
+            Err(mpmc::TryRecvError::Empty) => {}
             r => panic!("Unexpected result {:?}", r),
         }
 
@@ -652,7 +654,7 @@ mod tests {
         let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
-        let (tx1, _rx1) = mpsc::channel();
+        let (tx1, _rx1) = mpmc::unbounded();
         let mut malicious_client = unwrap!(Builder::new(tx1)
             .with_config(Config {
                 our_type: OurType::Client,
@@ -676,7 +678,7 @@ mod tests {
 
         // No more messages expected.
         match rx0.try_recv() {
-            Err(TryRecvError::Empty) => {}
+            Err(mpmc::TryRecvError::Empty) => {}
             r => panic!("Unexpected result {:?}", r),
         }
 
