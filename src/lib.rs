@@ -253,6 +253,11 @@ impl QuicP2p {
         Ok(cache)
     }
 
+    /// Checks whether the given contact is hard-coded.
+    pub fn is_hard_coded_contact(&self, node_info: &NodeInfo) -> bool {
+        self.cfg.hard_coded_contacts.contains(node_info)
+    }
+
     fn new(event_tx: mpmc::Sender<Event>) -> R<Self> {
         Ok(Self::with_config(
             event_tx,
@@ -410,9 +415,10 @@ mod tests {
     use crate::wire_msg::{Handshake, WireMsg};
     use crossbeam_channel as mpmc;
     use std::collections::HashSet;
+    use std::iter;
     use std::sync::mpsc;
     use std::time::Duration;
-    use test_utils::new_random_qp2p;
+    use test_utils::{new_random_qp2p, rand_node_info};
 
     #[test]
     fn dropping_qp2p_handle_gracefully_shutsdown_event_loop() {
@@ -714,5 +720,16 @@ mod tests {
         let we_contacted_peer = unwrap!(rx.recv());
 
         assert!(we_contacted_peer);
+    }
+
+    #[test]
+    fn is_hard_coded_contact() {
+        let contact0 = rand_node_info();
+        let contact1 = rand_node_info();
+
+        let (peer, _) = new_random_qp2p(false, iter::once(contact0.clone()).collect());
+
+        assert!(peer.is_hard_coded_contact(&contact0));
+        assert!(!peer.is_hard_coded_contact(&contact1));
     }
 }
