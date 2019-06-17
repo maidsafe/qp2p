@@ -20,7 +20,8 @@ use std::str::FromStr;
 use std::{fmt, fs, io};
 
 /// QuicP2p configurations
-#[derive(Debug, Default, Serialize, Deserialize, Eq, PartialEq, StructOpt)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq, StructOpt)]
+#[structopt(rename_all = "kebab-case")]
 pub struct Config {
     /// Hard Coded contacts
     #[structopt(
