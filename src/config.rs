@@ -106,12 +106,11 @@ pub struct SerialisableCertificate {
 }
 
 impl SerialisableCertificate {
-    // TODO do proper error handling
-    pub fn obtain_priv_key_and_cert(&self) -> (quinn::PrivateKey, quinn::Certificate) {
-        (
-            unwrap!(quinn::PrivateKey::from_der(&self.key_der)),
-            unwrap!(quinn::Certificate::from_der(&self.cert_der)),
-        )
+    pub fn obtain_priv_key_and_cert(&self) -> R<(quinn::PrivateKey, quinn::Certificate)> {
+        Ok((
+            quinn::PrivateKey::from_der(&self.key_der)?,
+            quinn::Certificate::from_der(&self.cert_der)?,
+        ))
     }
 }
 

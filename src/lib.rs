@@ -311,7 +311,7 @@ impl QuicP2p {
                 .clone()
                 .unwrap_or_else(Default::default);
             (
-                our_complete_cert.obtain_priv_key_and_cert(),
+                our_complete_cert.obtain_priv_key_and_cert()?,
                 our_complete_cert,
             )
         };
