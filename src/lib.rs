@@ -7,6 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+//! quic-p2p enables communication within a peer to peer network over the QUIC protocol.
+
 // Required for the quick_error! macro
 #![recursion_limit = "128"]
 

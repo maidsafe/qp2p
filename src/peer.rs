@@ -14,8 +14,16 @@ use std::net::SocketAddr;
 /// Representation of a peer to us.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 pub enum Peer {
-    Node { node_info: NodeInfo },
-    Client { peer_addr: SocketAddr },
+    /// Stores Node information.
+    Node {
+        /// Information needed to connect to a node.
+        node_info: NodeInfo,
+    },
+    /// Stores client information.
+    Client {
+        /// Address of the client reaching us.
+        peer_addr: SocketAddr,
+    },
 }
 
 impl Peer {
