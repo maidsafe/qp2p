@@ -101,11 +101,18 @@ impl Config {
 /// configuration file
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct SerialisableCertificate {
+    /// DER encoded certificate
     pub cert_der: Vec<u8>,
+    /// DER encoded private key
     pub key_der: Vec<u8>,
 }
 
 impl SerialisableCertificate {
+    /// Parses DER encoded binary key material to a format that can be used by Quinn
+    ///
+    /// # Errors
+    /// Returns [CertificateParseError](enum.Error.html#variant.CertificateParseError) if the inputs
+    /// cannot be parsed
     pub fn obtain_priv_key_and_cert(&self) -> R<(quinn::PrivateKey, quinn::Certificate)> {
         Ok((
             quinn::PrivateKey::from_der(&self.key_der)?,

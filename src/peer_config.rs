@@ -33,7 +33,7 @@ pub fn new_client_cfg(peer_cert_der: &[u8]) -> R<quinn::ClientConfig> {
 
         quinn::ClientConfigBuilder::new(client_cfg)
     };
-    peer_cfg_builder.add_certificate_authority(peer_cert)?;
+    let _ = peer_cfg_builder.add_certificate_authority(peer_cert)?;
 
     Ok(peer_cfg_builder.build())
 }
@@ -53,8 +53,9 @@ pub fn new_our_cfg(
 
         quinn::ServerConfigBuilder::new(our_cfg)
     };
-    our_cfg_builder.certificate(quinn::CertificateChain::from_certs(vec![our_cert]), our_key)?;
-    our_cfg_builder.use_stateless_retry(true);
+    let _ = our_cfg_builder
+        .certificate(quinn::CertificateChain::from_certs(vec![our_cert]), our_key)?
+        .use_stateless_retry(true);
 
     Ok(our_cfg_builder.build())
 }

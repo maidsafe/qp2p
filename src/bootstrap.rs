@@ -71,8 +71,8 @@ mod tests {
 
             let ci_info = unwrap!(qp2p.our_connection_info());
 
-            bs_peer_addrs.insert(ci_info.peer_addr);
-            hcc_contacts.insert(ci_info);
+            assert!(bs_peer_addrs.insert(ci_info.peer_addr));
+            assert!(hcc_contacts.insert(ci_info));
             bs_nodes.push((rx, qp2p));
         }
 
@@ -172,9 +172,8 @@ mod tests {
 
         let bootstrap_ci = unwrap!(bootstrap_node.our_connection_info());
 
-        //
         let mut hcc = HashSet::with_capacity(1);
-        hcc.insert(bootstrap_ci.clone());
+        assert!(hcc.insert(bootstrap_ci.clone()));
 
         let (ev_tx, ev_rx) = mpmc::unbounded();
         let mut bootstrap_client = unwrap!(Builder::new(ev_tx)
@@ -206,7 +205,7 @@ mod tests {
 
         let (mut peer2, ev_rx) = {
             let mut hcc = HashSet::new();
-            hcc.insert(peer1_conn_info.clone());
+            assert!(hcc.insert(peer1_conn_info.clone()));
             test_peer_with_hcc(hcc, OurType::Node)
         };
 
@@ -240,7 +239,7 @@ mod tests {
 
         let (mut peer2, ev_rx) = {
             let mut hcc = HashSet::new();
-            hcc.insert(peer1_conn_info.clone());
+            assert!(hcc.insert(peer1_conn_info.clone()));
             test_peer_with_hcc(hcc, OurType::Client)
         };
 
@@ -305,7 +304,7 @@ mod tests {
         };
         let (mut peer, ev_rx) = {
             let mut hcc = HashSet::new();
-            hcc.insert(dummy_peer_info.clone());
+            assert!(hcc.insert(dummy_peer_info.clone()));
             test_peer_with_hcc(hcc, OurType::Node)
         };
 

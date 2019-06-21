@@ -117,7 +117,7 @@ fn spawn_incomplete_conn_killer(peer_addr: SocketAddr) {
                         "Killing a non-completing connection for peer: {}",
                         peer_addr
                     );
-                    conn.remove();
+                    let _ = conn.remove();
                 }
             });
 

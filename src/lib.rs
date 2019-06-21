@@ -7,8 +7,49 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+//! quic-p2p enables communication within a peer to peer network over the QUIC protocol.
+
 // Required for the quick_error! macro
 #![recursion_limit = "128"]
+// For explanation of lint checks, run `rustc -W help`
+#![forbid(
+    exceeding_bitshifts,
+    mutable_transmutes,
+    no_mangle_const_items,
+    unknown_crate_types,
+    warnings
+)]
+#![deny(
+    bad_style,
+    deprecated,
+    improper_ctypes,
+    missing_docs,
+    non_shorthand_field_patterns,
+    overflowing_literals,
+    plugin_as_library,
+    stable_features,
+    unconditional_recursion,
+    unknown_lints,
+    unsafe_code,
+    unused,
+    unused_allocation,
+    unused_attributes,
+    unused_comparisons,
+    unused_features,
+    unused_parens,
+    while_true,
+    clippy::unicode_not_nfc,
+    clippy::wrong_pub_self_convention,
+    clippy::option_unwrap_used
+)]
+#![warn(
+    trivial_casts,
+    trivial_numeric_casts,
+    unused_extern_crates,
+    unused_import_braces,
+    unused_qualifications,
+    unused_results
+)]
 
 #[macro_use]
 extern crate log;
@@ -294,11 +335,11 @@ impl QuicP2p {
         let idle_timeout_msec = self
             .cfg
             .idle_timeout_msec
-            .unwrap_or(peer_config::DEFAULT_IDLE_TIMEOUT_MSEC);
+            .unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
         let keep_alive_interval_msec = self
             .cfg
             .keep_alive_interval_msec
-            .unwrap_or(peer_config::DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
+            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
         let our_type = self.cfg.our_type;
         let hard_coded_contacts = self.cfg.hard_coded_contacts.clone();
 
@@ -326,7 +367,7 @@ impl QuicP2p {
             ));
 
             let mut ep_builder = quinn::Endpoint::builder();
-            ep_builder.listen(our_cfg);
+            let _ = ep_builder.listen(our_cfg);
             let (dr, ep, incoming_connections) = {
                 match UdpSocket::bind(&(ip, port)) {
                     Ok(udp) => unwrap!(ep_builder.with_socket(udp)),
