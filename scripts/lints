@@ -1,0 +1,7 @@
+#!/bin/bash
+
+set -x -e
+export RUSTFLAGS="-C opt-level=2 -C codegen-units=8"
+
+cargo fmt -- --check
+cargo clippy --verbose --release --all-targets
