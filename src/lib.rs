@@ -294,11 +294,11 @@ impl QuicP2p {
         let idle_timeout_msec = self
             .cfg
             .idle_timeout_msec
-            .unwrap_or(peer_config::DEFAULT_IDLE_TIMEOUT_MSEC);
+            .unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
         let keep_alive_interval_msec = self
             .cfg
             .keep_alive_interval_msec
-            .unwrap_or(peer_config::DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
+            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
         let our_type = self.cfg.our_type;
         let hard_coded_contacts = self.cfg.hard_coded_contacts.clone();
 
