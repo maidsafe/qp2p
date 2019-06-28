@@ -205,10 +205,12 @@ impl QuicP2p {
         self.el.post(move || {
             let peer_addr = peer_info.peer_addr;
             if let Err(e) = connect::connect_to(peer_info, None, None) {
-                info!(
-                    "(TODO return this) Could not connect to the asked peer: {}",
-                    e
-                );
+                info!("Could not connect to the asked peer: {}", e);
+                ctx_mut(|c| {
+                    let _ = c
+                        .event_tx
+                        .send(Event::ConnectionFailure { peer_addr, err: e });
+                });
             } else {
                 Self::set_we_contacted_peer(&peer_addr);
             }
@@ -457,7 +459,6 @@ mod tests {
     use crossbeam_channel as mpmc;
     use std::collections::HashSet;
     use std::iter;
-    use std::sync::mpsc;
     use std::time::Duration;
     use test_utils::{new_random_qp2p, rand_node_info};
 
@@ -736,6 +737,23 @@ mod tests {
             .connections(move |c| { c[&malicious_client_info.peer_addr].to_peer.is_not_needed() }));
 
         assert!(from_peer_is_not_needed && to_peer_is_not_needed);
+    }
+
+    #[test]
+    fn connect_to_fails() {
+        let invalid_socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1);
+        let (mut peer, rx) = new_random_qp2p(false, Default::default());
+        peer.connect_to(NodeInfo {
+            peer_addr: invalid_socket_addr,
+            peer_cert_der: Default::default(),
+        });
+
+        match rx.recv() {
+            Ok(Event::ConnectionFailure { peer_addr, .. }) => {
+                assert_eq!(peer_addr, invalid_socket_addr);
+            }
+            r => panic!("Unexpected result {:?}", r),
+        }
     }
 
     #[test]
