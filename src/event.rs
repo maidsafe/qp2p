@@ -1,3 +1,4 @@
+use crate::error::Error;
 use crate::{utils, NodeInfo, Peer};
 use std::fmt;
 use std::net::SocketAddr;
@@ -16,6 +17,8 @@ pub enum Event {
     ConnectionFailure {
         /// Peer address.
         peer_addr: SocketAddr,
+        /// Error explaining connection failure.
+        err: Error,
     },
     /// The given message was not sent to this peer.
     UnsentUserMessage {

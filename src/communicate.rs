@@ -444,6 +444,7 @@ mod tests {
     use super::*;
     use crate::test_utils::{new_random_qp2p, rand_node_info, test_dirs, write_to_bi_stream};
     use std::collections::HashSet;
+    use std::error::Error as std_err;
 
     // Test for the case of bi-directional stream usage attempt.
     #[test]
@@ -469,8 +470,9 @@ mod tests {
 
         // The connection should fail because we don't allow bi-directional streams
         match rx0.recv() {
-            Ok(Event::ConnectionFailure { peer_addr }) => {
+            Ok(Event::ConnectionFailure { peer_addr, err }) => {
                 assert_eq!(peer_addr, qp2p1_info.peer_addr);
+                assert_eq!(err.description(), Error::ConnectionCancelled.description());
             }
             r => panic!("Unexpected result {:?}", r),
         }
