@@ -46,8 +46,7 @@ struct CliArgs {
 struct ClientNode {
     qp2p: QuicP2p,
     bootstrap_node_info: NodeInfo,
-    /// It's optional just to fight the borrow checker.
-    event_rx: Option<mpmc::Receiver<Event>>,
+    event_rx: mpmc::Receiver<Event>,
     /// Other nodes we will be communicating with.
     client_nodes: HashSet<NodeInfo>,
     our_ci: NodeInfo,
@@ -101,7 +100,7 @@ impl ClientNode {
             bootstrap_node_info,
             large_msg,
             small_msg,
-            event_rx: Some(event_rx),
+            event_rx,
             client_nodes: Default::default(),
             our_ci,
             peer_states: Default::default(),
@@ -124,8 +123,7 @@ impl ClientNode {
     }
 
     fn poll_qp2p_events(&mut self) {
-        let event_rx = unwrap!(self.event_rx.take());
-        for event in event_rx.iter() {
+        while let Ok(event) = self.event_rx.recv() {
             match event {
                 Event::ConnectedTo { peer } => self.on_connect(peer),
                 Event::NewMessage { peer_addr, msg } => self.on_msg_receive(peer_addr, msg),
