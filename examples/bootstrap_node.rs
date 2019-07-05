@@ -13,7 +13,8 @@
 //!
 //! Usage:
 //! ```
-//! $ RUST_LOG=bootstrap_node=info cargo run --example bootstrap_node
+//! $ RUST_LOG=bootstrap_node=info cargo run --example bootstrap_node -- --expected_conns 1 --ip
+//! "127.0.0.1"
 //! ```
 
 #[macro_use]
