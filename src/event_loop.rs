@@ -25,7 +25,7 @@ where
 }
 
 /// Message that event loop can accept in order to be requested to do something
-pub struct EventLoopMsg(Option<Box<FnMut() + Send>>);
+pub struct EventLoopMsg(Option<Box<dyn FnMut() + Send>>);
 
 impl EventLoopMsg {
     /// Create a new message to be posted to the event loop
