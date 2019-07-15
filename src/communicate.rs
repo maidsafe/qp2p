@@ -12,7 +12,7 @@ use crate::connection::{Connection, FromPeer, QConn, ToPeer};
 use crate::context::{ctx, ctx_mut};
 use crate::error::Error;
 use crate::event::Event;
-use crate::utils;
+use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{connect, NodeInfo};
 use crate::{Peer, R};
@@ -24,9 +24,9 @@ use tokio::runtime::current_thread;
 
 /// Send message to peer. If the peer is a node and is not connected, it will attempt to connect to
 /// it first and then send the message. For un-connected clients, it'll simply error out.
-pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
+pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) {
     let node_info = match peer {
-        Peer::Client { peer_addr } => return write_to_peer(peer_addr, msg),
+        Peer::Client { peer_addr } => return write_to_peer(peer_addr, msg, token),
         Peer::Node { node_info } => node_info,
     };
 
@@ -39,7 +39,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
             .or_insert_with(|| Connection::new(peer_addr, event_tx, None));
 
         match conn.to_peer {
-            ToPeer::NoConnection => Some(msg),
+            ToPeer::NoConnection => Some((msg, token)),
             ToPeer::NotNeeded => {
                 warn!("TODO We normally can't get here - ignoring");
                 None
@@ -53,11 +53,11 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
                     info!("TODO Certificate we have for the peer already doesn't match with the \
                     one given - we should disconnect to such peers - something fishy going on.");
                 }
-                pending_sends.push(msg);
+                pending_sends.push((msg, token));
                 None
             }
             ToPeer::Established { ref q_conn, .. } => {
-                write_to_peer_connection(node_info.peer_addr, q_conn, msg);
+                write_to_peer_connection(node_info.peer_addr, q_conn, msg, token);
                 None
             }
         }
@@ -76,7 +76,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg) {
 
 /// This will fail if we don't have a connection to the peer or if the peer is in an invalid state
 /// to be sent a message to.
-pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
+pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg, token: Token) {
     ctx(|c| {
         let conn = match c.connections.get(&peer_addr) {
             Some(conn) => conn,
@@ -86,7 +86,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
         match &conn.to_peer {
             ToPeer::NotNeeded => {
                 if let FromPeer::Established { ref q_conn, .. } = conn.from_peer {
-                    write_to_peer_connection(peer_addr, q_conn, msg);
+                    write_to_peer_connection(peer_addr, q_conn, msg, token);
                 } else {
                     debug!(
                         "TODO We cannot communicate with someone we are not needing to connect to \
@@ -96,7 +96,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
                 }
             }
             ToPeer::Established { ref q_conn, .. } => {
-                write_to_peer_connection(peer_addr, q_conn, msg)
+                write_to_peer_connection(peer_addr, q_conn, msg, token)
             }
             ToPeer::NoConnection | ToPeer::Initiated { .. } => {
                 return debug!(
@@ -109,14 +109,20 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg) {
 }
 
 /// Write to the peer, given the QUIC connection to it
-pub fn write_to_peer_connection(peer_addr: SocketAddr, conn: &QConn, wire_msg: WireMsg) {
+pub fn write_to_peer_connection(
+    peer_addr: SocketAddr,
+    conn: &QConn,
+    wire_msg: WireMsg,
+    token: Token,
+) {
     let user_msg = if let WireMsg::UserMsg(ref m) = wire_msg {
-        Some(m.clone())
+        Some((m.clone(), token))
     } else {
         None
     };
     let user_msg0 = user_msg.clone();
     let user_msg1 = user_msg.clone();
+    let user_msg2 = user_msg.clone();
 
     let leaf = conn
         .open_uni()
@@ -143,7 +149,7 @@ pub fn write_to_peer_connection(peer_addr: SocketAddr, conn: &QConn, wire_msg: W
                 )
             })
         })
-        .map(|_| ());
+        .map(move |_| utils::handle_send_success(peer_addr, user_msg2));
 
     current_thread::spawn(leaf);
 }
@@ -428,7 +434,7 @@ fn handle_user_msg(
 
 fn handle_echo_req(peer_addr: SocketAddr, q_conn: &QConn) {
     let msg = WireMsg::EndpointEchoResp(peer_addr);
-    write_to_peer_connection(peer_addr, q_conn, msg);
+    write_to_peer_connection(peer_addr, q_conn, msg, 0);
 }
 
 fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<mpsc::Sender<SocketAddr>>) {

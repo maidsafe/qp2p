@@ -20,6 +20,8 @@ use std::path::Path;
 
 /// Result used by `QuicP2p`.
 pub type R<T> = Result<T, Error>;
+/// Token accepted during sends and returned back to the user to help identify the context.
+pub type Token = u64;
 
 /// This is to terminate the connection attempt should it take too long to mature to completeness.
 pub type ConnectTerminator = tokio::sync::mpsc::Sender<()>;
@@ -86,7 +88,7 @@ pub fn handle_communication_err(
     peer_addr: SocketAddr,
     e: &Error,
     details: &str,
-    unsent_user_msg: Option<bytes::Bytes>,
+    unsent_user_msg: Option<(bytes::Bytes, Token)>,
 ) {
     debug!(
         "ERROR in communication with peer {}: {:?} - {}. Details: {}",
@@ -94,10 +96,26 @@ pub fn handle_communication_err(
     );
     ctx_mut(|c| {
         let _ = c.connections.remove(&peer_addr);
-        if let Some(m) = unsent_user_msg {
-            let _ = c
-                .event_tx
-                .send(Event::UnsentUserMessage { peer_addr, msg: m });
+        if let Some((msg, token)) = unsent_user_msg {
+            let _ = c.event_tx.send(Event::UnsentUserMessage {
+                peer_addr,
+                msg,
+                token,
+            });
+        }
+    });
+}
+
+/// Handle successful sends. Currently a NoOp for non-user-messages (i.e., internal messages).
+#[inline]
+pub fn handle_send_success(peer_addr: SocketAddr, sent_user_msg: Option<(bytes::Bytes, Token)>) {
+    ctx_mut(|c| {
+        if let Some((msg, token)) = sent_user_msg {
+            let _ = c.event_tx.send(Event::SentUserMessage {
+                peer_addr,
+                msg,
+                token,
+            });
         }
     });
 }

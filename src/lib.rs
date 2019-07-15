@@ -67,7 +67,7 @@ pub use error::Error;
 pub use event::Event;
 pub use peer::{NodeInfo, Peer};
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
-pub use utils::R;
+pub use utils::{Token, R};
 
 use crate::wire_msg::WireMsg;
 use bootstrap_cache::BootstrapCache;
@@ -233,10 +233,13 @@ impl QuicP2p {
     /// If the peer is not connected, it will attempt to connect to it first
     /// and then send the message. This can be called multiple times while the peer is still being
     /// connected to - all the sends will be buffered until the peer is connected to.
-    pub fn send(&mut self, peer: Peer, msg: bytes::Bytes) {
+    ///
+    /// `token` is supplied by the user code and will be returned with the message to help identify
+    /// the context, for successful or unsuccessful sends.
+    pub fn send(&mut self, peer: Peer, msg: bytes::Bytes, token: Token) {
         self.el.post(move || {
             let peer_addr = peer.peer_addr();
-            communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg));
+            communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg), token);
             Self::set_we_contacted_peer(&peer_addr);
         });
     }
@@ -436,7 +439,7 @@ impl QuicP2p {
 
         self.el.post(move || {
             ctx_mut(|c| c.our_ext_addr_tx = Some(tx));
-            communicate::try_write_to_peer(echo_server, WireMsg::EndpointEchoReq)
+            communicate::try_write_to_peer(echo_server, WireMsg::EndpointEchoReq, 0)
         });
 
         Ok(unwrap!(rx.recv()))
@@ -496,7 +499,7 @@ mod tests {
         assert_ne!(qp2p0_port, qp2p1_port);
         assert_eq!(qp2p1_port, qp2p1_info.peer_addr.port());
 
-        let (mut qp2p2, _rx) = {
+        let (mut qp2p2, rx2) = {
             let mut hcc: HashSet<_> = Default::default();
             assert!(hcc.insert(qp2p0_info.clone()));
             new_random_qp2p(true, hcc)
@@ -506,9 +509,11 @@ mod tests {
         // The two qp2p can now send data to each other
         // Drain the receiver first
         while let Ok(_) = rx1.try_recv() {}
+        while let Ok(_) = rx2.try_recv() {}
 
         let data = bytes::Bytes::from(vec![12, 13, 14, 253]);
-        qp2p2.send(qp2p1_info.into(), data.clone());
+        const TOKEN: u64 = 19923;
+        qp2p2.send(qp2p1_info.clone().into(), data.clone(), TOKEN);
 
         match unwrap!(rx1.recv()) {
             Event::ConnectedTo { peer } => assert_eq!(
@@ -526,10 +531,25 @@ mod tests {
             }
             x => panic!("Received unexpected event: {:?}", x),
         }
+        match unwrap!(rx2.recv()) {
+            Event::SentUserMessage {
+                peer_addr,
+                msg,
+                token,
+            } => {
+                assert_eq!(peer_addr, qp2p1_info.peer_addr);
+                assert_eq!(msg, data);
+                assert_eq!(token, TOKEN);
+            }
+            x => panic!("Received unexpected event: {:?}", x),
+        }
     }
 
     #[test]
     fn multistreaming_and_no_head_of_queue_blocking() {
+        const TEST_TOKEN0: u64 = 293_203;
+        const TEST_TOKEN1: u64 = 3_435_235;
+
         let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
 
@@ -555,7 +575,8 @@ mod tests {
         let small_msg1_to_qp2p0_clone = small_msg1_to_qp2p0.clone();
 
         let msg_to_qp2p1 = bytes::Bytes::from(vec![120, 129, 2]);
-        let msg_to_qp2p1_clone = msg_to_qp2p1.clone();
+        let msg_to_qp2p1_clone0 = msg_to_qp2p1.clone();
+        let msg_to_qp2p1_clone1 = msg_to_qp2p1.clone();
 
         let j0 = unwrap!(std::thread::Builder::new()
             .name("QuicP2p0-test-thread".to_string())
@@ -570,11 +591,12 @@ mod tests {
                         e, e
                     ),
                 };
-                for i in 0..3 {
+                let mut rxd_sent_msg_event = false;
+                for i in 0..4 {
                     match rx0.recv() {
                         Ok(Event::NewMessage { peer_addr, msg }) => {
                             assert_eq!(peer_addr, qp2p1_addr);
-                            if i != 2 {
+                            if i != 3 {
                                 assert!(
                                     msg == small_msg0_to_qp2p0_clone
                                         || msg == small_msg1_to_qp2p0_clone
@@ -584,6 +606,19 @@ mod tests {
                                 assert_eq!(msg, big_msg_to_qp2p0_clone);
                                 info!("Big message of size {} rxd from {}", msg.len(), peer_addr);
                             }
+                        }
+                        Ok(Event::SentUserMessage {
+                            peer_addr,
+                            msg,
+                            token,
+                        }) => {
+                            if rxd_sent_msg_event {
+                                panic!("Should have received sent message event only once !");
+                            }
+                            assert_eq!(peer_addr, qp2p1_addr);
+                            assert_eq!(msg, msg_to_qp2p1_clone0);
+                            assert_eq!(token, TEST_TOKEN0);
+                            rxd_sent_msg_event = true;
                         }
                         Ok(x) => panic!("Expected Event::NewMessage - got {:?}", x),
                         Err(e) => panic!(
@@ -606,10 +641,21 @@ mod tests {
                         e, e
                     ),
                 };
+                let mut count_of_rxd_sent_msgs: u8 = 0;
+                for _ in 0..4 {
                 match rx1.recv() {
                     Ok(Event::NewMessage { peer_addr, msg }) => {
                         assert_eq!(peer_addr, qp2p0_addr);
-                        assert_eq!(msg, msg_to_qp2p1_clone);
+                        assert_eq!(msg, msg_to_qp2p1_clone1);
+                    }
+                    Ok(Event::SentUserMessage { peer_addr, token, .. }) => {
+                        if count_of_rxd_sent_msgs >=3 {
+                            panic!("Only sent 3 msgs, so cannot rx send success for more than those
+                                   !");
+                        }
+                        assert_eq!(peer_addr, qp2p0_addr);
+                        assert_eq!(token, TEST_TOKEN1);
+                        count_of_rxd_sent_msgs += 1;
                     }
                     Ok(x) => panic!("Expected Event::NewMessage - got {:?}", x),
                     Err(e) => panic!(
@@ -617,18 +663,19 @@ mod tests {
                         e, e
                     ),
                 };
+                }
             }));
 
         // Send the biggest message first and we'll assert that it arrives last hence not blocking
         // the rest of smaller messages sent after it
-        qp2p1.send(qp2p0_info.clone().into(), big_msg_to_qp2p0);
-        qp2p1.send(qp2p0_info.clone().into(), small_msg0_to_qp2p0);
+        qp2p1.send(qp2p0_info.clone().into(), big_msg_to_qp2p0, TEST_TOKEN1);
+        qp2p1.send(qp2p0_info.clone().into(), small_msg0_to_qp2p0, TEST_TOKEN1);
         // Even after a delay the following small message should arrive before the 1st sent big
         // message
         std::thread::sleep(Duration::from_millis(100));
-        qp2p1.send(qp2p0_info.into(), small_msg1_to_qp2p0);
+        qp2p1.send(qp2p0_info.into(), small_msg1_to_qp2p0, TEST_TOKEN1);
 
-        qp2p0.send(qp2p1_info.into(), msg_to_qp2p1);
+        qp2p0.send(qp2p1_info.into(), msg_to_qp2p1, TEST_TOKEN0);
 
         unwrap!(j0.join());
         unwrap!(j1.join());
@@ -653,6 +700,7 @@ mod tests {
         malicious_client.send_wire_msg(
             qp2p0_info.clone().into(),
             WireMsg::Handshake(Handshake::Client),
+            0,
         );
 
         let malicious_client_info = unwrap!(malicious_client.our_connection_info());
@@ -713,6 +761,7 @@ mod tests {
         malicious_client.send_wire_msg(
             qp2p0_info.clone().into(),
             WireMsg::Handshake(Handshake::Node { cert_der: vec![] }),
+            0,
         );
 
         let malicious_client_info = unwrap!(malicious_client.our_connection_info());

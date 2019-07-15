@@ -15,7 +15,7 @@ use crate::context::ctx_mut;
 use crate::error::Error;
 use crate::event::Event;
 use crate::peer_config;
-use crate::utils;
+use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{communicate, NodeInfo, Peer, R};
 use std::mem;
@@ -26,7 +26,7 @@ use tokio::runtime::current_thread;
 /// Connect to the given peer
 pub fn connect_to(
     peer_info: NodeInfo,
-    send_after_connect: Option<WireMsg>,
+    send_after_connect: Option<(WireMsg, Token)>,
     bootstrap_group_maker: Option<&BootstrapGroupMaker>,
 ) -> R<()> {
     let peer_addr = peer_info.peer_addr;
@@ -188,6 +188,7 @@ fn handle_new_connection_res(
                     WireMsg::Handshake(Handshake::Node {
                         cert_der: c.our_complete_cert.cert_der.clone(),
                     }),
+                    0,
                 );
             }
             FromPeer::NotNeeded => {
@@ -195,6 +196,7 @@ fn handle_new_connection_res(
                     peer_addr,
                     &q_conn,
                     WireMsg::Handshake(Handshake::Client),
+                    0,
                 );
 
                 let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
@@ -247,8 +249,8 @@ fn handle_new_connection_res(
             }
         }
 
-        for pending_send in pending_sends {
-            communicate::write_to_peer_connection(peer_addr, &q_conn, pending_send);
+        for (pending_send, token) in pending_sends {
+            communicate::write_to_peer_connection(peer_addr, &q_conn, pending_send, token);
         }
 
         conn.to_peer = ToPeer::Established {

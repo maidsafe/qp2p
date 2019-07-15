@@ -13,7 +13,7 @@ use crate::context::ctx;
 use crate::context::Context;
 use crate::dirs::{Dirs, OverRide};
 use crate::event::Event;
-use crate::utils::R;
+use crate::utils::{Token, R};
 use crate::wire_msg::WireMsg;
 use crate::{communicate, Builder, NodeInfo, Peer, QuicP2p};
 use crossbeam_channel as mpmc;
@@ -146,9 +146,9 @@ impl QuicP2p {
     }
 
     /// Send an arbitrary message. Used for testing malicious nodes and clients.
-    pub(crate) fn send_wire_msg(&mut self, peer: Peer, msg: WireMsg) {
+    pub(crate) fn send_wire_msg(&mut self, peer: Peer, msg: WireMsg, token: Token) {
         self.el.post(move || {
-            communicate::try_write_to_peer(peer, msg);
+            communicate::try_write_to_peer(peer, msg, token);
         });
     }
 
