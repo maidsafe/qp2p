@@ -117,7 +117,9 @@ impl ClientNode {
         let bootstrap_node = Peer::Node {
             node_info: self.bootstrap_node_info.clone(),
         };
-        self.qp2p.send(bootstrap_node, Bytes::from(vec![1, 2, 3]));
+        // TODO: handle tokens properly. Currently just hardcoding to 0 in example
+        self.qp2p
+            .send(bootstrap_node, Bytes::from(vec![1, 2, 3]), 0);
 
         self.poll_qp2p_events();
     }
@@ -142,8 +144,9 @@ impl ClientNode {
         if peer_info == self.bootstrap_node_info {
             info!("Connected to bootstrap node. Waiting for other node contacts...");
         } else if self.client_nodes.contains(&peer_info) {
-            self.qp2p.send(peer.clone(), self.large_msg.clone());
-            self.qp2p.send(peer, self.small_msg.clone());
+            // TODO: handle tokens properly. Currently just hardcoding to 0 in example
+            self.qp2p.send(peer.clone(), self.large_msg.clone(), 0);
+            self.qp2p.send(peer, self.small_msg.clone(), 0);
             self.sent_messages += 1;
         }
     }

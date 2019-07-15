@@ -89,7 +89,9 @@ fn main() -> Result<(), io::Error> {
                     let msg = Bytes::from(unwrap!(bincode::serialize(&Rpc::StartTest(contacts))));
                     for peer in connected_peers.values() {
                         // qp2p.send(Peer::Node { node_info: peer.clone() }, msg.clone());
-                        qp2p.send(peer.clone(), msg.clone());
+                        // TODO: Demo tokens properly. Currently just putting 0 here.
+                        // TODO: Also handle receiving `SentUserMessage` event
+                        qp2p.send(peer.clone(), msg.clone(), 0);
                     }
                     test_triggered = true;
                 } else if connected_peers.len() >= expected_connections {

@@ -2,6 +2,7 @@ use crate::error::Error;
 use crate::{utils, NodeInfo, Peer};
 use std::fmt;
 use std::net::SocketAddr;
+use utils::Token;
 
 /// QuicP2p Events to the user
 #[derive(Debug)]
@@ -20,12 +21,23 @@ pub enum Event {
         /// Error explaining connection failure.
         err: Error,
     },
+    /// The given message was successfully sent to this peer.
+    SentUserMessage {
+        /// Peer address.
+        peer_addr: SocketAddr,
+        /// Sent message.
+        msg: bytes::Bytes,
+        /// Token, originally given by the user, for context.
+        token: Token,
+    },
     /// The given message was not sent to this peer.
     UnsentUserMessage {
         /// Peer address.
         peer_addr: SocketAddr,
         /// Unsent message.
         msg: bytes::Bytes,
+        /// Token, originally given by the user, for context.
+        token: Token,
     },
     /// Successfully connected to this peer.
     ConnectedTo {
@@ -56,7 +68,7 @@ impl fmt::Display for Event {
                 peer_addr,
                 utils::bin_data_format(&*msg)
             ),
-            ref blah => write!(f, "{}", blah),
+            _ => write!(f, "TODO"),
         }
     }
 }

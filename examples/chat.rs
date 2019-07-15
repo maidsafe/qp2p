@@ -149,7 +149,8 @@ fn on_cmd_send<'a>(
         .and_then(|idx| peer_list.get(idx).ok_or("Index out of bounds"))
         .map(|peer| {
             let msg = Bytes::from(args.collect::<Vec<_>>().join(" ").as_bytes());
-            qp2p.send(peer.clone(), msg);
+            // TODO: handle tokens properly. Currently just hardcoding to 0 in example
+            qp2p.send(peer.clone(), msg, 0);
         })
 }
 
@@ -172,7 +173,8 @@ fn on_cmd_send_rand<'a>(
         })
         .map(|(peer, bytes_to_send)| {
             let data = Bytes::from(random_vec(bytes_to_send));
-            qp2p.send(peer.clone(), data)
+            // TODO: handle tokens properly. Currently just hardcoding to 0 in example
+            qp2p.send(peer.clone(), data, 0)
         })
 }
 

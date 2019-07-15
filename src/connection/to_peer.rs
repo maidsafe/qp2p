@@ -8,7 +8,7 @@
 // Software.
 
 use crate::connection::QConn;
-use crate::utils::ConnectTerminator;
+use crate::utils::{ConnectTerminator, Token};
 use crate::wire_msg::WireMsg;
 use std::fmt;
 
@@ -19,7 +19,7 @@ pub enum ToPeer {
     Initiated {
         terminator: ConnectTerminator,
         peer_cert_der: Vec<u8>,
-        pending_sends: Vec<WireMsg>,
+        pending_sends: Vec<(WireMsg, Token)>,
     },
     Established {
         peer_cert_der: Vec<u8>,
