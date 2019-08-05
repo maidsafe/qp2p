@@ -49,6 +49,17 @@ impl Peer {
     }
 }
 
+impl fmt::Display for Peer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Peer::Node { ref node_info } => write!(f, "Peer::Node {{ node_info: {} }}", node_info),
+            Peer::Client { ref peer_addr } => {
+                write!(f, "Peer::Client {{ peer_addr: {} }}", peer_addr)
+            }
+        }
+    }
+}
+
 /// Information for a peer of type `Peer::Node`.
 ///
 /// This is a necessary information needed to connect to someone.
