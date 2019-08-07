@@ -59,6 +59,41 @@ pub enum Event {
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
+            Event::BootstrapFailure => write!(f, "Event::BootstrapFailure"),
+            Event::BootstrappedTo { ref node } => {
+                write!(f, "Event::BootstrappedTo {{ node: {} }}", node)
+            }
+            Event::ConnectionFailure {
+                ref peer_addr,
+                ref err,
+            } => write!(
+                f,
+                "Event::ConnectionFailure {{ peer_addr: {}, err: {} }}",
+                peer_addr, err
+            ),
+            Event::SentUserMessage {
+                ref peer_addr,
+                ref msg,
+                ref token,
+            } => write!(
+                f,
+                "Event::SentUserMessage {{ peer_addr: {}, msg: {}, token: {} }}",
+                peer_addr,
+                utils::bin_data_format(&*msg),
+                token
+            ),
+            Event::UnsentUserMessage {
+                ref peer_addr,
+                ref msg,
+                ref token,
+            } => write!(
+                f,
+                "Event::UnsentUserMessage {{ peer_addr: {}, msg: {}, token: {} }}",
+                peer_addr,
+                utils::bin_data_format(&*msg),
+                token
+            ),
+            Event::ConnectedTo { ref peer } => write!(f, "Event::ConnectedTo {{ peer: {} }}", peer),
             Event::NewMessage {
                 ref peer_addr,
                 ref msg,
@@ -68,7 +103,7 @@ impl fmt::Display for Event {
                 peer_addr,
                 utils::bin_data_format(&*msg)
             ),
-            _ => write!(f, "TODO"),
+            Event::Finish => write!(f, "Event::Finish"),
         }
     }
 }
