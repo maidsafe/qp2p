@@ -1,5 +1,9 @@
 # quic-p2p - Change Log
 
+## [0.2.1]
+- Fix incorrect deserialisation logic in `WireMsg`
+- Fix `fmt::Display` for `Event` and `WireMsg`
+
 ## [0.2.0]
 - Fix bugs
 - Modify API and internals with changes required by routing
