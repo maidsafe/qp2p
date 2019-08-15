@@ -16,6 +16,7 @@ use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{connect, NodeInfo};
 use crate::{Peer, R};
+use bytes::Bytes;
 use crossbeam_channel as mpmc;
 use std::net::SocketAddr;
 use std::sync::mpsc;
@@ -135,11 +136,20 @@ pub fn write_to_peer_connection(
             )
         })
         .and_then(move |o_stream| {
-            tokio::io::write_all(o_stream, wire_msg.into()).map_err(move |e| {
-                utils::handle_communication_err(peer_addr, &From::from(e), "Write-All", user_msg0)
-            })
+            let (message, msg_flag) = wire_msg.into();
+
+            tokio::io::write_all(o_stream, message)
+                .and_then(move |(o_stream, _)| tokio::io::write_all(o_stream, [msg_flag]))
+                .map_err(move |e| {
+                    utils::handle_communication_err(
+                        peer_addr,
+                        &From::from(e),
+                        "Write-All",
+                        user_msg0,
+                    )
+                })
         })
-        .and_then(move |(o_stream, _): (_, bytes::Bytes)| {
+        .and_then(move |(o_stream, _): (_, [u8; 1])| {
             tokio::io::shutdown(o_stream).map_err(move |e| {
                 utils::handle_communication_err(
                     peer_addr,
@@ -415,7 +425,7 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
 fn handle_user_msg(
     peer: Peer,
     event_tx: &mpmc::Sender<Event>,
-    msg: bytes::Bytes,
+    msg: Bytes,
     bootstrap_cache: &mut BootstrapCache,
     we_contacted_peer: bool,
 ) {
