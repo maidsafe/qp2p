@@ -216,10 +216,12 @@ pub(crate) fn write_to_bi_stream(peer_addr: SocketAddr, wire_msg: WireMsg) {
             .open_bi()
             .map_err(move |e| panic!("Open-Bidirectional: {:?} {}", e, e))
             .and_then(move |(o_stream, _i_stream)| {
-                tokio::io::write_all(o_stream, wire_msg.into())
+                let (message, msg_flag) = wire_msg.into();
+                tokio::io::write_all(o_stream, message)
+                    .and_then(move |(o_stream, _)| tokio::io::write_all(o_stream, [msg_flag]))
                     .map_err(move |e| panic!("Write-All: {:?} {}", e, e))
             })
-            .and_then(move |(o_stream, _): (_, bytes::Bytes)| {
+            .and_then(move |(o_stream, _): (_, [u8; 1])| {
                 tokio::io::shutdown(o_stream)
                     .map_err(move |e| panic!("Shutdown-after-write: {:?} {}", e, e))
             })

@@ -7,11 +7,9 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{utils, R};
+use crate::{error::Error, utils, R};
 use std::fmt;
 use std::net::SocketAddr;
-
-const MAX_MESSAGE_SIZE_FOR_SERIALISATION: usize = 1024; // 1 KiB
 
 /// Final type serialised and sent on the wire by QuicP2p
 #[derive(Serialize, Deserialize, Debug)]
@@ -22,25 +20,29 @@ pub enum WireMsg {
     UserMsg(bytes::Bytes),
 }
 
-impl Into<bytes::Bytes> for WireMsg {
-    fn into(self) -> bytes::Bytes {
-        if let WireMsg::UserMsg(ref m) = self {
-            if m.len() > MAX_MESSAGE_SIZE_FOR_SERIALISATION {
-                return m.clone();
-            }
-        }
+const USER_MSG_FLAG: u8 = 0;
 
-        From::from(unwrap!(bincode::serialize(&self)))
+impl Into<(bytes::Bytes, u8)> for WireMsg {
+    fn into(self) -> (bytes::Bytes, u8) {
+        match self {
+            WireMsg::UserMsg(ref m) => (m.clone(), USER_MSG_FLAG),
+            _ => (
+                From::from(unwrap!(bincode::serialize(&self))),
+                !USER_MSG_FLAG,
+            ),
+        }
     }
 }
 
 impl WireMsg {
-    pub fn from_raw(raw: Vec<u8>) -> R<Self> {
-        if raw.len() > MAX_MESSAGE_SIZE_FOR_SERIALISATION {
-            return Ok(WireMsg::UserMsg(From::from(raw)));
-        }
+    pub fn from_raw(mut raw: Vec<u8>) -> R<Self> {
+        let msg_flag = raw.pop();
 
-        Ok(bincode::deserialize(&raw)?)
+        match msg_flag {
+            Some(flag) if flag == USER_MSG_FLAG => Ok(WireMsg::UserMsg(From::from(raw))),
+            Some(flag) if flag == !USER_MSG_FLAG => Ok(bincode::deserialize(&raw)?),
+            _x => Err(Error::InvalidWireMsgFlag),
+        }
     }
 }
 
