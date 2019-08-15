@@ -50,7 +50,9 @@ impl fmt::Display for WireMsg {
             WireMsg::UserMsg(ref m) => {
                 write!(f, "WireMsg::UserMsg({})", utils::bin_data_format(&*m))
             }
-            ref w => write!(f, "{}", w),
+            WireMsg::EndpointEchoReq => write!(f, "WireMsg::EndpointEchoReq"),
+            WireMsg::EndpointEchoResp(ref sa) => write!(f, "WireMsg::EndpointEchoResp({})", sa),
+            WireMsg::Handshake(ref hs) => write!(f, "WireMsg::Handshake({})", hs),
         }
     }
 }
