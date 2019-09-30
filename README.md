@@ -14,11 +14,11 @@ securely. It also allows the network peers to re-join the network without
 requiring them to re-connect to any known peers. These peers such as hard coded
 peers or DNS defined peers as these are obviously a security concern and
 a centralised set of peers that can easily be attacked or even torn down. There
-are several informative posts describing both QUIC and TLS 1.3.
+are several informative posts describing both QUIC and TLS 1.3:
 
-[The IETF draft specification](https://tools.ietf.org/html/draft-ietf-quic-transport-20#section-6)
-[Cloudflare intro to quic](https://blog.cloudflare.com/the-road-to-quic/)
-[cloudflare intro to TLS 1.3](https://www.cloudflare.com/learning-resources/tls-1-3/)
+- [The IETF draft specification](https://tools.ietf.org/html/draft-ietf-quic-transport-20#section-6)
+- [Cloudflare intro to QUIC](https://blog.cloudflare.com/the-road-to-quic/)
+- [Cloudflare intro to TLS 1.3](https://www.cloudflare.com/learning-resources/tls-1-3/)
 
 These are highly recommended to be able to better understand this library, in
 particular the Cloudflare blog posts (10 minute read).
@@ -28,8 +28,8 @@ particular the Cloudflare blog posts (10 minute read).
 QUIC proved connection security via the use of TLS 1.3. This library allows 3 different connection types with regard to encryption and validation.
 
 1. Require peers have certificates from an agreed certificate authority.
-2. Allow use of a private certificate authority.
-3. Allow no identity validation of peers, but do encrypt connections.
+1. Allow use of a private certificate authority.
+1. Allow no identity validation of peers, but do encrypt connections.
 
 This should satisfy the requirements of many P2P networks, whether they trust any clearnet certificate authority (which may be a centralised attack source) or whether they pass the identity management up to a different layer to validate identities and simply use quic-p2p as a secured network in terms of encrypted connections.
 
@@ -46,7 +46,7 @@ quic-p2p sets 2 connection types when in P2P mode. This allows the connections t
 
 1. A bi-directional connection.
 
-2. A uni-directional connection.
+1. A uni-directional connection.
 
 Where 1 allows connections from consumers of the network, such as clients or
 perhaps P2P nodes who are simply obtaining information, such as bootstrapping,
@@ -63,7 +63,7 @@ not a Node as Nodes are always checked for reverse connectivity to them.
 
 This library enables `stateless-retry` to defend against IP spoofing. This is
 achieved by sending a token back to the connecting node which must be returned.
-quic also defines a protocol negotiation process that defend against many
+QUIC also defines a protocol negotiation process that defend against many
 attacks by confirming the acceptable protocols. This is defined
 [here](https://tools.ietf.org/html/draft-ietf-quic-transport-03#section-7.1).
 
