@@ -304,6 +304,11 @@ impl QuicP2p {
         self.cfg.hard_coded_contacts.contains(node_info)
     }
 
+    /// Returns a copy of the `Config` used to create this `QuicP2p`.
+    pub fn config(&self) -> Config {
+        self.cfg.clone()
+    }
+
     fn new(event_tx: mpmc::Sender<Event>) -> R<Self> {
         Ok(Self::with_config(
             event_tx,
