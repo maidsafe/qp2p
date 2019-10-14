@@ -63,6 +63,7 @@ extern crate structopt;
 extern crate unwrap;
 
 pub use config::{Config, OurType, SerialisableCertificate};
+pub use dirs::{Dirs, OverRide};
 pub use error::Error;
 pub use event::Event;
 pub use peer::{NodeInfo, Peer};
