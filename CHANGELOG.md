@@ -1,5 +1,9 @@
 # quic-p2p - Change Log
 
+## [0.3.0]
+- Expose `Dirs` and `OverRide` structs publicly.
+- Add `boostrap_cache_dir` field to the config to specify a custom path for the bootstrap cache.
+
 ## [0.2.1]
 - Fix incorrect deserialisation logic in `WireMsg`
 - Fix `fmt::Display` for `Event` and `WireMsg`
