@@ -33,9 +33,13 @@ impl OverRide {
     }
 }
 
+/// Location at which data such as config, keys, certificates and other backup data
+/// are stored.
 pub enum Dirs {
+    /// User defined custom directory for all data.
     #[allow(unused)]
     Overide(OverRide),
+    /// Set of directories to specifically store the cache, config, app data etc.
     #[cfg(any(
         all(
             unix,
