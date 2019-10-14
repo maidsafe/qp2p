@@ -58,6 +58,10 @@ pub struct Config {
     /// (see `SerialisableCertificate::to_string`).
     #[structopt(long, parse(try_from_str))]
     pub our_complete_cert: Option<SerialisableCertificate>,
+    /// Directory in which the bootstrap cache will be stored. If none is supplied, the platform specific
+    /// default cache directory is used.
+    #[structopt(long)]
+    pub bootstrap_cache_dir: Option<String>,
     /// Specify if we are a client or a node
     #[structopt(short = "t", long, default_value = "node")]
     pub our_type: OurType,

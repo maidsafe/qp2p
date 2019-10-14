@@ -367,7 +367,12 @@ impl QuicP2p {
                 our_complete_cert,
             )
         };
-        let bootstrap_cache = BootstrapCache::new(hard_coded_contacts, None)?;
+        let custom_dirs = self
+            .cfg
+            .bootstrap_cache_dir
+            .clone()
+            .map(|custom_dir| Dirs::Overide(OverRide::new(&custom_dir)));
+        let bootstrap_cache = BootstrapCache::new(hard_coded_contacts, custom_dirs.as_ref())?;
 
         self.el.post(move || {
             let our_cfg = unwrap!(peer_config::new_our_cfg(
