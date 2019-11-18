@@ -148,7 +148,7 @@ impl QuicP2p {
     /// Send an arbitrary message. Used for testing malicious nodes and clients.
     pub(crate) fn send_wire_msg(&mut self, peer: Peer, msg: WireMsg, token: Token) {
         self.el.post(move || {
-            communicate::try_write_to_peer(peer, msg, token);
+            unwrap!(communicate::try_write_to_peer(peer, msg, token));
         });
     }
 

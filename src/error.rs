@@ -39,7 +39,7 @@ quick_error! {
              display("Connection Error: {}", e)
              from()
          }
-         /// Errors encountered while creating a new endpoint.
+         /// Error while creating a quinn endpoint
          Endpoint(e: quinn::EndpointError) {
              display("Endpoint error: {}", e)
              from()
@@ -81,7 +81,7 @@ quick_error! {
          Configuration(e: String) {
              display("Configuration error: {}", e)
          }
-         /// Error encountered while creating a new connection
+         /// Forbidden operation attempted
          OperationNotAllowed {
              display("This operation is not allowed for us")
          }
