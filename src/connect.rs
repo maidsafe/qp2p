@@ -47,7 +47,7 @@ pub fn connect_to(
         let conn = c.connections.entry(peer_addr).or_insert_with(|| {
             Connection::new(
                 peer_addr,
-                event_tx,
+                event_tx.clone(),
                 bootstrap_group_maker
                     .map(|m| m.add_member_and_get_group_ref(peer_addr, terminator.clone())),
             )
@@ -74,8 +74,10 @@ pub fn connect_to(
             }
             conn.to_peer = ToPeer::Initiated {
                 terminator: terminator.clone(),
+                peer_addr,
                 peer_cert_der: peer_info.peer_cert_der,
                 pending_sends,
+                event_tx,
             };
             c.quic_ep()
                 .connect_with(peer_cfg, &peer_addr, "MaidSAFE.net")

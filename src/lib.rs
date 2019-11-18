@@ -206,7 +206,7 @@ impl QuicP2p {
         self.el.post(move || {
             let peer_addr = peer_info.peer_addr;
             if let Err(e) = connect::connect_to(peer_info, None, None) {
-                info!("Could not connect to the asked peer: {}", e);
+                info!("Could not connect to the asked peer {}: {}", peer_addr, e);
                 ctx_mut(|c| {
                     let _ = c
                         .event_tx
@@ -240,8 +240,20 @@ impl QuicP2p {
     pub fn send(&mut self, peer: Peer, msg: bytes::Bytes, token: Token) {
         self.el.post(move || {
             let peer_addr = peer.peer_addr();
-            communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg), token);
-            Self::set_we_contacted_peer(&peer_addr);
+
+            if let Err(e) = communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg), token) {
+                info!(
+                    "Could not send message to the asked peer {}: {}",
+                    peer_addr, e
+                );
+                ctx_mut(|c| {
+                    let _ = c
+                        .event_tx
+                        .send(Event::ConnectionFailure { peer_addr, err: e });
+                });
+            } else {
+                Self::set_we_contacted_peer(&peer_addr);
+            }
         });
     }
 
@@ -450,7 +462,7 @@ impl QuicP2p {
 
         self.el.post(move || {
             ctx_mut(|c| c.our_ext_addr_tx = Some(tx));
-            communicate::try_write_to_peer(echo_server, WireMsg::EndpointEchoReq, 0)
+            let _ = communicate::try_write_to_peer(echo_server, WireMsg::EndpointEchoReq, 0);
         });
 
         Ok(unwrap!(rx.recv()))

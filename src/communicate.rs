@@ -18,16 +18,30 @@ use crate::{connect, NodeInfo};
 use crate::{Peer, R};
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
-use std::net::SocketAddr;
-use std::sync::mpsc;
+use std::{io, net::SocketAddr, sync::mpsc};
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;
 
 /// Send message to peer. If the peer is a node and is not connected, it will attempt to connect to
 /// it first and then send the message. For un-connected clients, it'll simply error out.
-pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) {
+pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
     let node_info = match peer {
-        Peer::Client { peer_addr } => return write_to_peer(peer_addr, msg, token),
+        Peer::Client { peer_addr } => {
+            let usr_msg_and_token = if let WireMsg::UserMsg(ref msg) = msg {
+                Some((msg.clone(), token))
+            } else {
+                None
+            };
+            if let Err(e) = write_to_peer(peer_addr, msg, token) {
+                utils::handle_communication_err(
+                    peer_addr,
+                    &e,
+                    "Sending to a Client Peer",
+                    usr_msg_and_token,
+                );
+            }
+            return Ok(());
+        }
         Peer::Node { node_info } => node_info,
     };
 
@@ -52,7 +66,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) {
             } => {
                 if *peer_cert_der != node_info.peer_cert_der {
                     info!("TODO Certificate we have for the peer already doesn't match with the \
-                    one given - we should disconnect to such peers - something fishy going on.");
+                    one given - we should disconnect from such peers - something fishy going on.");
                 }
                 pending_sends.push((msg, token));
                 None
@@ -65,23 +79,25 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) {
     });
 
     if connect_and_send.is_some() {
-        let peer_addr = node_info.peer_addr;
-        if let Err(e) = connect::connect_to(node_info, connect_and_send, None) {
-            debug!(
-                "Unable to connect to peer {} to be able to send message: {:?}",
-                peer_addr, e
-            );
-        }
+        connect::connect_to(node_info, connect_and_send, None)?;
     }
+
+    Ok(())
 }
 
 /// This will fail if we don't have a connection to the peer or if the peer is in an invalid state
 /// to be sent a message to.
-pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg, token: Token) {
+pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg, token: Token) -> R<()> {
     ctx(|c| {
         let conn = match c.connections.get(&peer_addr) {
             Some(conn) => conn,
-            None => return trace!("Asked to communicate with an unknown peer: {}", peer_addr),
+            None => {
+                trace!("Asked to communicate with an unknown peer: {}", peer_addr);
+                return Err(Error::Io(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Unknown Peer",
+                )));
+            }
         };
 
         match &conn.to_peer {
@@ -89,23 +105,31 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg, token: Token) {
                 if let FromPeer::Established { ref q_conn, .. } = conn.from_peer {
                     write_to_peer_connection(peer_addr, q_conn, msg, token);
                 } else {
-                    debug!(
-                        "TODO We cannot communicate with someone we are not needing to connect to \
-                         and they are not connected to us just now. Peer: {}",
-                        peer_addr
-                    );
+                    return Err(Error::Io(io::Error::new(
+                        io::ErrorKind::Other,
+                        &format!(
+                            "We cannot communicate with someone we are not needing to connect to \
+                             and they are not connected to us just now. Peer: {}",
+                            peer_addr
+                        )[..],
+                    )));
                 }
             }
             ToPeer::Established { ref q_conn, .. } => {
                 write_to_peer_connection(peer_addr, q_conn, msg, token)
             }
             ToPeer::NoConnection | ToPeer::Initiated { .. } => {
-                return debug!(
-                    "Peer {} is in invalid state {:?} to be communicated to",
-                    peer_addr, conn.to_peer
-                );
+                return Err(Error::Io(io::Error::new(
+                    io::ErrorKind::Other,
+                    &format!(
+                        "Peer {} is in invalid state {:?} to be communicated to",
+                        peer_addr, conn.to_peer
+                    )[..],
+                )));
             }
         }
+
+        Ok(())
     })
 }
 

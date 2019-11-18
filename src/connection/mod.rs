@@ -73,8 +73,9 @@ impl Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        if (self.to_peer.is_established() || self.to_peer.is_not_needed())
-            && (self.from_peer.is_established() || self.from_peer.is_not_needed())
+        if self.we_contacted_peer
+            || ((self.to_peer.is_established() || self.to_peer.is_not_needed())
+                && (self.from_peer.is_established() || self.from_peer.is_not_needed()))
         {
             // No need to log these as this will fire even when the QuicP2p handle is dropped and at
             // that point there might be no one listening so sender will error out

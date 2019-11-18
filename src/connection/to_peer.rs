@@ -8,9 +8,12 @@
 // Software.
 
 use crate::connection::QConn;
+use crate::event::Event;
 use crate::utils::{ConnectTerminator, Token};
 use crate::wire_msg::WireMsg;
+use crossbeam_channel as mpmc;
 use std::fmt;
+use std::net::SocketAddr;
 
 /// Represent various stages of connection from us to the peer.
 pub enum ToPeer {
@@ -18,8 +21,10 @@ pub enum ToPeer {
     NotNeeded,
     Initiated {
         terminator: ConnectTerminator,
+        peer_addr: SocketAddr,
         peer_cert_der: Vec<u8>,
         pending_sends: Vec<(WireMsg, Token)>,
+        event_tx: mpmc::Sender<Event>,
     },
     Established {
         peer_cert_der: Vec<u8>,
@@ -90,9 +95,25 @@ impl Drop for ToPeer {
         match *self {
             ToPeer::NotNeeded | ToPeer::NoConnection | ToPeer::Established { .. } => {}
             ToPeer::Initiated {
-                ref mut terminator, ..
+                ref mut terminator,
+                ref peer_addr,
+                ref mut pending_sends,
+                ref event_tx,
+                ..
             } => {
                 let _ = terminator.try_send(());
+                for (wire_msg, token) in pending_sends.drain(..) {
+                    // No need to log these as this will fire even when the QuicP2p handle is
+                    // dropped and at that point there might be no one listening so sender will
+                    // error out
+                    if let WireMsg::UserMsg(msg) = wire_msg {
+                        let _ = event_tx.send(Event::UnsentUserMessage {
+                            peer_addr: *peer_addr,
+                            msg,
+                            token,
+                        });
+                    }
+                }
             }
         }
     }
