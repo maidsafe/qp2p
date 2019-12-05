@@ -7,10 +7,9 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use futures::stream::StreamExt;
 use std::fmt;
 use std::thread::{self, JoinHandle};
-use tokio::prelude::Stream;
-use tokio::runtime::current_thread;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
 /// Post messages to event loop
@@ -19,7 +18,7 @@ where
     F: FnOnce() + Send + 'static,
 {
     let msg = EventLoopMsg::new(f);
-    if let Err(e) = tx.try_send(msg) {
+    if let Err(e) = tx.send(msg) {
         warn!("Error posting messages to event loop: {:?}", e);
     }
 }
@@ -69,7 +68,7 @@ impl EventLoop {
         let j = unwrap!(thread::Builder::new()
             .name("QuicP2p-Event-Loop".into())
             .spawn(move || {
-                let event_loop_future = rx.map_err(|_| ()).for_each(move |ev_loop_msg| {
+                let event_loop_future = rx.for_each(move |ev_loop_msg| {
                     if let Some(mut f) = ev_loop_msg.0 {
                         f();
                         Ok(())
@@ -78,7 +77,11 @@ impl EventLoop {
                     }
                 });
 
-                let _r = current_thread::block_on_all(event_loop_future);
+                let runtime = unwrap!(tokio::runtime::Runtime::new());
+
+                // TODO: This was previously `block_on_all`. That function no longer exists. Make
+                // sure that this one is equivalent else certain clean ups might not be graceful.
+                let _r = runtime.block_on(event_loop_future);
                 debug!("Exiting QuicP2p Event Loop");
             }));
 
@@ -101,7 +104,7 @@ impl EventLoop {
 
 impl Drop for EventLoop {
     fn drop(&mut self) {
-        if let Err(e) = self.tx.try_send(EventLoopMsg::terminator()) {
+        if let Err(e) = self.tx.send(EventLoopMsg::terminator()) {
             warn!("Error trying to send an event loop terminator: {:?}", e);
         }
         let j = unwrap!(self.j.take());

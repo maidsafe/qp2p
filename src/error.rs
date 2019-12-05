@@ -45,7 +45,7 @@ quick_error! {
              from()
          }
          /// Error encountered while parsing a certificate or key.
-         CertificateParseError(e: quinn::tls::ParseError) {
+         CertificateParseError(e: String) {
              display("Certificate Parse Error: {}", e)
              from()
          }
@@ -99,6 +99,22 @@ quick_error! {
          /// Could not deserialise a wire message.
          InvalidWireMsgFlag {
              display("Could not deserialise a wire message: unexpected message type flag")
+         }
+         /// Write error
+         WriteError(e: quinn::WriteError) {
+             display("Stream Write error: {}", e)
+             cause(e)
+             from()
+         }
+         /// Read to end error
+         ReadToEndError(e: quinn::ReadToEndError) {
+             display("Read to end error: {}", e)
+             cause(e)
+             from()
+         }
+         /// Add certificate error
+         AddCertificateError(e: String) {
+             display("Could not add certificate: {}", e)
          }
      }
 }
