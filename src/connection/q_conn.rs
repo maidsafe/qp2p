@@ -36,6 +36,6 @@ impl DerefMut for QConn {
 
 impl Drop for QConn {
     fn drop(&mut self) {
-        self.q_conn.close(0, &[]);
+        self.q_conn.close(Default::default(), &[]);
     }
 }

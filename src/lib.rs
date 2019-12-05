@@ -64,13 +64,12 @@ use bootstrap_cache::BootstrapCache;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use crossbeam_channel as mpmc;
 use event_loop::EventLoop;
+use futures::future::TryFutureExt;
 use log::{debug, info, warn};
 use std::collections::VecDeque;
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::mpsc;
-use tokio::prelude::Future;
-use tokio::runtime::current_thread;
 use unwrap::unwrap;
 
 mod bootstrap;
@@ -401,7 +400,8 @@ impl QuicP2p {
                             "Failed to bind to port: {} - Error: {:?} - {}. Trying random port.",
                             DEFAULT_PORT_TO_TRY, e, e
                         );
-                        unwrap!(ep_builder.bind(&(ip, 0)))
+                        let bind_addr = SocketAddr::new(ip, 0);
+                        unwrap!(ep_builder.bind(&bind_addr))
                     }
                 }
             };
@@ -418,7 +418,7 @@ impl QuicP2p {
             );
             initialise_ctx(ctx);
 
-            current_thread::spawn(dr.map_err(|e| warn!("Error in quinn Driver: {:?}", e)));
+            tokio::spawn(dr.map_err(|e| warn!("Error in quinn Driver: {:?}", e)));
 
             if our_type != OurType::Client {
                 listener::listen(incoming_connections);
