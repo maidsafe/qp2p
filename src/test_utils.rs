@@ -17,20 +17,14 @@ use crate::utils::{Token, R};
 use crate::wire_msg::WireMsg;
 use crate::{communicate, Builder, NodeInfo, Peer, QuicP2p};
 use crossbeam_channel as mpmc;
+use futures::future::{Either, Future, FutureExt};
 use rand::Rng;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::PathBuf;
 use std::sync::mpsc;
-use std::{
-    env,
-    ops::Deref,
-    time::{Duration, Instant},
-};
-use tokio::prelude::{future::Either, Future};
-use tokio::runtime::current_thread;
-use tokio::timer::Delay;
+use std::{env, ops::Deref, time::Duration};
 use unwrap::unwrap;
 
 thread_local! {
@@ -83,28 +77,18 @@ impl<'a> EndpointWrap<'a> {
         config: quinn::ClientConfig,
         addr: &SocketAddr,
         server_name: &str,
-    ) -> Result<
-        impl Future<
-            Item = (
-                quinn::ConnectionDriver,
-                quinn::Connection,
-                quinn::IncomingStreams,
-            ),
-            Error = quinn::ConnectionError,
-        >,
-        quinn::ConnectError,
-    > {
+    ) -> Result<impl Future<Output = quinn::Connecting>, quinn::ConnectError> {
         test_ctx_mut(|ctx| ctx.attempted_connections.push(addr.clone()));
 
         let connecting_res = self.0.connect_with(config, addr, server_name)?;
         let delay_ms = test_ctx(|ctx| ctx.connect_delay);
         if delay_ms > 0 {
-            Ok(Either::A(
-                Delay::new(Instant::now() + Duration::from_millis(delay_ms))
-                    .then(move |_| connecting_res),
+            Ok(Either::Left(
+                tokio::time::delay_for(Duration::from_millis(delay_ms))
+                    .map(move |()| connecting_res),
             ))
         } else {
-            Ok(Either::B(connecting_res))
+            Ok(Either::Right(connecting_res))
         }
     }
 }
@@ -218,16 +202,21 @@ pub(crate) fn write_to_bi_stream(peer_addr: SocketAddr, wire_msg: WireMsg) {
             .map_err(move |e| panic!("Open-Bidirectional: {:?} {}", e, e))
             .and_then(move |(o_stream, _i_stream)| {
                 let (message, msg_flag) = wire_msg.into();
-                tokio::io::write_all(o_stream, message)
-                    .and_then(move |(o_stream, _)| tokio::io::write_all(o_stream, [msg_flag]))
+                o_stream
+                    .write_all(&message[..])
+                    .map_ok(move |()| {
+                        o_stream.write_all(&[msg_flag]);
+                        o_stream
+                    })
                     .map_err(move |e| panic!("Write-All: {:?} {}", e, e))
             })
             .and_then(move |(o_stream, _): (_, [u8; 1])| {
-                tokio::io::shutdown(o_stream)
+                o_stream
+                    .finish()
                     .map_err(move |e| panic!("Shutdown-after-write: {:?} {}", e, e))
             })
             .map(|_| ());
-        current_thread::spawn(leaf);
+        tokio::spawn(leaf);
     }
 
     ctx(|c| {

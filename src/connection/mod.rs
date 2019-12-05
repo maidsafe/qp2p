@@ -16,14 +16,12 @@ use crate::context::ctx_mut;
 use crate::error::Error;
 use crate::event::Event;
 use crossbeam_channel as mpmc;
+use futures::future::FutureExt;
 use log::{info, trace};
 use std::collections::hash_map::Entry;
 use std::fmt;
 use std::net::SocketAddr;
-use std::time::{Duration, Instant};
-use tokio::prelude::Future;
-use tokio::runtime::current_thread;
-use tokio::timer::Delay;
+use std::time::Duration;
 
 mod bootstrap_group;
 mod from_peer;
@@ -100,11 +98,7 @@ impl fmt::Debug for Connection {
 
 fn spawn_incomplete_conn_killer(peer_addr: SocketAddr) {
     let leaf =
-        Delay::new(Instant::now() + Duration::from_secs(KILL_INCOMPLETE_CONN_SEC)).then(move |r| {
-            if let Err(e) = r {
-                info!("Error in incomplete connection killer delay: {:?}", e);
-            }
-
+        tokio::time::delay_for(Duration::from_secs(KILL_INCOMPLETE_CONN_SEC)).map(move |()| {
             ctx_mut(|c| {
                 let conn = if let Entry::Occupied(oe) = c.connections.entry(peer_addr) {
                     oe
@@ -124,12 +118,10 @@ fn spawn_incomplete_conn_killer(peer_addr: SocketAddr) {
                     let _ = conn.remove();
                 }
             });
-
-            Ok(())
         });
 
     // TODO find a way to cancel this timer if we know the connection is done. Otherwise it
-    // might delay a clean exit of event loop if we were to use current_thread::run() instead
+    // might delay a clean exit of event loop if we were to use tokio::run() instead
     // of block_on as just now in event_loop.rs
-    current_thread::spawn(leaf);
+    tokio::spawn(leaf);
 }
