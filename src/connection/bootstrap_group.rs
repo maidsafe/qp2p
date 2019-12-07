@@ -9,7 +9,7 @@
 
 //! A `BootstrapGroup` is a group of related connection attempts that is spawned as a result of a
 //! bootstrap attempt off the list of bootstrap_nodes available to us. This group can be terminated when
-//! any member of the group has been successful in forging a bootstrap connection off a proxy. The
+//! any member of the group has been successful in forging a bootstrap connection off a bootstrap_node. The
 //! termination of the group would result in immediate cancellation of rest of the attempts
 //! currently being made by the members of the group and thus an eventual destruction of all such
 //! members to not continue to use resources as we no longer require them.

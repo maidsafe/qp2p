@@ -26,8 +26,8 @@ pub fn start() {
     });
 
     let maker = BootstrapGroupMaker::new(event_tx);
-    for proxy in bootstrap_nodes {
-        let _ = connect::connect_to(proxy, None, Some(&maker));
+    for bootstrap_node in bootstrap_nodes {
+        let _ = connect::connect_to(bootstrap_node, None, Some(&maker));
     }
 }
 
