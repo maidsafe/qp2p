@@ -24,11 +24,11 @@ pub fn listen(incoming_connections: quinn::Incoming) {
         let leaf = connecting
             .map_err(|e| debug!("New connection errored out: {}", e))
             .map_ok(|new_connection| handle_new_conn(new_connection));
-        tokio::spawn(leaf);
+        let _ = tokio::spawn(leaf);
         future::ready(())
     });
 
-    tokio::spawn(leaf);
+    let _ = tokio::spawn(leaf);
 }
 
 enum Action {
@@ -50,7 +50,7 @@ fn handle_new_conn(
 
     let peer_addr = q_conn.remote_address();
 
-    tokio::spawn(driver.map_err(move |e| {
+    let _ = tokio::spawn(driver.map_err(move |e| {
         utils::handle_communication_err(peer_addr, &From::from(e), "Driver failed", None);
     }));
 

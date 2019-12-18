@@ -7,7 +7,6 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use futures::stream::StreamExt;
 use log::{debug, warn};
 use std::fmt;
 use std::thread::{self, JoinHandle};
@@ -65,25 +64,24 @@ pub struct EventLoop {
 
 impl EventLoop {
     pub fn spawn() -> Self {
-        let (tx, rx) = mpsc::unbounded_channel::<EventLoopMsg>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<EventLoopMsg>();
 
         let j = unwrap!(thread::Builder::new()
             .name("QuicP2p-Event-Loop".into())
             .spawn(move || {
-                let event_loop_future = rx.for_each(move |ev_loop_msg| {
-                    if let Some(mut f) = ev_loop_msg.0 {
-                        f();
-                        Ok(())
-                    } else {
-                        Err(())
+                let event_loop_future = async move {
+                    while let Some(ev_loop_msg) = rx.recv().await {
+                        if let Some(mut f) = ev_loop_msg.0 {
+                            f();
+                        } else {
+                            break;
+                        }
                     }
-                });
+                };
 
-                let runtime = unwrap!(tokio::runtime::Runtime::new());
-
-                // TODO: This was previously `block_on_all`. That function no longer exists. Make
-                // sure that this one is equivalent else certain clean ups might not be graceful.
+                let mut runtime = unwrap!(tokio::runtime::Runtime::new());
                 let _r = runtime.block_on(event_loop_future);
+
                 debug!("Exiting QuicP2p Event Loop");
             }));
 
