@@ -11,9 +11,9 @@ authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 edition = "2018"
 
 [dependencies]
-quinn = "~0.5.0"
+quinn = "~0.5.2"
 futures = "*"
-tokio = { version = "~0.2.2", features = ["rt-core", "sync"] }
+tokio = { version = "~0.2.5", features = ["rt-core", "sync", "time", "io-driver"] }
 unwrap = "~1.2.1"
 bincode = "~1.1.2"
 bytes = { version = "~0.4.12", features = ["serde"] }

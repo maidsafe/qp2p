@@ -123,5 +123,5 @@ fn spawn_incomplete_conn_killer(peer_addr: SocketAddr) {
     // TODO find a way to cancel this timer if we know the connection is done. Otherwise it
     // might delay a clean exit of event loop if we were to use tokio::run() instead
     // of block_on as just now in event_loop.rs
-    tokio::spawn(leaf);
+    let _ = tokio::spawn(leaf);
 }

@@ -17,7 +17,7 @@ use crate::utils::{Token, R};
 use crate::wire_msg::WireMsg;
 use crate::{communicate, Builder, NodeInfo, Peer, QuicP2p};
 use crossbeam_channel as mpmc;
-use futures::future::{Either, Future, FutureExt};
+use futures::future::Future;
 use rand::Rng;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -77,19 +77,21 @@ impl<'a> EndpointWrap<'a> {
         config: quinn::ClientConfig,
         addr: &SocketAddr,
         server_name: &str,
-    ) -> Result<impl Future<Output = quinn::Connecting>, quinn::ConnectError> {
+    ) -> Result<
+        impl Future<Output = Result<quinn::NewConnection, quinn::ConnectionError>>,
+        quinn::ConnectError,
+    > {
         test_ctx_mut(|ctx| ctx.attempted_connections.push(addr.clone()));
 
         let connecting_res = self.0.connect_with(config, addr, server_name)?;
+
         let delay_ms = test_ctx(|ctx| ctx.connect_delay);
-        if delay_ms > 0 {
-            Ok(Either::Left(
-                tokio::time::delay_for(Duration::from_millis(delay_ms))
-                    .map(move |()| connecting_res),
-            ))
-        } else {
-            Ok(Either::Right(connecting_res))
-        }
+        Ok(async move {
+            if delay_ms > 0 {
+                tokio::time::delay_for(Duration::from_millis(delay_ms)).await;
+            }
+            connecting_res.await
+        })
     }
 }
 
@@ -197,26 +199,25 @@ pub(crate) fn new_random_qp2p(
 /// to be sent a message to.
 pub(crate) fn write_to_bi_stream(peer_addr: SocketAddr, wire_msg: WireMsg) {
     fn write_to_bi(conn: &QConn, wire_msg: WireMsg) {
-        let leaf = conn
-            .open_bi()
-            .map_err(move |e| panic!("Open-Bidirectional: {:?} {}", e, e))
-            .and_then(move |(o_stream, _i_stream)| {
-                let (message, msg_flag) = wire_msg.into();
-                o_stream
-                    .write_all(&message[..])
-                    .map_ok(move |()| {
-                        o_stream.write_all(&[msg_flag]);
-                        o_stream
-                    })
-                    .map_err(move |e| panic!("Write-All: {:?} {}", e, e))
-            })
-            .and_then(move |(o_stream, _): (_, [u8; 1])| {
-                o_stream
-                    .finish()
-                    .map_err(move |e| panic!("Shutdown-after-write: {:?} {}", e, e))
-            })
-            .map(|_| ());
-        tokio::spawn(leaf);
+        let bi_stream = conn.open_bi();
+
+        let leaf = async move {
+            let mut o_stream = match bi_stream.await {
+                Ok((o_stream, _i_stream)) => o_stream,
+                Err(e) => panic!("Open-Bidirectional: {:?} {}", e, e),
+            };
+            let (message, msg_flag) = wire_msg.into();
+            if let Err(e) = o_stream.write_all(&message[..]).await {
+                panic!("Write-All: {:?} {}", e, e)
+            };
+            if let Err(e) = o_stream.write_all(&[msg_flag]).await {
+                panic!("Write-All: {:?} {}", e, e)
+            };
+            if let Err(e) = o_stream.finish().await {
+                panic!("Shutdown-after-write: {:?} {}", e, e);
+            }
+        };
+        let _ = tokio::spawn(leaf);
     }
 
     ctx(|c| {

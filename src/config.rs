@@ -79,6 +79,7 @@ impl Config {
         let config_path = config_path(user_override)?;
 
         if config_path.exists() {
+            trace!("Reading config from {:?}", config_path);
             Ok(utils::read_from_disk(&config_path)?)
         } else {
             let config_dir = config_path

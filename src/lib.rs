@@ -418,7 +418,7 @@ impl QuicP2p {
             );
             initialise_ctx(ctx);
 
-            tokio::spawn(dr.map_err(|e| warn!("Error in quinn Driver: {:?}", e)));
+            let _ = tokio::spawn(dr.map_err(|e| warn!("Error in quinn Driver: {:?}", e)));
 
             if our_type != OurType::Client {
                 listener::listen(incoming_connections);
