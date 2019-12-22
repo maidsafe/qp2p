@@ -80,7 +80,7 @@ impl EventLoop {
                 };
 
                 let mut runtime = unwrap!(tokio::runtime::Runtime::new());
-                let _r = runtime.block_on(event_loop_future);
+                runtime.block_on(event_loop_future);
 
                 debug!("Exiting QuicP2p Event Loop");
             }));
