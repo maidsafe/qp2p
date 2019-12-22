@@ -197,7 +197,7 @@ pub fn read_from_peer(
     mut bi_streams: quinn::IncomingBiStreams,
 ) {
     let _ = tokio::spawn(async move {
-        while let Some(res) = bi_streams.next().await {
+        if let Some(res) = bi_streams.next().await {
             let err = match res {
                 Err(e) => {
                     debug!(
@@ -217,7 +217,6 @@ pub fn read_from_peer(
                 }
             };
             utils::handle_communication_err(peer_addr, &err, "Receiving Stream", None);
-            break;
         }
     });
 

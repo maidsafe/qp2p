@@ -153,7 +153,7 @@ mod tests {
             let dirs = test_dirs();
             let mut cache = unwrap!(BootstrapCache::new(hard_coded, Some(&dirs)));
 
-            cache.add_peer(peer1.clone());
+            cache.add_peer(peer1);
             cache.add_peer(peer2.clone());
 
             let peers: Vec<NodeInfo> = cache.peers.iter().cloned().collect();

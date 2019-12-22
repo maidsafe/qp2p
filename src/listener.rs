@@ -23,7 +23,7 @@ pub fn listen(incoming_connections: quinn::Incoming) {
     let leaf = incoming_connections.for_each(move |connecting| {
         let leaf = connecting
             .map_err(|e| debug!("New connection errored out: {}", e))
-            .map_ok(|new_connection| handle_new_conn(new_connection));
+            .map_ok(handle_new_conn);
         let _ = tokio::spawn(leaf);
         future::ready(())
     });
