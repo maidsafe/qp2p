@@ -33,7 +33,7 @@ fn test_peer_with_hcc(
             ..Default::default()
         })
         // Make sure we start with an empty cache. Otherwise, we might get into unexpected state.
-        .with_proxies(Default::default(), true);
+        .with_bootstrap_nodes(Default::default(), true);
     (unwrap!(builder.build()), ev_rx)
 }
 
