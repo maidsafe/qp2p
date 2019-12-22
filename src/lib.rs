@@ -102,8 +102,8 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 pub struct Builder {
     event_tx: mpmc::Sender<Event>,
     cfg: Option<Config>,
-    proxies: VecDeque<NodeInfo>,
-    use_proxies_exclusively: bool,
+    bootstrap_nodes: VecDeque<NodeInfo>,
+    use_bootstrap_nodes_exclusively: bool,
 }
 
 impl Builder {
@@ -112,22 +112,26 @@ impl Builder {
         Self {
             event_tx,
             cfg: Default::default(),
-            proxies: Default::default(),
-            use_proxies_exclusively: Default::default(),
+            bootstrap_nodes: Default::default(),
+            use_bootstrap_nodes_exclusively: Default::default(),
         }
     }
 
-    /// Take proxies from the user.
+    /// Take bootstrap nodes from the user.
     ///
     /// Either use these exclusively or in addition to the ones read from bootstrap cache file if
     /// such a file exists
-    pub fn with_proxies(mut self, proxies: VecDeque<NodeInfo>, use_exclusively: bool) -> Self {
-        self.use_proxies_exclusively = use_exclusively;
+    pub fn with_bootstrap_nodes(
+        mut self,
+        bootstrap_nodes: VecDeque<NodeInfo>,
+        use_exclusively: bool,
+    ) -> Self {
+        self.use_bootstrap_nodes_exclusively = use_exclusively;
 
         if use_exclusively {
-            self.proxies = proxies;
+            self.bootstrap_nodes = bootstrap_nodes;
         } else {
-            self.proxies.extend(proxies.into_iter());
+            self.bootstrap_nodes.extend(bootstrap_nodes.into_iter());
         }
 
         self
@@ -151,15 +155,17 @@ impl Builder {
 
         qp2p.activate()?;
 
-        let use_proxies_exclusively = self.use_proxies_exclusively;
-        let proxies = self.proxies;
+        let use_bootstrap_nodes_exclusively = self.use_bootstrap_nodes_exclusively;
+        let bootstrap_nodes = self.bootstrap_nodes;
 
         qp2p.el.post(move || {
             ctx_mut(|c| {
-                if use_proxies_exclusively {
-                    let _ = mem::replace(c.bootstrap_cache.peers_mut(), proxies);
+                if use_bootstrap_nodes_exclusively {
+                    let _ = mem::replace(c.bootstrap_cache.peers_mut(), bootstrap_nodes);
                 } else {
-                    c.bootstrap_cache.peers_mut().extend(proxies.into_iter());
+                    c.bootstrap_cache
+                        .peers_mut()
+                        .extend(bootstrap_nodes.into_iter());
                 }
             })
         });

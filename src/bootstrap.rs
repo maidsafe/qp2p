@@ -12,7 +12,7 @@ use crate::connection::BootstrapGroupMaker;
 use crate::context::ctx;
 
 pub fn start() {
-    let (proxies, event_tx): (Vec<_>, _) = ctx(|c| {
+    let (bootstrap_nodes, event_tx): (Vec<_>, _) = ctx(|c| {
         (
             c.bootstrap_cache
                 .peers()
@@ -26,8 +26,8 @@ pub fn start() {
     });
 
     let maker = BootstrapGroupMaker::new(event_tx);
-    for proxy in proxies {
-        let _ = connect::connect_to(proxy, None, Some(&maker));
+    for bootstrap_node in bootstrap_nodes {
+        let _ = connect::connect_to(bootstrap_node, None, Some(&maker));
     }
 }
 
@@ -142,7 +142,7 @@ mod tests {
                 our_type: OurType::Client,
                 ..Default::default()
             })
-            .with_proxies(bootstrap_cache.clone(), true,)
+            .with_bootstrap_nodes(bootstrap_cache.clone(), true,)
             .build());
 
         bootstrapping_node.bootstrap();
@@ -186,7 +186,7 @@ mod tests {
                 idle_timeout_msec: Some(30),
                 ..Default::default()
             })
-            .with_proxies(Default::default(), true)
+            .with_bootstrap_nodes(Default::default(), true)
             .build());
 
         bootstrap_client.bootstrap();
@@ -329,7 +329,7 @@ mod tests {
                 ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
                 ..Default::default()
             })
-            .with_proxies(cached_peers, true);
+            .with_bootstrap_nodes(cached_peers, true);
         (unwrap!(builder.build()), ev_rx)
     }
 
@@ -353,7 +353,7 @@ mod tests {
                 ..Default::default()
             })
             // Make sure we start with an empty cache. Otherwise, we might get into unexpected state.
-            .with_proxies(Default::default(), true);
+            .with_bootstrap_nodes(Default::default(), true);
         (unwrap!(builder.build()), ev_rx)
     }
 }
