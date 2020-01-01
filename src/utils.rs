@@ -11,6 +11,7 @@ use crate::ctx_mut;
 use crate::dirs::Dirs;
 use crate::error::Error;
 use crate::event::Event;
+use log::debug;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs::File;

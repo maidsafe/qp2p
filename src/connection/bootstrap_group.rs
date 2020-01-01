@@ -18,6 +18,7 @@ use crate::context::ctx_mut;
 use crate::event::Event;
 use crate::utils::ConnectTerminator;
 use crossbeam_channel as mpmc;
+use log::info;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem;

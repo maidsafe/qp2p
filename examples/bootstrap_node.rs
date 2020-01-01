@@ -17,15 +17,13 @@
 //! "127.0.0.1"
 //! ```
 
-#[macro_use]
-extern crate log;
-
 mod common;
 use bincode;
 use bytes::Bytes;
 use common::Rpc;
 use crossbeam_channel as mpmc;
 use env_logger;
+use log::{error, info, warn};
 use quic_p2p::{Builder, Config, Event, Peer};
 use serde_json;
 use serde::{Serialize, Deserialize};

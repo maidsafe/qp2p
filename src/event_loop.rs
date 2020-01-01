@@ -7,6 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use log::{debug, warn};
 use std::fmt;
 use std::thread::{self, JoinHandle};
 use tokio::prelude::Stream;

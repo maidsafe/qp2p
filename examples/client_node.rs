@@ -16,9 +16,6 @@
 //! '[{"peer_addr": "127.0.0.1:5000","peer_cert_der":[48,130,..]}]'
 //! ```
 
-#[macro_use]
-extern crate log;
-
 mod common;
 
 use bytes::Bytes;
@@ -26,6 +23,7 @@ use common::Rpc;
 use crc::crc32;
 use crossbeam_channel as mpmc;
 use env_logger;
+use log::{debug, error, info, warn};
 use quic_p2p::{Builder, Config, Event, NodeInfo, Peer, QuicP2p};
 use rand::{self, seq::IteratorRandom, RngCore};
 use std::collections::{HashMap, HashSet};

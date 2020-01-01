@@ -16,6 +16,7 @@ use crate::context::ctx_mut;
 use crate::error::Error;
 use crate::event::Event;
 use crossbeam_channel as mpmc;
+use log::{info, trace};
 use std::collections::hash_map::Entry;
 use std::fmt;
 use std::net::SocketAddr;

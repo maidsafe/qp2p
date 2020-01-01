@@ -10,6 +10,7 @@
 use crate::dirs::Dirs;
 use crate::utils;
 use crate::{Error, NodeInfo, R};
+use log::info;
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 use std::{fs, io};

@@ -52,8 +52,6 @@
 )]
 
 #[macro_use]
-extern crate log;
-#[macro_use]
 extern crate quick_error;
 
 pub use config::{Config, OurType, SerialisableCertificate};
@@ -69,6 +67,7 @@ use bootstrap_cache::BootstrapCache;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use crossbeam_channel as mpmc;
 use event_loop::EventLoop;
+use log::{debug, info, warn};
 use std::collections::VecDeque;
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};

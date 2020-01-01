@@ -18,6 +18,7 @@ use crate::{connect, NodeInfo};
 use crate::{Peer, R};
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
+use log::{debug, info, trace, warn};
 use std::{io, net::SocketAddr, sync::mpsc};
 use tokio::prelude::{Future, Stream};
 use tokio::runtime::current_thread;

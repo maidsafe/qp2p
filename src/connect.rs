@@ -18,6 +18,7 @@ use crate::peer_config;
 use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{communicate, NodeInfo, Peer, R};
+use log::{debug, info, trace};
 use std::mem;
 use std::net::SocketAddr;
 use tokio::prelude::{Future, Stream};
