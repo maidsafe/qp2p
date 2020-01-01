@@ -20,8 +20,6 @@
 #[macro_use]
 extern crate log;
 #[macro_use]
-extern crate unwrap;
-#[macro_use]
 extern crate serde_derive;
 
 mod common;
@@ -35,6 +33,7 @@ use serde_json;
 use std::collections::HashMap;
 use std::io;
 use structopt::StructOpt;
+use unwrap::unwrap;
 
 /// Configuration for the bootstrap node
 #[derive(Serialize, Deserialize, StructOpt)]

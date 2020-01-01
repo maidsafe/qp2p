@@ -10,6 +10,7 @@
 use crate::{error::Error, utils, R};
 use std::fmt;
 use std::net::SocketAddr;
+use unwrap::unwrap;
 
 /// Final type serialised and sent on the wire by QuicP2p
 #[derive(Serialize, Deserialize, Debug)]

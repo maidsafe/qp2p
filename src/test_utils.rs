@@ -31,6 +31,7 @@ use std::{
 use tokio::prelude::{future::Either, Future};
 use tokio::runtime::current_thread;
 use tokio::timer::Delay;
+use unwrap::unwrap;
 
 thread_local! {
     static TEST_CTX: RefCell<Option<TestContext>> = RefCell::new(None);

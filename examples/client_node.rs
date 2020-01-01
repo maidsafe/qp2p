@@ -18,8 +18,6 @@
 
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate unwrap;
 
 mod common;
 
@@ -33,6 +31,7 @@ use rand::{self, seq::IteratorRandom, RngCore};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use structopt::StructOpt;
+use unwrap::unwrap;
 
 /// Client node will be connecting to bootstrap node from which it will receive contacts
 /// of other client nodes. Then this node will connect with all other client nodes and

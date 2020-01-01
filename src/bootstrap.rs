@@ -40,6 +40,7 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::thread;
     use std::time::Duration;
+    use unwrap::unwrap;
 
     // Try to bootstrap to 4 different peer sequentially. Use an artificial delay for 3 of the peers.
     // Make sure in the end we have only one bootstrapped connection (all other connections are

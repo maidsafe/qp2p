@@ -122,6 +122,7 @@ impl BootstrapCache {
 mod tests {
     use super::*;
     use crate::test_utils::{rand_node_info, test_dirs};
+    use unwrap::unwrap;
 
     mod add_peer {
         use super::*;

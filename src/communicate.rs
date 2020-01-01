@@ -485,6 +485,7 @@ mod tests {
     use crate::test_utils::{new_random_qp2p, rand_node_info, test_dirs, write_to_bi_stream};
     use std::collections::HashSet;
     use std::error::Error as std_err;
+    use unwrap::unwrap;
 
     // Test for the case of bi-directional stream usage attempt.
     #[test]
