@@ -13,6 +13,7 @@ use crate::utils;
 use crate::{NodeInfo, R};
 use base64;
 use bincode;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::path::PathBuf;

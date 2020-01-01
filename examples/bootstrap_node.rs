@@ -19,8 +19,6 @@
 
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate serde_derive;
 
 mod common;
 use bincode;
@@ -30,6 +28,7 @@ use crossbeam_channel as mpmc;
 use env_logger;
 use quic_p2p::{Builder, Config, Event, Peer};
 use serde_json;
+use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::io;
 use structopt::StructOpt;

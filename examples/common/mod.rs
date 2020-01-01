@@ -8,7 +8,7 @@
 // Software.
 
 use quic_p2p::Peer;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 /// Remote procedure call for our examples to communicate.
 #[derive(Debug, Serialize, Deserialize)]
