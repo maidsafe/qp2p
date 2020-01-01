@@ -51,9 +51,6 @@
     unused_results
 )]
 
-#[macro_use]
-extern crate quick_error;
-
 pub use config::{Config, OurType, SerialisableCertificate};
 pub use dirs::{Dirs, OverRide};
 pub use error::Error;
