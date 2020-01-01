@@ -18,6 +18,7 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{fmt, fs, io};
+use structopt::StructOpt;
 use unwrap::unwrap;
 
 /// QuicP2p configurations

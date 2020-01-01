@@ -57,8 +57,6 @@ extern crate log;
 extern crate quick_error;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
-extern crate structopt;
 
 pub use config::{Config, OurType, SerialisableCertificate};
 pub use dirs::{Dirs, OverRide};
