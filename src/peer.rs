@@ -8,6 +8,7 @@
 // Software.
 
 use crate::utils;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::net::SocketAddr;
 

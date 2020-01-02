@@ -7,11 +7,13 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use log::{debug, warn};
 use std::fmt;
 use std::thread::{self, JoinHandle};
 use tokio::prelude::Stream;
 use tokio::runtime::current_thread;
 use tokio::sync::mpsc::{self, UnboundedSender};
+use unwrap::unwrap;
 
 /// Post messages to event loop
 pub fn post<F>(tx: &mut UnboundedSender<EventLoopMsg>, f: F)

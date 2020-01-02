@@ -10,6 +10,7 @@
 use crate::dirs::Dirs;
 use crate::utils;
 use crate::{Error, NodeInfo, R};
+use log::info;
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 use std::{fs, io};
@@ -122,6 +123,7 @@ impl BootstrapCache {
 mod tests {
     use super::*;
     use crate::test_utils::{rand_node_info, test_dirs};
+    use unwrap::unwrap;
 
     mod add_peer {
         use super::*;

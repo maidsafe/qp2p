@@ -7,6 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use quick_error::quick_error;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::mpsc;

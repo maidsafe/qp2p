@@ -51,17 +51,6 @@
     unused_results
 )]
 
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate quick_error;
-#[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate structopt;
-#[macro_use]
-extern crate unwrap;
-
 pub use config::{Config, OurType, SerialisableCertificate};
 pub use dirs::{Dirs, OverRide};
 pub use error::Error;
@@ -75,12 +64,14 @@ use bootstrap_cache::BootstrapCache;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use crossbeam_channel as mpmc;
 use event_loop::EventLoop;
+use log::{debug, info, warn};
 use std::collections::VecDeque;
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::mpsc;
 use tokio::prelude::Future;
 use tokio::runtime::current_thread;
+use unwrap::unwrap;
 
 mod bootstrap;
 mod bootstrap_cache;
