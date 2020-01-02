@@ -12,4 +12,4 @@ bootstrap_cfg=$1
 
 cargo build --release --example client_node
 rsync -avz -e "ssh -o StrictHostKeyChecking=no" --progress ./target/release/examples/client_node qa@$droplet_ip:/home/qa/
-ssh -o "StrictHostKeyChecking no" qa@$droplet_ip "export RUST_LOG=client_node=trace RUST_BACKTRACE=1 ; pkill client_node ; truncate -s0 ./client-nohup.out ; (nohup /home/qa/client_node -b '$bootstrap_cfg' > ./client-nohup.out) & tail -f ./client-nohup.out"
+ssh -o "StrictHostKeyChecking no" qa@$droplet_ip "export RUST_LOG=client_node=trace RUST_BACKTRACE=1 ; pkill client_node ; truncate -s0 ./client-nohup.out ; (nohup /home/qa/client_node --hard-coded-contacts '$bootstrap_cfg' > ./client-nohup.out) & tail -f ./client-nohup.out"

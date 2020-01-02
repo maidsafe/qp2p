@@ -12,5 +12,5 @@ for i in {1..20}
 do
   echo "Running client $i ..."
   tmux new-window -t crust:$i -n "client$i"
-  tmux send-keys -t crust:$i "RUST_LOG=client_node=trace RUST_BACKTRACE=1 cargo run --release --example client_node -- -b '$1'" C-m
+  tmux send-keys -t crust:$i "env RUST_LOG=client_node=trace RUST_BACKTRACE=1 cargo run --release --example client_node -- --hard-coded-contacts '$1'" C-m
 done
