@@ -92,15 +92,15 @@ pub fn connect_to(
 
             let _ = tokio::spawn(async move {
                 select! {
-                // Terminator leaf
-                            _ = rx.recv().fuse() => {
-                                handle_connect_err(peer_addr, &Error::ConnectionCancelled);
-                            },
-                            // New connection
-                            new_peer_conn_res = connecting.fuse() => {
-                                handle_new_connection_res(peer_addr, new_peer_conn_res);
-                            },
-                    }
+                    // Terminator leaf
+                    _ = rx.recv().fuse() => {
+                        handle_connect_err(peer_addr, &Error::ConnectionCancelled);
+                    },
+                    // New connection
+                    new_peer_conn_res = connecting.fuse() => {
+                        handle_new_connection_res(peer_addr, new_peer_conn_res);
+                    },
+                }
             });
 
             Ok(())

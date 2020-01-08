@@ -202,7 +202,7 @@ pub fn read_from_peer(
                 Err(e) => {
                     debug!(
 			"Error in Incoming-bi-stream while reading from peer {}: {:?} - {}.\nNote: It
-                     would not be allowed even if it didn't fail as bi-streams are not allowed",
+                         would not be allowed even if it didn't fail as bi-streams are not allowed",
 			peer_addr, e, e
                     );
                     From::from(e)

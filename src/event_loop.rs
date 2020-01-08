@@ -66,7 +66,7 @@ impl EventLoop {
     pub fn spawn() -> Self {
         let (tx, mut rx) = mpsc::unbounded_channel::<EventLoopMsg>();
 
-        let j = unwrap!(thread::Builder::new()
+        let j = thread::Builder::new()
             .name("QuicP2p-Event-Loop".into())
             .spawn(move || {
                 let event_loop_future = async move {
@@ -79,11 +79,13 @@ impl EventLoop {
                     }
                 };
 
-                let mut runtime = unwrap!(tokio::runtime::Runtime::new());
+                let mut runtime =
+                    tokio::runtime::Runtime::new().expect("Cannot start Tokio runtime, aborting");
                 runtime.block_on(event_loop_future);
 
                 debug!("Exiting QuicP2p Event Loop");
-            }));
+            })
+            .expect("Cannot start QuicP2P event loop thread, aborting");
 
         Self { tx, j: Some(j) }
     }
