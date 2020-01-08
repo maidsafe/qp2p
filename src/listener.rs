@@ -16,7 +16,7 @@ use crate::Error;
 use crate::NodeInfo;
 use futures::future::{self, TryFutureExt};
 use futures::stream::StreamExt;
-use log::{debug, info, warn};
+use log::{debug, info};
 
 /// Start listening
 pub fn listen(incoming_connections: quinn::Incoming) {

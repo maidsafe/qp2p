@@ -17,7 +17,7 @@ use crate::error::Error;
 use crate::event::Event;
 use crossbeam_channel as mpmc;
 use futures::future::FutureExt;
-use log::{info, trace};
+use log::trace;
 use std::collections::hash_map::Entry;
 use std::fmt;
 use std::net::SocketAddr;
