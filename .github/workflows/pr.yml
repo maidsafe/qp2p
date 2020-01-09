@@ -54,7 +54,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: --all-targets
+          args: --workspace --all-targets
 
   test:
     name: Test
@@ -93,7 +93,7 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --release
+          args: --release --workspace
 
   # Test publish using --dry-run.
   test-publish:
