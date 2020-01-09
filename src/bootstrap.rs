@@ -138,7 +138,7 @@ mod tests {
             .with_config(Config {
                 port: Some(0),
                 ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                hard_coded_contacts: hard_coded_contacts.clone(),
+                hard_coded_contacts,
                 our_type: OurType::Client,
                 ..Default::default()
             })
@@ -174,7 +174,7 @@ mod tests {
         let bootstrap_ci = unwrap!(bootstrap_node.our_connection_info());
 
         let mut hcc = HashSet::with_capacity(1);
-        assert!(hcc.insert(bootstrap_ci.clone()));
+        assert!(hcc.insert(bootstrap_ci));
 
         let (ev_tx, ev_rx) = mpmc::unbounded();
         let mut bootstrap_client = unwrap!(Builder::new(ev_tx)
@@ -305,7 +305,7 @@ mod tests {
         };
         let (mut peer, ev_rx) = {
             let mut hcc = HashSet::new();
-            assert!(hcc.insert(dummy_peer_info.clone()));
+            assert!(hcc.insert(dummy_peer_info));
             test_peer_with_hcc(hcc, OurType::Node)
         };
 
