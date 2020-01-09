@@ -515,7 +515,7 @@ mod tests {
 
         let (mut qp2p2, rx2) = {
             let mut hcc: HashSet<_> = Default::default();
-            assert!(hcc.insert(qp2p0_info.clone()));
+            assert!(hcc.insert(qp2p0_info));
             new_random_qp2p(true, hcc)
         };
         let qp2p2_info = unwrap!(qp2p2.our_connection_info());
