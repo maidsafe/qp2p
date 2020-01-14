@@ -1,0 +1,21 @@
+[package]
+name = "mock-quic-p2p"
+description = "Mock version of quic-p2p which doesn't use real network. For testing purposes only."
+homepage = "https://maidsafe.net"
+license = "MIT OR BSD-3-Clause"
+repository = "https://github.com/maidsafe/quic-p2p"
+version = "0.1.0"
+authors = ["MaidSafe Developers <dev@maidsafe.net>"]
+edition = "2018"
+
+[dependencies]
+bytes = "~0.4.12"
+crossbeam-channel = "~0.3.8"
+fxhash = "~0.2.1"
+rand = "~0.7.2"
+serde = { version = "~1.0.91", features = ["derive"] }
+serde_json = "~1.0.39"
+structopt = "~0.2.15"
+
+[dev-dependencies]
+unwrap = "~1.2.1"
