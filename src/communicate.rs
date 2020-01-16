@@ -18,10 +18,10 @@ use crate::{connect, NodeInfo};
 use crate::{Peer, R};
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
+use futures::future::TryFutureExt;
+use futures::stream::StreamExt;
 use log::{debug, info, trace, warn};
 use std::{io, net::SocketAddr, sync::mpsc};
-use tokio::prelude::{Future, Stream};
-use tokio::runtime::current_thread;
 
 /// Send message to peer. If the peer is a node and is not connected, it will attempt to connect to
 /// it first and then send the message. For un-connected clients, it'll simply error out.
@@ -146,96 +146,110 @@ pub fn write_to_peer_connection(
     } else {
         None
     };
-    let user_msg0 = user_msg.clone();
-    let user_msg1 = user_msg.clone();
-    let user_msg2 = user_msg.clone();
 
-    let leaf = conn
-        .open_uni()
-        .map_err(move |e| {
-            utils::handle_communication_err(
-                peer_addr,
-                &From::from(e),
-                "Open-Unidirectional",
-                user_msg,
-            )
-        })
-        .and_then(move |o_stream| {
-            let (message, msg_flag) = wire_msg.into();
+    let uni_stream = conn.open_uni();
 
-            tokio::io::write_all(o_stream, message)
-                .and_then(move |(o_stream, _)| tokio::io::write_all(o_stream, [msg_flag]))
-                .map_err(move |e| {
-                    utils::handle_communication_err(
-                        peer_addr,
-                        &From::from(e),
-                        "Write-All",
-                        user_msg0,
-                    )
-                })
-        })
-        .and_then(move |(o_stream, _): (_, [u8; 1])| {
-            tokio::io::shutdown(o_stream).map_err(move |e| {
+    let leaf = async move {
+        let mut o_stream = match uni_stream.await {
+            Ok(o_stream) => o_stream,
+            Err(e) => {
                 utils::handle_communication_err(
                     peer_addr,
                     &From::from(e),
-                    "Shutdown-after-write",
-                    user_msg1,
-                )
-            })
-        })
-        .map(move |_| utils::handle_send_success(peer_addr, user_msg2));
+                    "Open-Unidirectional",
+                    user_msg,
+                );
+                return;
+            }
+        };
 
-    current_thread::spawn(leaf);
-}
+        let (message, msg_flag) = wire_msg.into();
 
-/// Listen for incoming streams containing peer messages and read them when available
-pub fn read_from_peer(peer_addr: SocketAddr, incoming_streams: quinn::IncomingStreams) {
-    let leaf = incoming_streams
-        .map_err(move |e| {
+        if let Err(e) = o_stream.write_all(&message[..]).await {
+            utils::handle_communication_err(peer_addr, &From::from(e), "Write-All", user_msg);
+            return;
+        }
+        if let Err(e) = o_stream.write_all(&[msg_flag]).await {
+            utils::handle_communication_err(peer_addr, &From::from(e), "Write-All", user_msg);
+            return;
+        }
+
+        if let Err(e) = o_stream.finish().await {
             utils::handle_communication_err(
                 peer_addr,
                 &From::from(e),
-                "Incoming streams failed",
-                None,
+                "Shutdown-after-write",
+                user_msg,
             );
-        })
-        .for_each(move |quic_stream| {
-            read_peer_stream(peer_addr, quic_stream).map_err(|e| {
-                debug!(
-                    "Error in Incoming-streams while reading from peer {}: {:?} - {}.",
-                    peer_addr, e, e
-                )
-            })
-        });
-
-    current_thread::spawn(leaf);
-}
-
-fn read_peer_stream(peer_addr: SocketAddr, quic_stream: quinn::NewStream) -> R<()> {
-    let i_stream = match quic_stream {
-        quinn::NewStream::Bi(_, _) => {
-            let e = Error::BiDirectionalStreamAttempted(peer_addr);
-            utils::handle_communication_err(peer_addr, &e, "Receiving Stream", None);
-            return Err(e);
+            return;
         }
-        quinn::NewStream::Uni(uni) => uni,
+
+        utils::handle_send_success(peer_addr, user_msg);
     };
 
+    let _ = tokio::spawn(leaf);
+}
+
+/// Listen for incoming streams containing peer messages and read them when available
+pub fn read_from_peer(
+    peer_addr: SocketAddr,
+    mut uni_streams: quinn::IncomingUniStreams,
+    mut bi_streams: quinn::IncomingBiStreams,
+) {
+    let _ = tokio::spawn(async move {
+        if let Some(res) = bi_streams.next().await {
+            let err = match res {
+                Err(e) => {
+                    debug!(
+			"Error in Incoming-bi-stream while reading from peer {}: {:?} - {}.\nNote: It
+                         would not be allowed even if it didn't fail as bi-streams are not allowed",
+			peer_addr, e, e
+                    );
+                    From::from(e)
+                }
+                Ok((_o_stream, _i_stream)) => {
+                    let e = Error::BiDirectionalStreamAttempted(peer_addr);
+                    debug!(
+                        "Error in Incoming-streams while reading from peer {}: {:?} - {}.",
+                        peer_addr, e, e
+                    );
+                    e
+                }
+            };
+            utils::handle_communication_err(peer_addr, &err, "Receiving Stream", None);
+        }
+    });
+
+    let _ = tokio::spawn(async move {
+        while let Some(res) = uni_streams.next().await {
+            match res {
+                Err(e) => {
+                    utils::handle_communication_err(
+                        peer_addr,
+                        &From::from(e),
+                        "Incoming streams failed",
+                        None,
+                    );
+                }
+                Ok(i_stream) => read_peer_stream(peer_addr, i_stream),
+            }
+        }
+    });
+}
+
+fn read_peer_stream(peer_addr: SocketAddr, i_stream: quinn::RecvStream) {
     let leaf = i_stream
         .read_to_end(ctx(|c| c.max_msg_size_allowed))
         .map_err(move |e| {
             utils::handle_communication_err(peer_addr, &From::from(e), "Read-To-End", None)
         })
-        .and_then(move |(_i_stream, raw)| {
+        .map_ok(move |raw| {
             WireMsg::from_raw(raw)
                 .map_err(|e| utils::handle_communication_err(peer_addr, &e, "Raw to WireMsg", None))
                 .map(|wire_msg| handle_wire_msg(peer_addr, wire_msg))
         });
 
-    current_thread::spawn(leaf);
-
-    Ok(())
+    let _ = tokio::spawn(leaf);
 }
 
 /// Handle wire messages from peer

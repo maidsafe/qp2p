@@ -64,13 +64,12 @@ use bootstrap_cache::BootstrapCache;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use crossbeam_channel as mpmc;
 use event_loop::EventLoop;
+use futures::future::TryFutureExt;
 use log::{debug, info, warn};
 use std::collections::VecDeque;
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::mpsc;
-use tokio::prelude::Future;
-use tokio::runtime::current_thread;
 use unwrap::unwrap;
 
 mod bootstrap;
@@ -103,8 +102,8 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 pub struct Builder {
     event_tx: mpmc::Sender<Event>,
     cfg: Option<Config>,
-    proxies: VecDeque<NodeInfo>,
-    use_proxies_exclusively: bool,
+    bootstrap_nodes: VecDeque<NodeInfo>,
+    use_bootstrap_nodes_exclusively: bool,
 }
 
 impl Builder {
@@ -113,22 +112,26 @@ impl Builder {
         Self {
             event_tx,
             cfg: Default::default(),
-            proxies: Default::default(),
-            use_proxies_exclusively: Default::default(),
+            bootstrap_nodes: Default::default(),
+            use_bootstrap_nodes_exclusively: Default::default(),
         }
     }
 
-    /// Take proxies from the user.
+    /// Take bootstrap nodes from the user.
     ///
     /// Either use these exclusively or in addition to the ones read from bootstrap cache file if
     /// such a file exists
-    pub fn with_proxies(mut self, proxies: VecDeque<NodeInfo>, use_exclusively: bool) -> Self {
-        self.use_proxies_exclusively = use_exclusively;
+    pub fn with_bootstrap_nodes(
+        mut self,
+        bootstrap_nodes: VecDeque<NodeInfo>,
+        use_exclusively: bool,
+    ) -> Self {
+        self.use_bootstrap_nodes_exclusively = use_exclusively;
 
         if use_exclusively {
-            self.proxies = proxies;
+            self.bootstrap_nodes = bootstrap_nodes;
         } else {
-            self.proxies.extend(proxies.into_iter());
+            self.bootstrap_nodes.extend(bootstrap_nodes.into_iter());
         }
 
         self
@@ -152,15 +155,17 @@ impl Builder {
 
         qp2p.activate()?;
 
-        let use_proxies_exclusively = self.use_proxies_exclusively;
-        let proxies = self.proxies;
+        let use_bootstrap_nodes_exclusively = self.use_bootstrap_nodes_exclusively;
+        let bootstrap_nodes = self.bootstrap_nodes;
 
         qp2p.el.post(move || {
             ctx_mut(|c| {
-                if use_proxies_exclusively {
-                    let _ = mem::replace(c.bootstrap_cache.peers_mut(), proxies);
+                if use_bootstrap_nodes_exclusively {
+                    let _ = mem::replace(c.bootstrap_cache.peers_mut(), bootstrap_nodes);
                 } else {
-                    c.bootstrap_cache.peers_mut().extend(proxies.into_iter());
+                    c.bootstrap_cache
+                        .peers_mut()
+                        .extend(bootstrap_nodes.into_iter());
                 }
             })
         });
@@ -401,7 +406,8 @@ impl QuicP2p {
                             "Failed to bind to port: {} - Error: {:?} - {}. Trying random port.",
                             DEFAULT_PORT_TO_TRY, e, e
                         );
-                        unwrap!(ep_builder.bind(&(ip, 0)))
+                        let bind_addr = SocketAddr::new(ip, 0);
+                        unwrap!(ep_builder.bind(&bind_addr))
                     }
                 }
             };
@@ -418,7 +424,7 @@ impl QuicP2p {
             );
             initialise_ctx(ctx);
 
-            current_thread::spawn(dr.map_err(|e| warn!("Error in quinn Driver: {:?}", e)));
+            let _ = tokio::spawn(dr.map_err(|e| warn!("Error in quinn Driver: {:?}", e)));
 
             if our_type != OurType::Client {
                 listener::listen(incoming_connections);
@@ -515,7 +521,7 @@ mod tests {
 
         let (mut qp2p2, rx2) = {
             let mut hcc: HashSet<_> = Default::default();
-            assert!(hcc.insert(qp2p0_info.clone()));
+            assert!(hcc.insert(qp2p0_info));
             new_random_qp2p(true, hcc)
         };
         let qp2p2_info = unwrap!(qp2p2.our_connection_info());

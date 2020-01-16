@@ -14,20 +14,21 @@ use crate::event::Event;
 use crate::utils;
 use crate::Error;
 use crate::NodeInfo;
-use log::{debug, info, warn};
-use tokio::prelude::{Future, Stream};
-use tokio::runtime::current_thread;
+use futures::future::{self, TryFutureExt};
+use futures::stream::StreamExt;
+use log::{debug, info};
 
 /// Start listening
 pub fn listen(incoming_connections: quinn::Incoming) {
-    let leaf = incoming_connections
-        .map_err(|()| warn!("ERROR: Listener errored out"))
-        .for_each(move |(conn_driver, q_conn, incoming)| {
-            handle_new_conn(conn_driver, q_conn, incoming);
-            Ok(())
-        });
+    let leaf = incoming_connections.for_each(move |connecting| {
+        let leaf = connecting
+            .map_err(|e| debug!("New connection errored out: {}", e))
+            .map_ok(handle_new_conn);
+        let _ = tokio::spawn(leaf);
+        future::ready(())
+    });
 
-    current_thread::spawn(leaf);
+    let _ = tokio::spawn(leaf);
 }
 
 enum Action {
@@ -37,15 +38,19 @@ enum Action {
 }
 
 fn handle_new_conn(
-    conn_driver: quinn::ConnectionDriver,
-    q_conn: quinn::Connection,
-    incoming_streams: quinn::IncomingStreams,
+    quinn::NewConnection {
+        driver,
+        connection,
+        uni_streams,
+        bi_streams,
+        ..
+    }: quinn::NewConnection,
 ) {
-    let q_conn = QConn::from(q_conn);
+    let q_conn = QConn::from(connection);
 
     let peer_addr = q_conn.remote_address();
 
-    current_thread::spawn(conn_driver.map_err(move |e| {
+    let _ = tokio::spawn(driver.map_err(move |e| {
         utils::handle_communication_err(peer_addr, &From::from(e), "Driver failed", None);
     }));
 
@@ -113,7 +118,7 @@ fn handle_new_conn(
             if let Some(bootstrap_group_ref) = bootstrap_group {
                 bootstrap_group_ref.terminate_group(true);
             }
-            communicate::read_from_peer(peer_addr, incoming_streams);
+            communicate::read_from_peer(peer_addr, uni_streams, bi_streams);
         }
     }
 }

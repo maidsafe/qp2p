@@ -33,7 +33,7 @@ fn test_peer_with_hcc(
             ..Default::default()
         })
         // Make sure we start with an empty cache. Otherwise, we might get into unexpected state.
-        .with_proxies(Default::default(), true);
+        .with_bootstrap_nodes(Default::default(), true);
     (unwrap!(builder.build()), ev_rx)
 }
 
@@ -58,7 +58,7 @@ fn incoming_connections_yield_connected_to_event() {
     let peer1_conn_info = unwrap!(peer1.our_connection_info());
 
     let (mut peer2, _) = test_node();
-    peer2.connect_to(peer1_conn_info.clone());
+    peer2.connect_to(peer1_conn_info);
     let peer2_conn_info = unwrap!(peer2.our_connection_info());
 
     let peer = wait_till_connected(ev_rx);
@@ -74,7 +74,7 @@ fn incoming_connections_are_not_put_into_bootstrap_cache_upon_connected_to_event
     let peer1_conn_info = unwrap!(peer1.our_connection_info());
 
     let (mut peer2, _) = test_node();
-    peer2.connect_to(peer1_conn_info.clone());
+    peer2.connect_to(peer1_conn_info);
 
     let _ = wait_till_connected(ev_rx);
 

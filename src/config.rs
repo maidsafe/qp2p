@@ -79,6 +79,7 @@ impl Config {
         let config_path = config_path(user_override)?;
 
         if config_path.exists() {
+            trace!("Reading config from {:?}", config_path);
             Ok(utils::read_from_disk(&config_path)?)
         } else {
             let config_dir = config_path
@@ -122,19 +123,26 @@ impl SerialisableCertificate {
     /// Returns [CertificateParseError](enum.Error.html#variant.CertificateParseError) if the inputs
     /// cannot be parsed
     pub fn obtain_priv_key_and_cert(&self) -> R<(quinn::PrivateKey, quinn::Certificate)> {
+        // FIXME: Seems quinn have `ParseError` as a return type of a public interface but the type
+        // itself is private. Hence using this workaround to collect it via `format!`. Ideally should
+        // be just convertible inside quick_error as usual with other errors.
         Ok((
-            quinn::PrivateKey::from_der(&self.key_der)?,
-            quinn::Certificate::from_der(&self.cert_der)?,
+            quinn::PrivateKey::from_der(&self.key_der)
+                .map_err(|e| Error::CertificateParseError(format!("{:?}, {}", e, e)))?,
+            quinn::Certificate::from_der(&self.cert_der)
+                .map_err(|e| Error::CertificateParseError(format!("{:?}, {}", e, e)))?,
         ))
     }
 }
 
 impl Default for SerialisableCertificate {
     fn default() -> Self {
-        let cert = rcgen::generate_simple_self_signed(vec!["MaidSAFE.net".to_string()]);
+        let cert = unwrap!(rcgen::generate_simple_self_signed(vec![
+            "MaidSAFE.net".to_string()
+        ]));
 
         Self {
-            cert_der: cert.serialize_der(),
+            cert_der: unwrap!(cert.serialize_der()),
             key_der: cert.serialize_private_key_der(),
         }
     }

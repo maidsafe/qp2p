@@ -18,11 +18,13 @@ use crate::peer_config;
 use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{communicate, NodeInfo, Peer, R};
+use futures::{
+    future::{FutureExt, TryFutureExt},
+    select,
+};
 use log::{debug, info, trace};
 use std::mem;
 use std::net::SocketAddr;
-use tokio::prelude::{Future, Stream};
-use tokio::runtime::current_thread;
 
 /// Connect to the given peer
 pub fn connect_to(
@@ -30,6 +32,8 @@ pub fn connect_to(
     send_after_connect: Option<(WireMsg, Token)>,
     bootstrap_group_maker: Option<&BootstrapGroupMaker>,
 ) -> R<()> {
+    debug!("Connecting to {}", peer_info);
+
     let peer_addr = peer_info.peer_addr;
 
     let peer_cfg = match peer_config::new_client_cfg(&peer_info.peer_cert_der) {
@@ -43,7 +47,7 @@ pub fn connect_to(
     let r = ctx_mut(|c| {
         let event_tx = c.event_tx.clone();
 
-        let (terminator, rx) = utils::connect_terminator();
+        let (terminator, mut rx) = utils::connect_terminator();
 
         let conn = c.connections.entry(peer_addr).or_insert_with(|| {
             Connection::new(
@@ -80,31 +84,26 @@ pub fn connect_to(
                 pending_sends,
                 event_tx,
             };
-            c.quic_ep()
+
+            let connecting = c
+                .quic_ep()
                 .connect_with(peer_cfg, &peer_addr, "MaidSAFE.net")
-                .map_err(Error::from)
-                .and_then(move |new_client_conn_fut| {
-                    let terminator_leaf = rx
-                        .map_err(move |_| {
-                            handle_connect_err(peer_addr, &Error::ConnectionCancelled)
-                        })
-                        .for_each(move |_| {
-                            handle_connect_err(peer_addr, &Error::ConnectionCancelled);
-                            Err(())
-                        });
-                    let handle_new_connection_res_leaf =
-                        new_client_conn_fut.then(move |new_peer_conn_res| {
-                            handle_new_connection_res(peer_addr, new_peer_conn_res);
-                            Ok::<_, ()>(())
-                        });
-                    let leaf = terminator_leaf
-                        .select(handle_new_connection_res_leaf)
-                        .then(|_| Ok(()));
+                .map_err(Error::from)?;
 
-                    current_thread::spawn(leaf);
+            let _ = tokio::spawn(async move {
+                select! {
+                    // Terminator leaf
+                    _ = rx.recv().fuse() => {
+                        handle_connect_err(peer_addr, &Error::ConnectionCancelled);
+                    },
+                    // New connection
+                    new_peer_conn_res = connecting.fuse() => {
+                        handle_new_connection_res(peer_addr, new_peer_conn_res);
+                    },
+                }
+            });
 
-                    Ok(())
-                })
+            Ok(())
         } else {
             Err(Error::DuplicateConnectionToPeer(peer_addr))
         }
@@ -119,24 +118,19 @@ pub fn connect_to(
 
 fn handle_new_connection_res(
     peer_addr: SocketAddr,
-    new_peer_conn_res: Result<
-        (
-            quinn::ConnectionDriver,
-            quinn::Connection,
-            quinn::IncomingStreams,
-        ),
-        quinn::ConnectionError,
-    >,
+    new_peer_conn_res: Result<quinn::NewConnection, quinn::ConnectionError>,
 ) {
-    let (conn_driver, q_conn, incoming_streams) = match new_peer_conn_res {
-        Ok((conn_driver, q_conn, incoming_streams)) => {
-            (conn_driver, QConn::from(q_conn), incoming_streams)
-        }
+    let (driver, q_conn, uni_streams, bi_streams) = match new_peer_conn_res {
+        Ok(quinn::NewConnection {
+            driver,
+            connection,
+            uni_streams,
+            bi_streams,
+            ..
+        }) => (driver, QConn::from(connection), uni_streams, bi_streams),
         Err(e) => return handle_connect_err(peer_addr, &From::from(e)),
     };
-    current_thread::spawn(
-        conn_driver.map_err(move |e| handle_connect_err(peer_addr, &From::from(e))),
-    );
+    let _ = tokio::spawn(driver.map_err(move |e| handle_connect_err(peer_addr, &From::from(e))));
 
     trace!("Successfully connected to peer: {}", peer_addr);
 
@@ -267,7 +261,7 @@ fn handle_new_connection_res(
     }
 
     if should_accept_incoming {
-        communicate::read_from_peer(peer_addr, incoming_streams);
+        communicate::read_from_peer(peer_addr, uni_streams, bi_streams);
     }
 }
 

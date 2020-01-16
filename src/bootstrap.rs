@@ -12,7 +12,7 @@ use crate::connection::BootstrapGroupMaker;
 use crate::context::ctx;
 
 pub fn start() {
-    let (proxies, event_tx): (Vec<_>, _) = ctx(|c| {
+    let (bootstrap_nodes, event_tx): (Vec<_>, _) = ctx(|c| {
         (
             c.bootstrap_cache
                 .peers()
@@ -26,8 +26,8 @@ pub fn start() {
     });
 
     let maker = BootstrapGroupMaker::new(event_tx);
-    for proxy in proxies {
-        let _ = connect::connect_to(proxy, None, Some(&maker));
+    for bootstrap_node in bootstrap_nodes {
+        let _ = connect::connect_to(bootstrap_node, None, Some(&maker));
     }
 }
 
@@ -138,11 +138,11 @@ mod tests {
             .with_config(Config {
                 port: Some(0),
                 ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-                hard_coded_contacts: hard_coded_contacts.clone(),
+                hard_coded_contacts,
                 our_type: OurType::Client,
                 ..Default::default()
             })
-            .with_proxies(bootstrap_cache.clone(), true,)
+            .with_bootstrap_nodes(bootstrap_cache.clone(), true,)
             .build());
 
         bootstrapping_node.bootstrap();
@@ -174,7 +174,7 @@ mod tests {
         let bootstrap_ci = unwrap!(bootstrap_node.our_connection_info());
 
         let mut hcc = HashSet::with_capacity(1);
-        assert!(hcc.insert(bootstrap_ci.clone()));
+        assert!(hcc.insert(bootstrap_ci));
 
         let (ev_tx, ev_rx) = mpmc::unbounded();
         let mut bootstrap_client = unwrap!(Builder::new(ev_tx)
@@ -186,7 +186,7 @@ mod tests {
                 idle_timeout_msec: Some(30),
                 ..Default::default()
             })
-            .with_proxies(Default::default(), true)
+            .with_bootstrap_nodes(Default::default(), true)
             .build());
 
         bootstrap_client.bootstrap();
@@ -305,7 +305,7 @@ mod tests {
         };
         let (mut peer, ev_rx) = {
             let mut hcc = HashSet::new();
-            assert!(hcc.insert(dummy_peer_info.clone()));
+            assert!(hcc.insert(dummy_peer_info));
             test_peer_with_hcc(hcc, OurType::Node)
         };
 
@@ -329,7 +329,7 @@ mod tests {
                 ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
                 ..Default::default()
             })
-            .with_proxies(cached_peers, true);
+            .with_bootstrap_nodes(cached_peers, true);
         (unwrap!(builder.build()), ev_rx)
     }
 
@@ -353,7 +353,7 @@ mod tests {
                 ..Default::default()
             })
             // Make sure we start with an empty cache. Otherwise, we might get into unexpected state.
-            .with_proxies(Default::default(), true);
+            .with_bootstrap_nodes(Default::default(), true);
         (unwrap!(builder.build()), ev_rx)
     }
 }
