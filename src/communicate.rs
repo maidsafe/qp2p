@@ -66,8 +66,10 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
                 ..
             } => {
                 if *peer_cert_der != node_info.peer_cert_der {
-                    info!("TODO Certificate we have for the peer already doesn't match with the \
-                    one given - we should disconnect from such peers - something fishy going on.");
+                    info!(
+                        "TODO Certificate we have for the peer already doesn't match with the \
+                    one given - we should disconnect from such peers - something fishy going on."
+                    );
                 }
                 pending_sends.push((msg, token));
                 None
@@ -208,7 +210,7 @@ pub fn read_from_peer(
                     From::from(e)
                 }
                 Ok((_o_stream, _i_stream)) => {
-                    let e = QuicP2pError::BiDirectionalStreamAttempted{ peer_addr };
+                    let e = QuicP2pError::BiDirectionalStreamAttempted { peer_addr };
                     debug!(
                         "Error in Incoming-streams while reading from peer {}: {:?} - {}.",
                         peer_addr, e, e
@@ -261,9 +263,12 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                 let conn = match c.connections.get_mut(&peer_addr) {
                     Some(conn) => conn,
                     None => {
-                        trace!("Rxd wire-message from someone we don't know. Probably it was a \
+                        trace!(
+                            "Rxd wire-message from someone we don't know. Probably it was a \
                         pending stream when we dropped the peer connection. Ignoring this message \
-                        from peer: {}", peer_addr);
+                        from peer: {}",
+                            peer_addr
+                        );
                         return;
                     }
                 };
@@ -373,9 +378,11 @@ fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
         let conn = match c.connections.get_mut(&peer_addr) {
             Some(conn) => conn,
             None => {
-                trace!("Rxd handshake from someone we don't know. Probably it was a pending \
+                trace!(
+                    "Rxd handshake from someone we don't know. Probably it was a pending \
                 stream when we dropped the peer connection. Ignoring this message from peer: {}",
-                peer_addr);
+                    peer_addr
+                );
                 return;
             }
         };
@@ -419,9 +426,11 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
         let conn = match c.connections.get_mut(&peer_addr) {
             Some(conn) => conn,
             None => {
-                trace!("Rxd certificate from someone we don't know. Probably it was a pending \
+                trace!(
+                    "Rxd certificate from someone we don't know. Probably it was a pending \
                 stream when we dropped the peer connection. Ignoring this message from peer: {}",
-                peer_addr);
+                    peer_addr
+                );
                 return false;
             }
         };
@@ -442,9 +451,11 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
                 ref peer_cert_der, ..
             } => {
                 if *peer_cert_der != node_info.peer_cert_der {
-                    info!("TODO Certificate we have for the peer already doesn't match with \
+                    info!(
+                        "TODO Certificate we have for the peer already doesn't match with \
                         the one given - we should disconnect to such peers - something fishy going \
-                        on.");
+                        on."
+                    );
                 }
                 false
             }
@@ -527,7 +538,10 @@ mod tests {
         match rx0.recv() {
             Ok(Event::ConnectionFailure { peer_addr, err }) => {
                 assert_eq!(peer_addr, qp2p1_info.peer_addr);
-                assert_eq!(format!("{}", err), format!("{}" , QuicP2pError::ConnectionCancelled));
+                assert_eq!(
+                    format!("{}", err),
+                    format!("{}", QuicP2pError::ConnectionCancelled)
+                );
             }
             r => panic!("Unexpected result {:?}", r),
         }

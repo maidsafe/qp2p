@@ -105,7 +105,7 @@ pub fn connect_to(
 
             Ok(())
         } else {
-            Err(QuicP2pError::DuplicateConnectionToPeer{ peer_addr })
+            Err(QuicP2pError::DuplicateConnectionToPeer { peer_addr })
         }
     });
 
@@ -156,10 +156,7 @@ fn handle_new_connection_res(
                 ref mut peer_cert_der,
                 ref mut pending_sends,
                 ..
-            } => (
-                mem::take(peer_cert_der),
-                mem::take(pending_sends),
-            ),
+            } => (mem::take(peer_cert_der), mem::take(pending_sends)),
             // TODO analyse if this is actually reachable in some wierd case where things were in
             // the event loop and resolving now etc
             x => unreachable!(
@@ -271,7 +268,7 @@ fn handle_connect_err(peer_addr: SocketAddr, e: &QuicP2pError) {
         peer_addr, e, e
     );
 
-    if let QuicP2pError::DuplicateConnectionToPeer{ .. } = e {
+    if let QuicP2pError::DuplicateConnectionToPeer { .. } = e {
         return;
     }
 
