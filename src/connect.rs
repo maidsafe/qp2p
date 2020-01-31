@@ -12,7 +12,7 @@ use crate::connection::{
     BootstrapGroupMaker, BootstrapGroupRef, Connection, FromPeer, QConn, ToPeer,
 };
 use crate::context::ctx_mut;
-use crate::error::Error;
+use crate::error::QuicP2pError;
 use crate::event::Event;
 use crate::peer_config;
 use crate::utils::{self, Token};
@@ -88,13 +88,13 @@ pub fn connect_to(
             let connecting = c
                 .quic_ep()
                 .connect_with(peer_cfg, &peer_addr, "MaidSAFE.net")
-                .map_err(Error::from)?;
+                .map_err(QuicP2pError::from)?;
 
             let _ = tokio::spawn(async move {
                 select! {
                     // Terminator leaf
                     _ = rx.recv().fuse() => {
-                        handle_connect_err(peer_addr, &Error::ConnectionCancelled);
+                        handle_connect_err(peer_addr, &QuicP2pError::ConnectionCancelled);
                     },
                     // New connection
                     new_peer_conn_res = connecting.fuse() => {
@@ -105,7 +105,7 @@ pub fn connect_to(
 
             Ok(())
         } else {
-            Err(Error::DuplicateConnectionToPeer(peer_addr))
+            Err(QuicP2pError::DuplicateConnectionToPeer{ peer_addr })
         }
     });
 
@@ -150,15 +150,15 @@ fn handle_new_connection_res(
             }
         };
 
-        let mut to_peer_prev = mem::replace(&mut conn.to_peer, Default::default());
+        let mut to_peer_prev = mem::take(&mut conn.to_peer);
         let (peer_cert_der, pending_sends) = match to_peer_prev {
             ToPeer::Initiated {
                 ref mut peer_cert_der,
                 ref mut pending_sends,
                 ..
             } => (
-                mem::replace(peer_cert_der, Default::default()),
-                mem::replace(pending_sends, Default::default()),
+                mem::take(peer_cert_der),
+                mem::take(pending_sends),
             ),
             // TODO analyse if this is actually reachable in some wierd case where things were in
             // the event loop and resolving now etc
@@ -265,13 +265,13 @@ fn handle_new_connection_res(
     }
 }
 
-fn handle_connect_err(peer_addr: SocketAddr, e: &Error) {
+fn handle_connect_err(peer_addr: SocketAddr, e: &QuicP2pError) {
     debug!(
         "Error connecting to peer {}: {:?} - Details: {}",
         peer_addr, e, e
     );
 
-    if let Error::DuplicateConnectionToPeer(_) = e {
+    if let QuicP2pError::DuplicateConnectionToPeer{ .. } = e {
         return;
     }
 

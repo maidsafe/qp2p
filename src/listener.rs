@@ -12,8 +12,8 @@ use crate::connection::{BootstrapGroupRef, Connection, FromPeer, QConn, ToPeer};
 use crate::context::ctx_mut;
 use crate::event::Event;
 use crate::utils;
-use crate::Error;
 use crate::NodeInfo;
+use crate::QuicP2pError;
 use futures::future::{self, TryFutureExt};
 use futures::stream::StreamExt;
 use log::{debug, info};
@@ -110,7 +110,7 @@ fn handle_new_conn(
         }
         Action::HandleAlreadyBootstrapped => crate::utils::handle_communication_err(
             peer_addr,
-            &Error::ConnectionCancelled,
+            &QuicP2pError::ConnectionCancelled,
             "Connection already bootstrapped",
             None,
         ),

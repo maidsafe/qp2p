@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::error::QuicP2pError;
 use crate::{utils, NodeInfo, Peer};
 use std::fmt;
 use std::net::SocketAddr;
@@ -19,7 +19,7 @@ pub enum Event {
         /// Peer address.
         peer_addr: SocketAddr,
         /// Error explaining connection failure.
-        err: Error,
+        err: QuicP2pError,
     },
     /// The given message was successfully sent to this peer.
     SentUserMessage {

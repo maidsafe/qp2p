@@ -10,7 +10,7 @@
 use crate::bootstrap_cache::BootstrapCache;
 use crate::connection::{Connection, FromPeer, QConn, ToPeer};
 use crate::context::{ctx, ctx_mut};
-use crate::error::Error;
+use crate::error::QuicP2pError;
 use crate::event::Event;
 use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
@@ -94,7 +94,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg, token: Token) -> R<()>
             Some(conn) => conn,
             None => {
                 trace!("Asked to communicate with an unknown peer: {}", peer_addr);
-                return Err(Error::Io(io::Error::new(
+                return Err(QuicP2pError::Io(io::Error::new(
                     io::ErrorKind::Other,
                     "Unknown Peer",
                 )));
@@ -106,7 +106,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg, token: Token) -> R<()>
                 if let FromPeer::Established { ref q_conn, .. } = conn.from_peer {
                     write_to_peer_connection(peer_addr, q_conn, msg, token);
                 } else {
-                    return Err(Error::Io(io::Error::new(
+                    return Err(QuicP2pError::Io(io::Error::new(
                         io::ErrorKind::Other,
                         &format!(
                             "We cannot communicate with someone we are not needing to connect to \
@@ -120,7 +120,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg, token: Token) -> R<()>
                 write_to_peer_connection(peer_addr, q_conn, msg, token)
             }
             ToPeer::NoConnection | ToPeer::Initiated { .. } => {
-                return Err(Error::Io(io::Error::new(
+                return Err(QuicP2pError::Io(io::Error::new(
                     io::ErrorKind::Other,
                     &format!(
                         "Peer {} is in invalid state {:?} to be communicated to",
@@ -208,7 +208,7 @@ pub fn read_from_peer(
                     From::from(e)
                 }
                 Ok((_o_stream, _i_stream)) => {
-                    let e = Error::BiDirectionalStreamAttempted(peer_addr);
+                    let e = QuicP2pError::BiDirectionalStreamAttempted{ peer_addr };
                     debug!(
                         "Error in Incoming-streams while reading from peer {}: {:?} - {}.",
                         peer_addr, e, e
@@ -499,7 +499,6 @@ mod tests {
     use super::*;
     use crate::test_utils::{new_random_qp2p, rand_node_info, test_dirs, write_to_bi_stream};
     use std::collections::HashSet;
-    use std::error::Error as std_err;
     use unwrap::unwrap;
 
     // Test for the case of bi-directional stream usage attempt.
@@ -528,7 +527,7 @@ mod tests {
         match rx0.recv() {
             Ok(Event::ConnectionFailure { peer_addr, err }) => {
                 assert_eq!(peer_addr, qp2p1_info.peer_addr);
-                assert_eq!(err.description(), Error::ConnectionCancelled.description());
+                assert_eq!(format!("{}", err), format!("{}" , QuicP2pError::ConnectionCancelled));
             }
             r => panic!("Unexpected result {:?}", r),
         }

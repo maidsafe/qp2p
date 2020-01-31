@@ -8,7 +8,7 @@
 // Software.
 
 use crate::dirs::Dirs;
-use crate::error::Error;
+use crate::error::QuicP2pError;
 use crate::utils;
 use crate::{NodeInfo, R};
 use base64;
@@ -85,7 +85,7 @@ impl Config {
             let config_dir = config_path
                 .parent()
                 .ok_or_else(|| io::ErrorKind::NotFound.into())
-                .map_err(Error::Io)?;
+                .map_err(QuicP2pError::Io)?;
             fs::create_dir_all(&config_dir)?;
 
             let cfg = Config::with_default_cert();
@@ -123,14 +123,11 @@ impl SerialisableCertificate {
     /// Returns [CertificateParseError](enum.Error.html#variant.CertificateParseError) if the inputs
     /// cannot be parsed
     pub fn obtain_priv_key_and_cert(&self) -> R<(quinn::PrivateKey, quinn::Certificate)> {
-        // FIXME: Seems quinn have `ParseError` as a return type of a public interface but the type
-        // itself is private. Hence using this workaround to collect it via `format!`. Ideally should
-        // be just convertible inside quick_error as usual with other errors.
         Ok((
             quinn::PrivateKey::from_der(&self.key_der)
-                .map_err(|e| Error::CertificateParseError(format!("{:?}, {}", e, e)))?,
+                .map_err(|_| QuicP2pError::CertificateParseError)?,
             quinn::Certificate::from_der(&self.cert_der)
-                .map_err(|e| Error::CertificateParseError(format!("{:?}, {}", e, e)))?,
+                .map_err(|_| QuicP2pError::CertificateParseError)?,
         ))
     }
 }
@@ -149,7 +146,7 @@ impl Default for SerialisableCertificate {
 }
 
 impl FromStr for SerialisableCertificate {
-    type Err = Error;
+    type Err = QuicP2pError;
 
     /// Decode `SerialisableCertificate` from a base64-encoded string.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -215,7 +212,7 @@ fn config_path(user_override: Option<&Dirs>) -> R<PathBuf> {
     };
 
     let cfg_path = user_override.map_or_else(
-        || Ok::<_, Error>(path(&utils::project_dir()?)),
+        || Ok::<_, QuicP2pError>(path(&utils::project_dir()?)),
         |d| Ok(path(d)),
     )?;
 

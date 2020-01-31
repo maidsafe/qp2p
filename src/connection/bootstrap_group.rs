@@ -91,7 +91,7 @@ impl BootstrapGroupRef {
 
             // We use a `mem::replace` here because `self.group` can be mutably borrowed
             // twice during `BootstrapGroupRef::drop` (it's called when we remove a connection)
-            mem::replace(&mut group.terminators, Default::default())
+            mem::take(&mut group.terminators)
         };
 
         let _ = terminators.remove(&self.peer_addr);

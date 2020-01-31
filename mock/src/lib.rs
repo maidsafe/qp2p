@@ -343,7 +343,3 @@ impl From<SocketAddr> for NodeInfo {
         }
     }
 }
-
-/// `QuicP2p` error.
-#[derive(Debug)]
-pub struct Error;

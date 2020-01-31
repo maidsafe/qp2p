@@ -8,7 +8,7 @@
 // Software.
 
 use crate::context::ctx;
-use crate::error::Error;
+use crate::error::QuicP2pError;
 use crate::R;
 use std::sync::Arc;
 
@@ -30,7 +30,7 @@ pub fn new_client_cfg(peer_cert_der: &[u8]) -> R<quinn::ClientConfig> {
     // itself is private. Hence using this workaround to collect it via `format!`. Ideally should
     // be just convertible inside quick_error as usual with other errors.
     let peer_cert = quinn::Certificate::from_der(peer_cert_der)
-        .map_err(|e| Error::CertificateParseError(format!("{:?}, {}", e, e)))?;
+        .map_err(|_| QuicP2pError::CertificateParseError)?;
 
     let mut peer_cfg_builder = {
         let mut client_cfg = quinn::ClientConfig::default();
@@ -40,7 +40,7 @@ pub fn new_client_cfg(peer_cert_der: &[u8]) -> R<quinn::ClientConfig> {
     };
     let _ = peer_cfg_builder
         .add_certificate_authority(peer_cert)
-        .map_err(|e| Error::AddCertificateError(format!("{:?} , {}", e, e)))?;
+        .map_err(|_| QuicP2pError::AddCertificateError)?;
 
     Ok(peer_cfg_builder.build())
 }
