@@ -8,7 +8,7 @@
 
 use super::{
     network::{Inner, Packet, NETWORK},
-    Config, Error, Event, NodeInfo, OurType, Peer,
+    Config, Event, NodeInfo, OurType, Peer, QuicP2pError,
 };
 use bytes::Bytes;
 use crossbeam_channel::Sender;
@@ -213,7 +213,7 @@ impl Node {
                 if self.peers.remove(&src).is_some() {
                     self.fire_event(Event::ConnectionFailure {
                         peer_addr: src,
-                        err: Error,
+                        err: QuicP2pError,
                     })
                 }
             }
@@ -222,9 +222,9 @@ impl Node {
         None
     }
 
-    pub fn our_connection_info(&self) -> Result<NodeInfo, Error> {
+    pub fn our_connection_info(&self) -> Result<NodeInfo, QuicP2pError> {
         match self.config.our_type {
-            OurType::Client => Err(Error),
+            OurType::Client => Err(QuicP2pError),
             OurType::Node => Ok(NodeInfo::from(self.addr)),
         }
     }
