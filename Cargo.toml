@@ -11,7 +11,7 @@ authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 edition = "2018"
 
 [dependencies]
-quinn = "0.5.2"
+quinn = "^0.5.2"
 futures = "*"
 tokio = { version = "~0.2.5", features = ["rt-core", "sync", "time", "io-driver"] }
 unwrap = "~1.2.1"
@@ -25,8 +25,8 @@ rcgen = "~0.7.0"
 rustls = "~0.16.0"
 log = "~0.4.6"
 base64 = "~0.10.1"
-err-derive = "0.2.2"
-derive_more = "0.99.2"
+err-derive = "^0.2.2"
+derive_more = "^0.99.2"
 
 [dev-dependencies]
 clap = "~2.32.0"
