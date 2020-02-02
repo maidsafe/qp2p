@@ -50,6 +50,8 @@ pub enum QuicP2pError {
     ConnectionCancelled,
     #[error(display = "Channel receive error ")]
     ChannelRecv(#[source] mpsc::RecvError),
+    #[error(display = "Could not add certificate to PKI")]
+    WebPki,
     #[error(display = "Invalid wire message.")]
     InvalidWireMsgFlag,
     #[error(display = "Stream write error ")]
@@ -57,5 +59,5 @@ pub enum QuicP2pError {
     #[error(display = "Read to end error ")]
     ReadToEndError(#[source] quinn::ReadToEndError),
     #[error(display = "Could not add certificate ")]
-    AddCertificateError,
+    AddCertificateError(#[source] quinn::ParseError),
 }

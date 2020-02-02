@@ -87,8 +87,7 @@ pub fn connect_to(
 
             let connecting = c
                 .quic_ep()
-                .connect_with(peer_cfg, &peer_addr, "MaidSAFE.net")
-                .map_err(QuicP2pError::from)?;
+                .connect_with(peer_cfg, &peer_addr, "MaidSAFE.net")?;
 
             let _ = tokio::spawn(async move {
                 select! {

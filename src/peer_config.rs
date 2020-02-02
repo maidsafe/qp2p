@@ -26,11 +26,7 @@ pub const DEFAULT_IDLE_TIMEOUT_MSEC: u64 = 30_000; // 30secs
 pub const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 10_000; // 10secs
 
 pub fn new_client_cfg(peer_cert_der: &[u8]) -> R<quinn::ClientConfig> {
-    // FIXME: Seems quinn have `ParseError` as a return type of a public interface but the type
-    // itself is private. Hence using this workaround to collect it via `format!`. Ideally should
-    // be just convertible inside quick_error as usual with other errors.
-    let peer_cert = quinn::Certificate::from_der(peer_cert_der)
-        .map_err(|_| QuicP2pError::CertificateParseError)?;
+    let peer_cert = quinn::Certificate::from_der(peer_cert_der)?;
 
     let mut peer_cfg_builder = {
         let mut client_cfg = quinn::ClientConfig::default();
@@ -40,7 +36,7 @@ pub fn new_client_cfg(peer_cert_der: &[u8]) -> R<quinn::ClientConfig> {
     };
     let _ = peer_cfg_builder
         .add_certificate_authority(peer_cert)
-        .map_err(|_| QuicP2pError::AddCertificateError)?;
+        .map_err(|_| QuicP2pError::WebPki)?;
 
     Ok(peer_cfg_builder.build())
 }
