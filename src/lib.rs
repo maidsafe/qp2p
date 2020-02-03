@@ -60,6 +60,7 @@ pub use utils::{Token, R};
 
 use crate::wire_msg::WireMsg;
 use bootstrap_cache::BootstrapCache;
+use bytes::Bytes;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use crossbeam_channel as mpmc;
 use event_loop::EventLoop;
@@ -232,7 +233,7 @@ impl QuicP2p {
     ///
     /// `token` is supplied by the user code and will be returned with the message to help identify
     /// the context, for successful or unsuccessful sends.
-    pub fn send(&mut self, peer: Peer, msg: bytes::Bytes, token: Token) {
+    pub fn send(&mut self, peer: Peer, msg: Bytes, token: Token) {
         self.el.post(move || {
             let peer_addr = peer.peer_addr();
 
@@ -433,7 +434,7 @@ impl QuicP2p {
         Ok(())
     }
 
-    fn our_certificate_der(&mut self) -> Vec<u8> {
+    fn our_certificate_der(&mut self) -> Bytes {
         let (tx, rx) = mpsc::channel();
 
         self.el.post(move || {
@@ -780,7 +781,9 @@ mod tests {
             .build());
         malicious_client.send_wire_msg(
             qp2p0_info.clone().into(),
-            WireMsg::Handshake(Handshake::Node { cert_der: vec![] }),
+            WireMsg::Handshake(Handshake::Node {
+                cert_der: Bytes::new(),
+            }),
             0,
         );
 

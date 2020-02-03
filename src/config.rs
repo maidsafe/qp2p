@@ -13,6 +13,7 @@ use crate::utils;
 use crate::{NodeInfo, R};
 use base64;
 use bincode;
+use bytes::Bytes;
 use log::{trace, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -111,9 +112,9 @@ impl Config {
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct SerialisableCertificate {
     /// DER encoded certificate
-    pub cert_der: Vec<u8>,
+    pub cert_der: Bytes,
     /// DER encoded private key
-    pub key_der: Vec<u8>,
+    pub key_der: Bytes,
 }
 
 impl SerialisableCertificate {
@@ -139,8 +140,8 @@ impl Default for SerialisableCertificate {
         ]));
 
         Self {
-            cert_der: unwrap!(cert.serialize_der()),
-            key_der: cert.serialize_private_key_der(),
+            cert_der: unwrap!(cert.serialize_der()).into(),
+            key_der: cert.serialize_private_key_der().into(),
         }
     }
 }

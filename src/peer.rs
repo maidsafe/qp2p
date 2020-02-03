@@ -8,9 +8,9 @@
 // Software.
 
 use crate::utils;
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::net::SocketAddr;
+use std::{fmt, net::SocketAddr};
 
 /// Representation of a peer to us.
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -69,7 +69,7 @@ pub struct NodeInfo {
     /// Endpoint of the node
     pub peer_addr: SocketAddr,
     /// Certificate of the node
-    pub peer_cert_der: Vec<u8>,
+    pub peer_cert_der: Bytes,
 }
 
 impl Into<Peer> for NodeInfo {
