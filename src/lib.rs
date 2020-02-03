@@ -546,8 +546,8 @@ mod tests {
             x => panic!("Received unexpected event: {:?}", x),
         }
         match unwrap!(rx1.recv()) {
-            Event::NewMessage { peer_addr, msg } => {
-                assert_eq!(peer_addr, qp2p2_info.peer_addr);
+            Event::NewMessage { peer, msg } => {
+                assert_eq!(peer.peer_addr(), qp2p2_info.peer_addr);
                 assert_eq!(msg, data);
             }
             x => panic!("Received unexpected event: {:?}", x),
@@ -615,17 +615,21 @@ mod tests {
                 let mut rxd_sent_msg_event = false;
                 for i in 0..4 {
                     match rx0.recv() {
-                        Ok(Event::NewMessage { peer_addr, msg }) => {
-                            assert_eq!(peer_addr, qp2p1_addr);
+                        Ok(Event::NewMessage { peer, msg }) => {
+                            assert_eq!(peer.peer_addr(), qp2p1_addr);
                             if i != 3 {
                                 assert!(
                                     msg == small_msg0_to_qp2p0_clone
                                         || msg == small_msg1_to_qp2p0_clone
                                 );
-                                info!("Smaller message {:?} rxd from {}", &*msg, peer_addr)
+                                info!("Smaller message {:?} rxd from {}", &*msg, peer.peer_addr())
                             } else {
                                 assert_eq!(msg, big_msg_to_qp2p0_clone);
-                                info!("Big message of size {} rxd from {}", msg.len(), peer_addr);
+                                info!(
+                                    "Big message of size {} rxd from {}",
+                                    msg.len(),
+                                    peer.peer_addr()
+                                );
                             }
                         }
                         Ok(Event::SentUserMessage {
@@ -665,8 +669,8 @@ mod tests {
                 let mut count_of_rxd_sent_msgs: u8 = 0;
                 for _ in 0..4 {
                 match rx1.recv() {
-                    Ok(Event::NewMessage { peer_addr, msg }) => {
-                        assert_eq!(peer_addr, qp2p0_addr);
+                    Ok(Event::NewMessage { peer, msg }) => {
+                        assert_eq!(peer.peer_addr(), qp2p0_addr);
                         assert_eq!(msg, msg_to_qp2p1_clone1);
                     }
                     Ok(Event::SentUserMessage { peer_addr, token, .. }) => {

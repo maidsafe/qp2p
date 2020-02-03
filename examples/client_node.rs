@@ -125,7 +125,7 @@ impl ClientNode {
         while let Ok(event) = self.event_rx.recv() {
             match event {
                 Event::ConnectedTo { peer } => self.on_connect(peer),
-                Event::NewMessage { peer_addr, msg } => self.on_msg_receive(peer_addr, msg),
+                Event::NewMessage { peer, msg } => self.on_msg_receive(peer.peer_addr(), msg),
                 event => warn!("Unexpected event: {:?}", event),
             }
         }
