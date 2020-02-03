@@ -33,7 +33,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
             } else {
                 None
             };
-            if let Err(e) = write_to_peer(peer_addr, msg, token) {
+            if let Err(e) = write_to_peer(peer, msg, token) {
                 utils::handle_communication_err(
                     peer_addr,
                     &e,
@@ -46,40 +46,43 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
         Peer::Node { node_info } => node_info,
     };
 
-    let connect_and_send = ctx_mut(|c| {
-        let peer_addr = node_info.peer_addr;
-        let event_tx = c.event_tx.clone();
-        let conn = c
-            .connections
-            .entry(peer_addr)
-            .or_insert_with(|| Connection::new(peer_addr, event_tx, None));
+    let connect_and_send = {
+        let node_info = node_info.clone();
+        ctx_mut(|c| {
+            let peer_addr = node_info.peer_addr;
+            let event_tx = c.event_tx.clone();
+            let conn = c
+                .connections
+                .entry(peer_addr)
+                .or_insert_with(|| Connection::new(peer_addr, event_tx, None));
 
-        match conn.to_peer {
-            ToPeer::NoConnection => Some((msg, token)),
-            ToPeer::NotNeeded => {
-                warn!("TODO We normally can't get here - ignoring");
-                None
-            }
-            ToPeer::Initiated {
-                ref peer_cert_der,
-                ref mut pending_sends,
-                ..
-            } => {
-                if *peer_cert_der != node_info.peer_cert_der {
-                    info!(
-                        "TODO Certificate we have for the peer already doesn't match with the \
-                    one given - we should disconnect from such peers - something fishy going on."
-                    );
+            match conn.to_peer {
+                ToPeer::NoConnection => Some((msg, token)),
+                ToPeer::NotNeeded => {
+                    warn!("TODO We normally can't get here - ignoring");
+                    None
                 }
-                pending_sends.push((msg, token));
-                None
+                ToPeer::Initiated {
+                    ref peer_cert_der,
+                    ref mut pending_sends,
+                    ..
+                } => {
+                    if *peer_cert_der != node_info.peer_cert_der {
+                        info!(
+                            "TODO Certificate we have for the peer already doesn't match with the \
+                    one given - we should disconnect from such peers - something fishy going on."
+                        );
+                    }
+                    pending_sends.push((msg, token));
+                    None
+                }
+                ToPeer::Established { ref q_conn, .. } => {
+                    write_to_peer_connection(Peer::Node { node_info }, q_conn, msg, token);
+                    None
+                }
             }
-            ToPeer::Established { ref q_conn, .. } => {
-                write_to_peer_connection(node_info.peer_addr, q_conn, msg, token);
-                None
-            }
-        }
-    });
+        })
+    };
 
     if connect_and_send.is_some() {
         connect::connect_to(node_info, connect_and_send, None)?;
@@ -90,12 +93,15 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
 
 /// This will fail if we don't have a connection to the peer or if the peer is in an invalid state
 /// to be sent a message to.
-pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg, token: Token) -> R<()> {
+pub fn write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
     ctx(|c| {
-        let conn = match c.connections.get(&peer_addr) {
+        let conn = match c.connections.get(&peer.peer_addr()) {
             Some(conn) => conn,
             None => {
-                trace!("Asked to communicate with an unknown peer: {}", peer_addr);
+                trace!(
+                    "Asked to communicate with an unknown peer: {}",
+                    peer.peer_addr()
+                );
                 return Err(QuicP2pError::Io(io::Error::new(
                     io::ErrorKind::Other,
                     "Unknown Peer",
@@ -106,27 +112,28 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg, token: Token) -> R<()>
         match &conn.to_peer {
             ToPeer::NotNeeded => {
                 if let FromPeer::Established { ref q_conn, .. } = conn.from_peer {
-                    write_to_peer_connection(peer_addr, q_conn, msg, token);
+                    write_to_peer_connection(peer, q_conn, msg, token);
                 } else {
                     return Err(QuicP2pError::Io(io::Error::new(
                         io::ErrorKind::Other,
                         &format!(
                             "We cannot communicate with someone we are not needing to connect to \
                              and they are not connected to us just now. Peer: {}",
-                            peer_addr
+                            peer.peer_addr()
                         )[..],
                     )));
                 }
             }
             ToPeer::Established { ref q_conn, .. } => {
-                write_to_peer_connection(peer_addr, q_conn, msg, token)
+                write_to_peer_connection(peer, q_conn, msg, token)
             }
             ToPeer::NoConnection | ToPeer::Initiated { .. } => {
                 return Err(QuicP2pError::Io(io::Error::new(
                     io::ErrorKind::Other,
                     &format!(
                         "Peer {} is in invalid state {:?} to be communicated to",
-                        peer_addr, conn.to_peer
+                        peer.peer_addr(),
+                        conn.to_peer
                     )[..],
                 )));
             }
@@ -137,12 +144,7 @@ pub fn write_to_peer(peer_addr: SocketAddr, msg: WireMsg, token: Token) -> R<()>
 }
 
 /// Write to the peer, given the QUIC connection to it
-pub fn write_to_peer_connection(
-    peer_addr: SocketAddr,
-    conn: &QConn,
-    wire_msg: WireMsg,
-    token: Token,
-) {
+pub fn write_to_peer_connection(peer: Peer, conn: &QConn, wire_msg: WireMsg, token: Token) {
     let user_msg = if let WireMsg::UserMsg(ref m) = wire_msg {
         Some((m.clone(), token))
     } else {
@@ -156,7 +158,7 @@ pub fn write_to_peer_connection(
             Ok(o_stream) => o_stream,
             Err(e) => {
                 utils::handle_communication_err(
-                    peer_addr,
+                    peer.peer_addr(),
                     &From::from(e),
                     "Open-Unidirectional",
                     user_msg,
@@ -168,17 +170,27 @@ pub fn write_to_peer_connection(
         let (message, msg_flag) = wire_msg.into();
 
         if let Err(e) = o_stream.write_all(&message[..]).await {
-            utils::handle_communication_err(peer_addr, &From::from(e), "Write-All", user_msg);
+            utils::handle_communication_err(
+                peer.peer_addr(),
+                &From::from(e),
+                "Write-All",
+                user_msg,
+            );
             return;
         }
         if let Err(e) = o_stream.write_all(&[msg_flag]).await {
-            utils::handle_communication_err(peer_addr, &From::from(e), "Write-All", user_msg);
+            utils::handle_communication_err(
+                peer.peer_addr(),
+                &From::from(e),
+                "Write-All",
+                user_msg,
+            );
             return;
         }
 
         if let Err(e) = o_stream.finish().await {
             utils::handle_communication_err(
-                peer_addr,
+                peer.peer_addr(),
                 &From::from(e),
                 "Shutdown-after-write",
                 user_msg,
@@ -186,7 +198,7 @@ pub fn write_to_peer_connection(
             return;
         }
 
-        utils::handle_send_success(peer_addr, user_msg);
+        utils::handle_send_success(peer, user_msg);
     };
 
     let _ = tokio::spawn(leaf);
@@ -203,9 +215,9 @@ pub fn read_from_peer(
             let err = match res {
                 Err(e) => {
                     debug!(
-			"Error in Incoming-bi-stream while reading from peer {}: {:?} - {}.\nNote: It
+            "Error in Incoming-bi-stream while reading from peer {}: {:?} - {}.\nNote: It
                          would not be allowed even if it didn't fail as bi-streams are not allowed",
-			peer_addr, e, e
+            peer_addr, e, e
                     );
                     From::from(e)
                 }
@@ -362,7 +374,7 @@ pub fn dispatch_wire_msg(
         WireMsg::UserMsg(m) => {
             handle_user_msg(peer, event_tx, m, bootstrap_cache, we_contacted_peer)
         }
-        WireMsg::EndpointEchoReq => handle_echo_req(peer.peer_addr(), q_conn),
+        WireMsg::EndpointEchoReq => handle_echo_req(peer, q_conn),
         WireMsg::EndpointEchoResp(our_addr) => handle_echo_resp(our_addr, inform_tx),
         WireMsg::Handshake(_) => unreachable!("Should have been handled already"),
     }
@@ -494,9 +506,9 @@ fn handle_user_msg(
     }
 }
 
-fn handle_echo_req(peer_addr: SocketAddr, q_conn: &QConn) {
-    let msg = WireMsg::EndpointEchoResp(peer_addr);
-    write_to_peer_connection(peer_addr, q_conn, msg, 0);
+fn handle_echo_req(peer: Peer, q_conn: &QConn) {
+    let msg = WireMsg::EndpointEchoResp(peer.peer_addr());
+    write_to_peer_connection(peer, q_conn, msg, 0);
 }
 
 fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<mpsc::Sender<SocketAddr>>) {

@@ -22,8 +22,8 @@ pub enum Event {
     },
     /// The given message was successfully sent to this peer.
     SentUserMessage {
-        /// Peer address.
-        peer_addr: SocketAddr,
+        /// Peer.
+        peer: Peer,
         /// Sent message.
         msg: bytes::Bytes,
         /// Token, originally given by the user, for context.
@@ -67,14 +67,10 @@ impl fmt::Display for Event {
                 "Event::ConnectionFailure {{ peer_addr: {}, err: {} }}",
                 peer_addr, err
             ),
-            Event::SentUserMessage {
-                peer_addr,
-                msg,
-                token,
-            } => write!(
+            Event::SentUserMessage { peer, msg, token } => write!(
                 f,
-                "Event::SentUserMessage {{ peer_addr: {}, msg: {}, token: {} }}",
-                peer_addr,
+                "Event::SentUserMessage {{ peer: {}, msg: {}, token: {} }}",
+                peer.peer_addr(),
                 utils::bin_data_format(&*msg),
                 token
             ),

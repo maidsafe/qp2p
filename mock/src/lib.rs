@@ -265,7 +265,7 @@ pub enum Event {
     /// a failure beyond this point as a byzantine fault.
     SentUserMessage {
         /// Intended message recipient.
-        peer_addr: SocketAddr,
+        peer: Peer,
         /// Message content.
         msg: Bytes,
         /// Message Token
