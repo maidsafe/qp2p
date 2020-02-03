@@ -188,15 +188,8 @@ impl Node {
             }
             Packet::Message(msg, token) => {
                 if let Some((_, peer_type)) = self.peers.get(&src) {
-                    let peer = match peer_type {
-                        OurType::Client => Peer::Client { peer_addr: src },
-                        OurType::Node => Peer::Node {
-                            node_info: NodeInfo::from(src),
-                        },
-                    };
-
                     self.fire_event(Event::NewMessage {
-                        peer,
+                        peer: to_peer(src, *peer_type),
                         msg: msg.clone(),
                     });
                     return Some(Packet::MessageSent(msg, token));
@@ -209,11 +202,15 @@ impl Node {
                 msg,
                 token,
             }),
-            Packet::MessageSent(msg, token) => self.fire_event(Event::SentUserMessage {
-                peer_addr: src,
-                msg,
-                token,
-            }),
+            Packet::MessageSent(msg, token) => {
+                if let Some((_, peer_type)) = self.peers.get(&src) {
+                    self.fire_event(Event::SentUserMessage {
+                        peer: to_peer(src, *peer_type),
+                        msg,
+                        token,
+                    });
+                }
+            }
             Packet::Disconnect => {
                 self.clear_pending_messages(src);
                 if self.peers.remove(&src).is_some() {
@@ -335,5 +332,14 @@ impl ConnectionType {
             Self::Normal => false,
             Self::Bootstrap => true,
         }
+    }
+}
+
+fn to_peer(addr: SocketAddr, peer_type: OurType) -> Peer {
+    match peer_type {
+        OurType::Client => Peer::Client { peer_addr: addr },
+        OurType::Node => Peer::Node {
+            node_info: NodeInfo::from(addr),
+        },
     }
 }

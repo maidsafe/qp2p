@@ -7,10 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::ctx_mut;
-use crate::dirs::Dirs;
-use crate::error::QuicP2pError;
-use crate::event::Event;
+use crate::{ctx_mut, dirs::Dirs, error::QuicP2pError, event::Event, peer::Peer};
 use log::debug;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -109,14 +106,10 @@ pub fn handle_communication_err(
 
 /// Handle successful sends. Currently a NoOp for non-user-messages (i.e., internal messages).
 #[inline]
-pub fn handle_send_success(peer_addr: SocketAddr, sent_user_msg: Option<(bytes::Bytes, Token)>) {
+pub fn handle_send_success(peer: Peer, sent_user_msg: Option<(bytes::Bytes, Token)>) {
     ctx_mut(|c| {
         if let Some((msg, token)) = sent_user_msg {
-            let _ = c.event_tx.send(Event::SentUserMessage {
-                peer_addr,
-                msg,
-                token,
-            });
+            let _ = c.event_tx.send(Event::SentUserMessage { peer, msg, token });
         }
     });
 }

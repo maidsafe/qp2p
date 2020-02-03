@@ -176,7 +176,9 @@ fn handle_new_connection_res(
         match conn.from_peer {
             FromPeer::NoConnection => {
                 communicate::write_to_peer_connection(
-                    peer_addr,
+                    Peer::Node {
+                        node_info: node_info.clone(),
+                    },
                     &q_conn,
                     WireMsg::Handshake(Handshake::Node {
                         cert_der: c.our_complete_cert.cert_der.clone(),
@@ -186,7 +188,9 @@ fn handle_new_connection_res(
             }
             FromPeer::NotNeeded => {
                 communicate::write_to_peer_connection(
-                    peer_addr,
+                    Peer::Node {
+                        node_info: node_info.clone(),
+                    },
                     &q_conn,
                     WireMsg::Handshake(Handshake::Client),
                     0,
@@ -194,10 +198,14 @@ fn handle_new_connection_res(
 
                 let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
                     terminate_bootstrap_group = Some(bootstrap_group_ref);
-                    Event::BootstrappedTo { node: node_info }
+                    Event::BootstrappedTo {
+                        node: node_info.clone(),
+                    }
                 } else {
                     Event::ConnectedTo {
-                        peer: node_info.into(),
+                        peer: Peer::Node {
+                            node_info: node_info.clone(),
+                        },
                     }
                 };
 
@@ -226,11 +234,11 @@ fn handle_new_connection_res(
                     info!("Could not fire event: {:?}", e);
                 }
 
-                let peer = Peer::Node { node_info };
-
                 for pending_read in pending_reads.drain(..) {
                     communicate::dispatch_wire_msg(
-                        peer.clone(),
+                        Peer::Node {
+                            node_info: node_info.clone(),
+                        },
                         &q_conn,
                         c.our_ext_addr_tx.take(),
                         &c.event_tx,
@@ -243,7 +251,14 @@ fn handle_new_connection_res(
         }
 
         for (pending_send, token) in pending_sends {
-            communicate::write_to_peer_connection(peer_addr, &q_conn, pending_send, token);
+            communicate::write_to_peer_connection(
+                Peer::Node {
+                    node_info: node_info.clone(),
+                },
+                &q_conn,
+                pending_send,
+                token,
+            );
         }
 
         conn.to_peer = ToPeer::Established {

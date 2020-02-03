@@ -553,12 +553,8 @@ mod tests {
             x => panic!("Received unexpected event: {:?}", x),
         }
         match unwrap!(rx2.recv()) {
-            Event::SentUserMessage {
-                peer_addr,
-                msg,
-                token,
-            } => {
-                assert_eq!(peer_addr, qp2p1_info.peer_addr);
+            Event::SentUserMessage { peer, msg, token } => {
+                assert_eq!(peer.peer_addr(), qp2p1_info.peer_addr);
                 assert_eq!(msg, data);
                 assert_eq!(token, TOKEN);
             }
@@ -632,15 +628,11 @@ mod tests {
                                 );
                             }
                         }
-                        Ok(Event::SentUserMessage {
-                            peer_addr,
-                            msg,
-                            token,
-                        }) => {
+                        Ok(Event::SentUserMessage { peer, msg, token }) => {
                             if rxd_sent_msg_event {
                                 panic!("Should have received sent message event only once !");
                             }
-                            assert_eq!(peer_addr, qp2p1_addr);
+                            assert_eq!(peer.peer_addr(), qp2p1_addr);
                             assert_eq!(msg, msg_to_qp2p1_clone0);
                             assert_eq!(token, TEST_TOKEN0);
                             rxd_sent_msg_event = true;
@@ -673,12 +665,12 @@ mod tests {
                         assert_eq!(peer.peer_addr(), qp2p0_addr);
                         assert_eq!(msg, msg_to_qp2p1_clone1);
                     }
-                    Ok(Event::SentUserMessage { peer_addr, token, .. }) => {
+                    Ok(Event::SentUserMessage { peer, token, .. }) => {
                         if count_of_rxd_sent_msgs >=3 {
                             panic!("Only sent 3 msgs, so cannot rx send success for more than those
                                    !");
                         }
-                        assert_eq!(peer_addr, qp2p0_addr);
+                        assert_eq!(peer.peer_addr(), qp2p0_addr);
                         assert_eq!(token, TEST_TOKEN1);
                         count_of_rxd_sent_msgs += 1;
                     }
