@@ -279,7 +279,7 @@ pub enum Event {
     /// Message received.
     NewMessage {
         /// Message sender.
-        peer_addr: SocketAddr,
+        peer: Peer,
         /// Message content.
         msg: Bytes,
     },

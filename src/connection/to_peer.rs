@@ -92,13 +92,13 @@ impl fmt::Debug for ToPeer {
 
 impl Drop for ToPeer {
     fn drop(&mut self) {
-        match *self {
+        match self {
             ToPeer::NotNeeded | ToPeer::NoConnection | ToPeer::Established { .. } => {}
             ToPeer::Initiated {
-                ref mut terminator,
-                ref peer_addr,
-                ref mut pending_sends,
-                ref event_tx,
+                terminator,
+                peer_addr,
+                pending_sends,
+                event_tx,
                 ..
             } => {
                 let _ = terminator.try_send(());

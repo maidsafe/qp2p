@@ -23,7 +23,7 @@ pub(super) struct Node {
     addr: SocketAddr,
     event_tx: Sender<Event>,
     config: Config,
-    peers: FxHashMap<SocketAddr, ConnectionType>,
+    peers: FxHashMap<SocketAddr, (ConnectionType, OurType)>,
     bootstrap_cache: FxHashSet<NodeInfo>,
     pending_bootstraps: FxHashSet<SocketAddr>,
     pending_messages: FxHashMap<SocketAddr, Vec<(Bytes, u64)>>,
@@ -59,12 +59,7 @@ impl Node {
     }
 
     pub fn bootstrap(&mut self) {
-        if self
-            .peers
-            .values()
-            .cloned()
-            .any(ConnectionType::is_bootstrap)
-        {
+        if self.peers.values().any(|(conn, _)| conn.is_bootstrap()) {
             return;
         }
 
@@ -116,7 +111,11 @@ impl Node {
     pub fn receive_packet(&mut self, src: SocketAddr, packet: Packet) -> Option<Packet> {
         match packet {
             Packet::BootstrapRequest(peer_type) => {
-                if self.peers.insert(src, ConnectionType::Bootstrap).is_none() {
+                if self
+                    .peers
+                    .insert(src, (ConnectionType::Bootstrap, peer_type))
+                    .is_none()
+                {
                     self.network
                         .borrow_mut()
                         .send(self.addr, src, Packet::BootstrapSuccess);
@@ -127,13 +126,10 @@ impl Node {
                 }
             }
             Packet::BootstrapSuccess => {
-                if !self
-                    .peers
-                    .values()
-                    .cloned()
-                    .any(ConnectionType::is_bootstrap)
-                {
-                    let _ = self.peers.insert(src, ConnectionType::Bootstrap);
+                if !self.peers.values().any(|(conn, _)| conn.is_bootstrap()) {
+                    let _ = self
+                        .peers
+                        .insert(src, (ConnectionType::Bootstrap, OurType::Node));
                     self.pending_bootstraps.clear();
 
                     self.fire_event(Event::BootstrappedTo {
@@ -146,12 +142,7 @@ impl Node {
                 }
             }
             Packet::BootstrapFailure => {
-                if !self
-                    .peers
-                    .values()
-                    .cloned()
-                    .any(ConnectionType::is_bootstrap)
-                {
+                if !self.peers.values().any(|(conn, _)| conn.is_bootstrap()) {
                     let _ = self.pending_bootstraps.remove(&src);
 
                     if self.pending_bootstraps.is_empty() {
@@ -160,7 +151,11 @@ impl Node {
                 }
             }
             Packet::ConnectRequest(peer_type) => {
-                if self.peers.insert(src, ConnectionType::Normal).is_none() {
+                if self
+                    .peers
+                    .insert(src, (ConnectionType::Normal, peer_type))
+                    .is_none()
+                {
                     self.network
                         .borrow_mut()
                         .send(self.addr, src, Packet::ConnectSuccess);
@@ -172,7 +167,11 @@ impl Node {
                 }
             }
             Packet::ConnectSuccess => {
-                if self.peers.insert(src, ConnectionType::Normal).is_none() {
+                if self
+                    .peers
+                    .insert(src, (ConnectionType::Normal, OurType::Node))
+                    .is_none()
+                {
                     let _ = self.bootstrap_cache.insert(NodeInfo::from(src));
                     self.send_pending_messages(src);
 
@@ -188,9 +187,16 @@ impl Node {
                 self.clear_pending_messages(src);
             }
             Packet::Message(msg, token) => {
-                if self.peers.contains_key(&src) {
+                if let Some((_, peer_type)) = self.peers.get(&src) {
+                    let peer = match peer_type {
+                        OurType::Client => Peer::Client { peer_addr: src },
+                        OurType::Node => Peer::Node {
+                            node_info: NodeInfo::from(src),
+                        },
+                    };
+
                     self.fire_event(Event::NewMessage {
-                        peer_addr: src,
+                        peer,
                         msg: msg.clone(),
                     });
                     return Some(Packet::MessageSent(msg, token));

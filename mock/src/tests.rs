@@ -534,7 +534,7 @@ impl Agent {
     fn expect_new_message(&self, src_addr: &SocketAddr, expected_msg: &Bytes) {
         let (actual_addr, actual_msg) = assert_match!(
             self.rx.try_recv(),
-            Ok(Event::NewMessage { peer_addr, msg }) => (peer_addr, msg)
+            Ok(Event::NewMessage { peer, msg }) => (peer.peer_addr(), msg)
         );
 
         assert_eq!(actual_addr, *src_addr);
@@ -581,8 +581,8 @@ impl Agent {
 
     fn received_messages(&self, src_addr: &SocketAddr) -> FxHashSet<Bytes> {
         let mut received_messages = FxHashSet::default();
-        while let Ok(Event::NewMessage { peer_addr, msg }) = self.rx.try_recv() {
-            assert_eq!(peer_addr, *src_addr);
+        while let Ok(Event::NewMessage { peer, msg }) = self.rx.try_recv() {
+            assert_eq!(peer.peer_addr(), *src_addr);
             let _ = received_messages.insert(msg);
         }
         received_messages

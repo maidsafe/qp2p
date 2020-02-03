@@ -186,18 +186,18 @@ fn handle_qp2p_events(
         for event in event_rx.iter() {
             match event {
                 Event::ConnectedTo { peer } => unwrap!(peer_list.lock()).insert(peer),
-                Event::NewMessage { peer_addr, msg } => {
+                Event::NewMessage { peer, msg } => {
                     if msg.len() > 512 {
-                        println!("[{}] received bytes: {}", peer_addr, msg.len());
+                        println!("[{}] received bytes: {}", peer.peer_addr(), msg.len());
                     } else {
                         println!(
                             "[{}] {}",
-                            peer_addr,
+                            peer.peer_addr(),
                             unwrap!(String::from_utf8(msg.to_vec()))
                         );
                     }
                 }
-                event => println!("Unexpected Crust event: {:?}", event),
+                event => println!("Unexpected quic-p2p event: {:?}", event),
             }
         }
     })

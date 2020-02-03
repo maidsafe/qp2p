@@ -479,8 +479,10 @@ fn handle_user_msg(
     bootstrap_cache: &mut BootstrapCache,
     we_contacted_peer: bool,
 ) {
-    let peer_addr = peer.peer_addr();
-    let new_msg = Event::NewMessage { peer_addr, msg };
+    let new_msg = Event::NewMessage {
+        peer: peer.clone(),
+        msg,
+    };
     if let Err(e) = event_tx.send(new_msg) {
         info!("Could not dispatch incoming user message: {:?}", e);
     }
