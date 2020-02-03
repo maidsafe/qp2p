@@ -8,9 +8,9 @@
 // Software.
 
 use crate::{error::QuicP2pError, utils, R};
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::net::SocketAddr;
+use std::{fmt, net::SocketAddr};
 use unwrap::unwrap;
 
 /// Final type serialised and sent on the wire by QuicP2p
@@ -19,13 +19,13 @@ pub enum WireMsg {
     Handshake(Handshake),
     EndpointEchoReq,
     EndpointEchoResp(SocketAddr),
-    UserMsg(bytes::Bytes),
+    UserMsg(Bytes),
 }
 
 const USER_MSG_FLAG: u8 = 0;
 
-impl Into<(bytes::Bytes, u8)> for WireMsg {
-    fn into(self) -> (bytes::Bytes, u8) {
+impl Into<(Bytes, u8)> for WireMsg {
+    fn into(self) -> (Bytes, u8) {
         match self {
             WireMsg::UserMsg(ref m) => (m.clone(), USER_MSG_FLAG),
             _ => (
@@ -74,7 +74,7 @@ impl fmt::Display for WireMsg {
 pub enum Handshake {
     /// The connecting peer is a node. Certificate is needed for allowing connection back to the
     /// peer
-    Node { cert_der: Vec<u8> },
+    Node { cert_der: Bytes },
     /// The connecting peer is a client. No need for a reverse connection.
     Client,
 }

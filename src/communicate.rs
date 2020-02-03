@@ -409,7 +409,7 @@ fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
     })
 }
 
-fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Vec<u8>) {
+fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Bytes) {
     let node_info = NodeInfo {
         peer_addr,
         peer_cert_der,

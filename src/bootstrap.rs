@@ -35,6 +35,7 @@ pub fn start() {
 mod tests {
     use crate::test_utils::new_random_qp2p;
     use crate::{Builder, Config, Event, NodeInfo, OurType, QuicP2p};
+    use bytes::Bytes;
     use crossbeam_channel as mpmc;
     use std::collections::{HashSet, VecDeque};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -301,7 +302,7 @@ mod tests {
     fn node_will_report_failure_when_bootstrap_cache_and_hard_coded_contacts_are_invalid() {
         let dummy_peer_info = NodeInfo {
             peer_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 37692)),
-            peer_cert_der: vec![1, 2, 3],
+            peer_cert_der: Bytes::from_static(&[1, 2, 3]),
         };
         let (mut peer, ev_rx) = {
             let mut hcc = HashSet::new();

@@ -335,14 +335,15 @@ pub struct NodeInfo {
     /// Endpoint of the node
     pub peer_addr: SocketAddr,
     /// Certificate of the node
-    pub peer_cert_der: Vec<u8>,
+    #[structopt(parse(from_str))]
+    pub peer_cert_der: Bytes,
 }
 
 impl From<SocketAddr> for NodeInfo {
     fn from(addr: SocketAddr) -> Self {
         Self {
             peer_addr: addr,
-            peer_cert_der: vec![],
+            peer_cert_der: Bytes::new(),
         }
     }
 }
