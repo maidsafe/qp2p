@@ -244,8 +244,8 @@ pub enum Event {
     },
     /// Connection to the given address failed.
     ConnectionFailure {
-        /// Address of the peer we attempted connecting to.
-        peer_addr: SocketAddr,
+        /// The peer we attempted connecting to.
+        peer: Peer,
         /// Error explaining connection failure.
         err: QuicP2pError,
     },

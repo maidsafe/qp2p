@@ -210,9 +210,9 @@ impl Node {
             }),
             Packet::Disconnect => {
                 self.clear_pending_messages(src);
-                if self.peers.remove(&src).is_some() {
+                if let Some((_, peer_type)) = self.peers.remove(&src) {
                     self.fire_event(Event::ConnectionFailure {
-                        peer_addr: src,
+                        peer: to_peer(src, peer_type),
                         err: QuicP2pError,
                     })
                 }

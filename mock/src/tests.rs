@@ -525,7 +525,7 @@ impl Agent {
     fn expect_connection_failure(&self, addr: &SocketAddr) {
         let actual_addr = assert_match!(
             self.rx.try_recv(),
-            Ok(Event::ConnectionFailure { peer_addr, .. }) => peer_addr
+            Ok(Event::ConnectionFailure { peer, .. }) => peer.peer_addr()
         );
         assert_eq!(actual_addr, *addr);
     }

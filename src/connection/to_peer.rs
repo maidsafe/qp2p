@@ -68,6 +68,15 @@ impl ToPeer {
             false
         }
     }
+
+    pub fn peer_cert_der(&self) -> Option<&Bytes> {
+        match self {
+            Self::Initiated { peer_cert_der, .. } | Self::Established { peer_cert_der, .. } => {
+                Some(peer_cert_der)
+            }
+            Self::NoConnection | Self::NotNeeded => None,
+        }
+    }
 }
 
 impl Default for ToPeer {
