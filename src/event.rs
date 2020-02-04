@@ -31,8 +31,8 @@ pub enum Event {
     },
     /// The given message was not sent to this peer.
     UnsentUserMessage {
-        /// Peer address.
-        peer_addr: SocketAddr,
+        /// Peer.
+        peer: Peer,
         /// Unsent message.
         msg: bytes::Bytes,
         /// Token, originally given by the user, for context.
@@ -74,14 +74,10 @@ impl fmt::Display for Event {
                 utils::bin_data_format(&*msg),
                 token
             ),
-            Event::UnsentUserMessage {
-                peer_addr,
-                msg,
-                token,
-            } => write!(
+            Event::UnsentUserMessage { peer, msg, token } => write!(
                 f,
-                "Event::UnsentUserMessage {{ peer_addr: {}, msg: {}, token: {} }}",
-                peer_addr,
+                "Event::UnsentUserMessage {{ peer: {}, msg: {}, token: {} }}",
+                peer.peer_addr(),
                 utils::bin_data_format(&*msg),
                 token
             ),

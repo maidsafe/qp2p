@@ -88,7 +88,7 @@ impl Network {
             match packet {
                 Packet::BootstrapRequest(_) => Some(Packet::BootstrapFailure),
                 Packet::ConnectRequest(_) => Some(Packet::ConnectFailure),
-                Packet::Message(msg, msg_id) => Some(Packet::MessageFailure(msg, msg_id)),
+                Packet::Message(msg) => Some(Packet::MessageFailure(msg)),
                 _ => None,
             }
         };
@@ -153,7 +153,7 @@ impl Inner {
 
     pub fn send(&mut self, src: SocketAddr, dst: SocketAddr, packet: Packet) {
         if let Some(hook) = self.message_sent_hook.as_mut() {
-            if let Packet::Message(content, _) = &packet {
+            if let Packet::Message(Message { content, .. }) = &packet {
                 hook(content)
             }
         }
@@ -218,10 +218,17 @@ pub(super) enum Packet {
     ConnectRequest(OurType),
     ConnectSuccess,
     ConnectFailure,
-    Message(Bytes, u64),
-    MessageFailure(Bytes, u64),
-    MessageSent(Bytes, u64),
+    Message(Message),
+    MessageFailure(Message),
+    MessageSent(Message),
     Disconnect,
+}
+
+#[derive(Debug)]
+pub struct Message {
+    pub dst_type: OurType,
+    pub content: Bytes,
+    pub token: u64,
 }
 
 struct Queue(VecDeque<Packet>);
@@ -245,7 +252,7 @@ impl Queue {
             .0
             .iter()
             .position(|packet| {
-                if let Packet::Message(_, _) = packet {
+                if let Packet::Message(_) = packet {
                     false
                 } else {
                     true

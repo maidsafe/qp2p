@@ -7,7 +7,7 @@
 // permissions and limitations relating to use of the SAFE Network Software.
 
 use super::{
-    network::{Inner, Packet, NETWORK},
+    network::{Inner, Message, Packet, NETWORK},
     Config, Event, NodeInfo, OurType, Peer, QuicP2pError,
 };
 use bytes::Bytes;
@@ -26,7 +26,7 @@ pub(super) struct Node {
     peers: FxHashMap<SocketAddr, (ConnectionType, OurType)>,
     bootstrap_cache: FxHashSet<NodeInfo>,
     pending_bootstraps: FxHashSet<SocketAddr>,
-    pending_messages: FxHashMap<SocketAddr, Vec<(Bytes, u64)>>,
+    pending_messages: FxHashMap<SocketAddr, (OurType, Vec<(Bytes, u64)>)>,
 }
 
 impl Node {
@@ -99,11 +99,12 @@ impl Node {
         }
     }
 
-    pub fn send(&mut self, dst: SocketAddr, msg: Bytes, token: u64) {
-        if self.peers.contains_key(&dst) {
+    pub fn send(&mut self, dst: Peer, msg: Bytes, token: u64) {
+        let dst_addr = dst.peer_addr();
+        if self.peers.contains_key(&dst_addr) {
             self.send_message(dst, msg, token)
         } else {
-            self.send_connect_request(dst);
+            self.send_connect_request(dst_addr);
             self.add_pending_message(dst, msg, token)
         }
     }
@@ -186,31 +187,27 @@ impl Node {
                 // dropped, but it will in the future.
                 self.clear_pending_messages(src);
             }
-            Packet::Message(msg, token) => {
+            Packet::Message(msg) => {
                 if let Some((_, peer_type)) = self.peers.get(&src) {
                     self.fire_event(Event::NewMessage {
                         peer: to_peer(src, *peer_type),
-                        msg: msg.clone(),
+                        msg: msg.content.clone(),
                     });
-                    return Some(Packet::MessageSent(msg, token));
+                    return Some(Packet::MessageSent(msg));
                 } else {
-                    return Some(Packet::MessageFailure(msg, token));
+                    return Some(Packet::MessageFailure(msg));
                 }
             }
-            Packet::MessageFailure(msg, token) => self.fire_event(Event::UnsentUserMessage {
-                peer_addr: src,
-                msg,
-                token,
+            Packet::MessageFailure(msg) => self.fire_event(Event::UnsentUserMessage {
+                peer: to_peer(src, msg.dst_type),
+                msg: msg.content,
+                token: msg.token,
             }),
-            Packet::MessageSent(msg, token) => {
-                if let Some((_, peer_type)) = self.peers.get(&src) {
-                    self.fire_event(Event::SentUserMessage {
-                        peer: to_peer(src, *peer_type),
-                        msg,
-                        token,
-                    });
-                }
-            }
+            Packet::MessageSent(msg) => self.fire_event(Event::SentUserMessage {
+                peer: to_peer(src, msg.dst_type),
+                msg: msg.content,
+                token: msg.token,
+            }),
             Packet::Disconnect => {
                 self.clear_pending_messages(src);
                 if self.peers.remove(&src).is_some() {
@@ -254,41 +251,54 @@ impl Node {
             .send(self.addr, dst, Packet::ConnectRequest(self.config.our_type))
     }
 
-    fn send_message(&self, dst: SocketAddr, msg: Bytes, token: u64) {
-        self.network
-            .borrow_mut()
-            .send(self.addr, dst, Packet::Message(msg, token))
+    fn send_message(&self, dst: Peer, content: Bytes, token: u64) {
+        let (dst_addr, dst_type) = into_addr_and_peer_type(dst);
+
+        self.network.borrow_mut().send(
+            self.addr,
+            dst_addr,
+            Packet::Message(Message {
+                dst_type,
+                content,
+                token,
+            }),
+        )
     }
 
-    fn add_pending_message(&mut self, addr: SocketAddr, msg: Bytes, token: u64) {
-        self.pending_messages
+    fn add_pending_message(&mut self, dst: Peer, msg: Bytes, token: u64) {
+        let (addr, peer_type) = into_addr_and_peer_type(dst);
+
+        let entry = self
+            .pending_messages
             .entry(addr)
-            .or_insert_with(Default::default)
-            .push((msg, token))
+            .or_insert_with(|| (peer_type, Vec::new()));
+
+        assert_eq!(entry.0, peer_type);
+        entry.1.push((msg, token))
     }
 
     fn send_pending_messages(&mut self, addr: SocketAddr) {
-        let messages = if let Some(messages) = self.pending_messages.remove(&addr) {
-            messages
+        let (peer_type, messages) = if let Some(entry) = self.pending_messages.remove(&addr) {
+            entry
         } else {
             return;
         };
 
         for (msg, token) in messages {
-            self.send_message(addr, msg, token)
+            self.send_message(to_peer(addr, peer_type), msg, token)
         }
     }
 
     fn clear_pending_messages(&mut self, addr: SocketAddr) {
-        let messages = if let Some(messages) = self.pending_messages.remove(&addr) {
-            messages
+        let (peer_type, messages) = if let Some(entry) = self.pending_messages.remove(&addr) {
+            entry
         } else {
             return;
         };
 
         for (msg, token) in messages {
             self.fire_event(Event::UnsentUserMessage {
-                peer_addr: addr,
+                peer: to_peer(addr, peer_type),
                 msg,
                 token,
             })
@@ -341,5 +351,12 @@ fn to_peer(addr: SocketAddr, peer_type: OurType) -> Peer {
         OurType::Node => Peer::Node {
             node_info: NodeInfo::from(addr),
         },
+    }
+}
+
+fn into_addr_and_peer_type(peer: Peer) -> (SocketAddr, OurType) {
+    match peer {
+        Peer::Client { peer_addr } => (peer_addr, OurType::Client),
+        Peer::Node { node_info } => (node_info.peer_addr, OurType::Node),
     }
 }
