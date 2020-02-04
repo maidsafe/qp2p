@@ -86,7 +86,7 @@ pub fn handle_communication_err(
     peer_addr: SocketAddr,
     e: &QuicP2pError,
     details: &str,
-    unsent_user_msg: Option<(bytes::Bytes, Token)>,
+    unsent_user_msg: Option<(Peer, bytes::Bytes, Token)>,
 ) {
     debug!(
         "ERROR in communication with peer {}: {:?} - {}. Details: {}",
@@ -94,21 +94,19 @@ pub fn handle_communication_err(
     );
     ctx_mut(|c| {
         let _ = c.connections.remove(&peer_addr);
-        if let Some((msg, token)) = unsent_user_msg {
-            let _ = c.event_tx.send(Event::UnsentUserMessage {
-                peer_addr,
-                msg,
-                token,
-            });
+        if let Some((peer, msg, token)) = unsent_user_msg {
+            let _ = c
+                .event_tx
+                .send(Event::UnsentUserMessage { peer, msg, token });
         }
     });
 }
 
 /// Handle successful sends. Currently a NoOp for non-user-messages (i.e., internal messages).
 #[inline]
-pub fn handle_send_success(peer: Peer, sent_user_msg: Option<(bytes::Bytes, Token)>) {
+pub fn handle_send_success(sent_user_msg: Option<(Peer, bytes::Bytes, Token)>) {
     ctx_mut(|c| {
-        if let Some((msg, token)) = sent_user_msg {
+        if let Some((peer, msg, token)) = sent_user_msg {
             let _ = c.event_tx.send(Event::SentUserMessage { peer, msg, token });
         }
     });

@@ -566,7 +566,7 @@ impl Agent {
     ) {
         let (actual_addr, actual_msg, actual_id) = assert_match!(
             self.rx.try_recv(),
-            Ok(Event::UnsentUserMessage { peer_addr, msg, token }) => (peer_addr, msg, token)
+            Ok(Event::UnsentUserMessage { peer, msg, token }) => (peer.peer_addr(), msg, token)
         );
 
         assert_eq!(actual_addr, *dst_addr);

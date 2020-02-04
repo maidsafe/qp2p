@@ -28,8 +28,8 @@ use std::{io, net::SocketAddr, sync::mpsc};
 pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
     let node_info = match peer {
         Peer::Client { peer_addr } => {
-            let usr_msg_and_token = if let WireMsg::UserMsg(ref msg) = msg {
-                Some((msg.clone(), token))
+            let user_msg = if let WireMsg::UserMsg(ref msg) = msg {
+                Some((Peer::Client { peer_addr }, msg.clone(), token))
             } else {
                 None
             };
@@ -38,7 +38,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
                     peer_addr,
                     &e,
                     "Sending to a Client Peer",
-                    usr_msg_and_token,
+                    user_msg,
                 );
             }
             return Ok(());
@@ -145,8 +145,9 @@ pub fn write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
 
 /// Write to the peer, given the QUIC connection to it
 pub fn write_to_peer_connection(peer: Peer, conn: &QConn, wire_msg: WireMsg, token: Token) {
+    let peer_addr = peer.peer_addr();
     let user_msg = if let WireMsg::UserMsg(ref m) = wire_msg {
-        Some((m.clone(), token))
+        Some((peer, m.clone(), token))
     } else {
         None
     };
@@ -158,7 +159,7 @@ pub fn write_to_peer_connection(peer: Peer, conn: &QConn, wire_msg: WireMsg, tok
             Ok(o_stream) => o_stream,
             Err(e) => {
                 utils::handle_communication_err(
-                    peer.peer_addr(),
+                    peer_addr,
                     &From::from(e),
                     "Open-Unidirectional",
                     user_msg,
@@ -170,27 +171,17 @@ pub fn write_to_peer_connection(peer: Peer, conn: &QConn, wire_msg: WireMsg, tok
         let (message, msg_flag) = wire_msg.into();
 
         if let Err(e) = o_stream.write_all(&message[..]).await {
-            utils::handle_communication_err(
-                peer.peer_addr(),
-                &From::from(e),
-                "Write-All",
-                user_msg,
-            );
+            utils::handle_communication_err(peer_addr, &From::from(e), "Write-All", user_msg);
             return;
         }
         if let Err(e) = o_stream.write_all(&[msg_flag]).await {
-            utils::handle_communication_err(
-                peer.peer_addr(),
-                &From::from(e),
-                "Write-All",
-                user_msg,
-            );
+            utils::handle_communication_err(peer_addr, &From::from(e), "Write-All", user_msg);
             return;
         }
 
         if let Err(e) = o_stream.finish().await {
             utils::handle_communication_err(
-                peer.peer_addr(),
+                peer_addr,
                 &From::from(e),
                 "Shutdown-after-write",
                 user_msg,
@@ -198,7 +189,7 @@ pub fn write_to_peer_connection(peer: Peer, conn: &QConn, wire_msg: WireMsg, tok
             return;
         }
 
-        utils::handle_send_success(peer, user_msg);
+        utils::handle_send_success(user_msg);
     };
 
     let _ = tokio::spawn(leaf);
@@ -215,9 +206,9 @@ pub fn read_from_peer(
             let err = match res {
                 Err(e) => {
                     debug!(
-            "Error in Incoming-bi-stream while reading from peer {}: {:?} - {}.\nNote: It
+                        "Error in Incoming-bi-stream while reading from peer {}: {:?} - {}.\nNote: It
                          would not be allowed even if it didn't fail as bi-streams are not allowed",
-            peer_addr, e, e
+                        peer_addr, e, e
                     );
                     From::from(e)
                 }

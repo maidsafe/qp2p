@@ -97,7 +97,7 @@ impl QuicP2p {
     /// and then send the message. This can be called multiple times while the peer is still being
     /// connected to - all the sends will be buffered until the peer is connected to.
     pub fn send(&mut self, peer: Peer, msg: Bytes, token: Token) {
-        self.inner.borrow_mut().send(peer.peer_addr(), msg, token)
+        self.inner.borrow_mut().send(peer, msg, token)
     }
 
     /// Get our connection info to give to others for them to connect to us
@@ -252,7 +252,7 @@ pub enum Event {
     /// Message sent by us but not delivered due to connection drop.
     UnsentUserMessage {
         /// Intended message recipient.
-        peer_addr: SocketAddr,
+        peer: Peer,
         /// Message content.
         msg: Bytes,
         /// Message Token

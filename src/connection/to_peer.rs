@@ -7,10 +7,13 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::connection::QConn;
-use crate::event::Event;
-use crate::utils::{ConnectTerminator, Token};
-use crate::wire_msg::WireMsg;
+use crate::{
+    connection::QConn,
+    event::Event,
+    peer::{NodeInfo, Peer},
+    utils::{ConnectTerminator, Token},
+    wire_msg::WireMsg,
+};
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
 use std::{fmt, net::SocketAddr};
@@ -97,6 +100,7 @@ impl Drop for ToPeer {
             ToPeer::Initiated {
                 terminator,
                 peer_addr,
+                peer_cert_der,
                 pending_sends,
                 event_tx,
                 ..
@@ -108,7 +112,12 @@ impl Drop for ToPeer {
                     // error out
                     if let WireMsg::UserMsg(msg) = wire_msg {
                         let _ = event_tx.send(Event::UnsentUserMessage {
-                            peer_addr: *peer_addr,
+                            peer: Peer::Node {
+                                node_info: NodeInfo {
+                                    peer_addr: *peer_addr,
+                                    peer_cert_der: peer_cert_der.clone(),
+                                },
+                            },
                             msg,
                             token,
                         });
