@@ -198,15 +198,16 @@ impl QuicP2p {
 
     /// Connect to the given peer. This will error out if the peer is already in the process of
     /// being connected to OR for any other connection failure reasons.
-    pub fn connect_to(&mut self, peer_info: NodeInfo) {
+    pub fn connect_to(&mut self, node_info: NodeInfo) {
         self.el.post(move || {
-            let peer_addr = peer_info.peer_addr;
-            if let Err(e) = connect::connect_to(peer_info, None, None) {
+            let peer_addr = node_info.peer_addr;
+            if let Err(e) = connect::connect_to(node_info.clone(), None, None) {
                 info!("Could not connect to the asked peer {}: {}", peer_addr, e);
                 ctx_mut(|c| {
-                    let _ = c
-                        .event_tx
-                        .send(Event::ConnectionFailure { peer_addr, err: e });
+                    let _ = c.event_tx.send(Event::ConnectionFailure {
+                        peer: Peer::Node { node_info },
+                        err: e,
+                    });
                 });
             } else {
                 Self::set_we_contacted_peer(&peer_addr);
@@ -237,15 +238,15 @@ impl QuicP2p {
         self.el.post(move || {
             let peer_addr = peer.peer_addr();
 
-            if let Err(e) = communicate::try_write_to_peer(peer, WireMsg::UserMsg(msg), token) {
+            if let Err(e) =
+                communicate::try_write_to_peer(peer.clone(), WireMsg::UserMsg(msg), token)
+            {
                 info!(
                     "Could not send message to the asked peer {}: {}",
                     peer_addr, e
                 );
                 ctx_mut(|c| {
-                    let _ = c
-                        .event_tx
-                        .send(Event::ConnectionFailure { peer_addr, err: e });
+                    let _ = c.event_tx.send(Event::ConnectionFailure { peer, err: e });
                 });
             } else {
                 Self::set_we_contacted_peer(&peer_addr);
@@ -817,8 +818,8 @@ mod tests {
         });
 
         match rx.recv() {
-            Ok(Event::ConnectionFailure { peer_addr, .. }) => {
-                assert_eq!(peer_addr, invalid_socket_addr);
+            Ok(Event::ConnectionFailure { peer, .. }) => {
+                assert_eq!(peer.peer_addr(), invalid_socket_addr);
             }
             r => panic!("Unexpected result {:?}", r),
         }

@@ -1,6 +1,6 @@
 use crate::error::QuicP2pError;
 use crate::{utils, NodeInfo, Peer};
-use std::{fmt, net::SocketAddr};
+use std::fmt;
 use utils::Token;
 
 /// QuicP2p Events to the user
@@ -15,8 +15,8 @@ pub enum Event {
     },
     /// Connection to this peer failed.
     ConnectionFailure {
-        /// Peer address.
-        peer_addr: SocketAddr,
+        /// Peer.
+        peer: Peer,
         /// Error explaining connection failure.
         err: QuicP2pError,
     },
@@ -62,10 +62,11 @@ impl fmt::Display for Event {
             Event::BootstrappedTo { node } => {
                 write!(f, "Event::BootstrappedTo {{ node: {} }}", node)
             }
-            Event::ConnectionFailure { peer_addr, err } => write!(
+            Event::ConnectionFailure { peer, err } => write!(
                 f,
-                "Event::ConnectionFailure {{ peer_addr: {}, err: {} }}",
-                peer_addr, err
+                "Event::ConnectionFailure {{ peer: {}, err: {} }}",
+                peer.peer_addr(),
+                err
             ),
             Event::SentUserMessage { peer, msg, token } => write!(
                 f,

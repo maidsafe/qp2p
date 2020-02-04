@@ -12,16 +12,16 @@ pub use self::from_peer::FromPeer;
 pub use self::q_conn::QConn;
 pub use self::to_peer::ToPeer;
 
-use crate::context::ctx_mut;
-use crate::error::QuicP2pError;
-use crate::event::Event;
+use crate::{
+    context::ctx_mut,
+    error::QuicP2pError,
+    event::Event,
+    peer::{NodeInfo, Peer},
+};
 use crossbeam_channel as mpmc;
 use futures::future::FutureExt;
 use log::trace;
-use std::collections::hash_map::Entry;
-use std::fmt;
-use std::net::SocketAddr;
-use std::time::Duration;
+use std::{collections::hash_map::Entry, fmt, net::SocketAddr, time::Duration};
 
 mod bootstrap_group;
 mod from_peer;
@@ -76,10 +76,22 @@ impl Drop for Connection {
             || ((self.to_peer.is_established() || self.to_peer.is_not_needed())
                 && (self.from_peer.is_established() || self.from_peer.is_not_needed()))
         {
+            let peer = match self.to_peer.peer_cert_der() {
+                Some(peer_cert_der) => Peer::Node {
+                    node_info: NodeInfo {
+                        peer_addr: self.peer_addr,
+                        peer_cert_der: peer_cert_der.clone(),
+                    },
+                },
+                None => Peer::Client {
+                    peer_addr: self.peer_addr,
+                },
+            };
+
             // No need to log these as this will fire even when the QuicP2p handle is dropped and at
             // that point there might be no one listening so sender will error out
             let _ = self.event_tx.send(Event::ConnectionFailure {
-                peer_addr: self.peer_addr,
+                peer,
                 err: QuicP2pError::ConnectionCancelled,
             });
         }

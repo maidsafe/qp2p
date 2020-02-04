@@ -541,8 +541,8 @@ mod tests {
 
         // The connection should fail because we don't allow bi-directional streams
         match rx0.recv() {
-            Ok(Event::ConnectionFailure { peer_addr, err }) => {
-                assert_eq!(peer_addr, qp2p1_info.peer_addr);
+            Ok(Event::ConnectionFailure { peer, err }) => {
+                assert_eq!(peer.peer_addr(), qp2p1_info.peer_addr);
                 assert_eq!(
                     format!("{}", err),
                     format!("{}", QuicP2pError::ConnectionCancelled)
