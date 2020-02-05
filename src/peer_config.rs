@@ -7,7 +7,6 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::context::ctx;
 use crate::R;
 use std::sync::Arc;
 
@@ -24,14 +23,20 @@ pub const DEFAULT_IDLE_TIMEOUT_MSEC: u64 = 30_000; // 30secs
 /// The value is in milliseconds.
 pub const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 10_000; // 10secs
 
-pub fn new_client_cfg() -> quinn::ClientConfig {
+pub fn new_client_cfg(
+    idle_timeout_msec: u64,
+    keep_alive_interval_msec: u32,
+) -> quinn::ClientConfig {
     let mut cfg = quinn::ClientConfigBuilder::default().build();
     let crypto_cfg =
         Arc::get_mut(&mut cfg.crypto).expect("the crypto config should not be shared yet");
     crypto_cfg
         .dangerous()
         .set_certificate_verifier(SkipServerVerification::new());
-    cfg.transport = Arc::new(new_transport_cfg(None, None));
+    cfg.transport = Arc::new(new_transport_cfg(
+        idle_timeout_msec,
+        keep_alive_interval_msec,
+    ));
     cfg
 }
 
@@ -44,8 +49,8 @@ pub fn new_our_cfg(
     let mut our_cfg_builder = {
         let mut our_cfg = quinn::ServerConfig::default();
         our_cfg.transport = Arc::new(new_transport_cfg(
-            Some(idle_timeout_msec),
-            Some(keep_alive_interval_msec),
+            idle_timeout_msec,
+            keep_alive_interval_msec,
         ));
 
         quinn::ServerConfigBuilder::new(our_cfg)
@@ -58,14 +63,12 @@ pub fn new_our_cfg(
 }
 
 fn new_transport_cfg(
-    idle_timeout_msec: Option<u64>,
-    keep_alive_interval_msec: Option<u32>,
+    idle_timeout_msec: u64,
+    keep_alive_interval_msec: u32,
 ) -> quinn::TransportConfig {
     let mut transport_cfg = quinn::TransportConfig::default();
-    transport_cfg.idle_timeout = idle_timeout_msec.unwrap_or_else(|| ctx(|c| c.idle_timeout_msec));
-    transport_cfg.keep_alive_interval =
-        keep_alive_interval_msec.unwrap_or_else(|| ctx(|c| c.keep_alive_interval_msec));
-
+    transport_cfg.idle_timeout = idle_timeout_msec;
+    transport_cfg.keep_alive_interval = keep_alive_interval_msec;
     transport_cfg
 }
 

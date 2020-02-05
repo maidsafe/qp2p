@@ -14,7 +14,6 @@ use crate::connection::{
 use crate::context::ctx_mut;
 use crate::error::QuicP2pError;
 use crate::event::Event;
-use crate::peer_config;
 use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{communicate, Peer, R};
@@ -33,8 +32,6 @@ pub fn connect_to(
     bootstrap_group_maker: Option<&BootstrapGroupMaker>,
 ) -> R<()> {
     debug!("Connecting to {}", node_addr);
-
-    let peer_cfg = peer_config::new_client_cfg();
 
     let r = ctx_mut(|c| {
         let event_tx = c.event_tx.clone();
@@ -76,9 +73,9 @@ pub fn connect_to(
                 event_tx,
             };
 
-            let connecting = c
-                .quic_ep()
-                .connect_with(peer_cfg, &node_addr, "MaidSAFE.net")?;
+            let connecting =
+                c.quic_ep()
+                    .connect_with(c.quic_client_cfg.clone(), &node_addr, "MaidSAFE.net")?;
 
             let _ = tokio::spawn(async move {
                 select! {
