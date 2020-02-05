@@ -405,15 +405,17 @@ impl QuicP2p {
                 }
             };
 
+            let client_cfg =
+                peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
+
             let ctx = Context::new(
                 tx,
                 our_complete_cert,
                 max_msg_size_allowed,
-                idle_timeout_msec,
-                keep_alive_interval_msec,
                 our_type,
                 bootstrap_cache,
                 ep,
+                client_cfg,
             );
             initialise_ctx(ctx);
 

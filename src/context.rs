@@ -83,11 +83,10 @@ pub struct Context {
     pub our_ext_addr_tx: Option<mpsc::Sender<SocketAddr>>,
     pub our_complete_cert: SerialisableCertificate,
     pub max_msg_size_allowed: usize,
-    pub idle_timeout_msec: u64,
-    pub keep_alive_interval_msec: u32,
     pub our_type: OurType,
     pub bootstrap_cache: BootstrapCache,
     pub(crate) quic_ep: quinn::Endpoint,
+    pub(crate) quic_client_cfg: quinn::ClientConfig,
 }
 
 impl Context {
@@ -96,11 +95,10 @@ impl Context {
         event_tx: mpmc::Sender<Event>,
         our_complete_cert: SerialisableCertificate,
         max_msg_size_allowed: usize,
-        idle_timeout_msec: u64,
-        keep_alive_interval_msec: u32,
         our_type: OurType,
         bootstrap_cache: BootstrapCache,
         quic_ep: quinn::Endpoint,
+        quic_client_cfg: quinn::ClientConfig,
     ) -> Self {
         Self {
             event_tx,
@@ -108,11 +106,10 @@ impl Context {
             our_ext_addr_tx: Default::default(),
             our_complete_cert,
             max_msg_size_allowed,
-            idle_timeout_msec,
-            keep_alive_interval_msec,
             our_type,
             bootstrap_cache,
             quic_ep,
+            quic_client_cfg,
         }
     }
 
