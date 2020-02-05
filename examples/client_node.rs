@@ -24,7 +24,7 @@ use crc::crc32;
 use crossbeam_channel as mpmc;
 use env_logger;
 use log::{debug, error, info, warn};
-use quic_p2p::{Builder, Config, Event, NodeInfo, Peer, QuicP2p};
+use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
 use rand::{self, seq::IteratorRandom, RngCore};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
@@ -42,11 +42,11 @@ struct CliArgs {
 
 struct ClientNode {
     qp2p: QuicP2p,
-    bootstrap_node_info: NodeInfo,
+    bootstrap_node_addr: SocketAddr,
     event_rx: mpmc::Receiver<Event>,
     /// Other nodes we will be communicating with.
-    client_nodes: HashSet<NodeInfo>,
-    our_ci: NodeInfo,
+    client_nodes: HashSet<SocketAddr>,
+    our_addr: SocketAddr,
     sent_messages: usize,
     received_messages: usize,
     /// Large message to send
@@ -74,12 +74,11 @@ fn main() {
 impl ClientNode {
     fn new(config: Config) -> Result<Self, String> {
         // Choose a random bootstrap node.
-        let bootstrap_node_info = config
+        let bootstrap_node_addr = *config
             .hard_coded_contacts
             .iter()
             .choose(&mut rand::thread_rng())
-            .ok_or_else(|| "No valid bootstrap node was provided.".to_string())?
-            .clone();
+            .ok_or_else(|| "No valid bootstrap node was provided.".to_string())?;
 
         let (event_tx, event_rx) = mpmc::unbounded();
         let mut qp2p = unwrap!(Builder::new(event_tx).with_config(config).build());
@@ -90,16 +89,16 @@ impl ClientNode {
         let small_msg = Bytes::from(random_data_with_hash(SMALL_MSG_SIZE));
         assert!(hash_correct(&small_msg));
 
-        let our_ci = unwrap!(qp2p.our_connection_info());
+        let our_addr = unwrap!(qp2p.our_connection_info());
 
         Ok(Self {
             qp2p,
-            bootstrap_node_info,
+            bootstrap_node_addr,
             large_msg,
             small_msg,
             event_rx,
             client_nodes: Default::default(),
-            our_ci,
+            our_addr,
             peer_states: Default::default(),
             sent_messages: 0,
             received_messages: 0,
@@ -111,9 +110,7 @@ impl ClientNode {
         info!("Peer started");
 
         // this dummy send will trigger connection
-        let bootstrap_node = Peer::Node {
-            node_info: self.bootstrap_node_info.clone(),
-        };
+        let bootstrap_node = Peer::Node(self.bootstrap_node_addr);
         // TODO: handle tokens properly. Currently just hardcoding to 0 in example
         self.qp2p
             .send(bootstrap_node, Bytes::from(vec![1, 2, 3]), 0);
@@ -132,15 +129,15 @@ impl ClientNode {
     }
 
     fn on_connect(&mut self, peer: Peer) {
-        let peer_info = match &peer {
-            Peer::Node { node_info } => node_info.clone(),
-            Peer::Client { .. } => panic!("In this example only Node peers are expected"),
+        let peer_addr = match peer {
+            Peer::Node(node_addr) => node_addr,
+            Peer::Client(_) => panic!("In this example only Node peers are expected"),
         };
-        info!("Connected with: {}", peer_info.peer_addr);
+        info!("Connected with: {}", peer_addr);
 
-        if peer_info == self.bootstrap_node_info {
+        if peer_addr == self.bootstrap_node_addr {
             info!("Connected to bootstrap node. Waiting for other node contacts...");
-        } else if self.client_nodes.contains(&peer_info) {
+        } else if self.client_nodes.contains(&peer_addr) {
             // TODO: handle tokens properly. Currently just hardcoding to 0 in example
             self.qp2p.send(peer.clone(), self.large_msg.clone(), 0);
             self.qp2p.send(peer, self.small_msg.clone(), 0);
@@ -192,19 +189,19 @@ impl ClientNode {
 
     fn connect_to_peers(&mut self, peers: Vec<Peer>) {
         for peer in peers {
-            let conn_info = match &peer {
-                Peer::Node { node_info } => node_info.clone(),
-                Peer::Client { .. } => panic!("In this example only Node peers are expected"),
+            let conn_addr = match peer {
+                Peer::Node(node_addr) => node_addr,
+                Peer::Client(_) => panic!("In this example only Node peers are expected"),
             };
-            if conn_info != self.our_ci {
-                self.qp2p.connect_to(conn_info.clone());
-                self.client_nodes.insert(conn_info);
+            if conn_addr != self.our_addr {
+                self.qp2p.connect_to(conn_addr);
+                self.client_nodes.insert(conn_addr);
             }
         }
     }
 
     fn response_from_bootstrap_node(&self, peer_addr: &SocketAddr) -> bool {
-        peer_addr == &self.bootstrap_node_info.peer_addr
+        peer_addr == &self.bootstrap_node_addr
     }
 }
 

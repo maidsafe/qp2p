@@ -7,13 +7,14 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::communicate;
-use crate::connection::{BootstrapGroupRef, Connection, FromPeer, QConn, ToPeer};
-use crate::context::ctx_mut;
-use crate::event::Event;
-use crate::utils;
-use crate::NodeInfo;
-use crate::QuicP2pError;
+use crate::{
+    communicate,
+    connection::{BootstrapGroupRef, Connection, FromPeer, QConn, ToPeer},
+    context::ctx_mut,
+    event::Event,
+    peer::Peer,
+    utils, QuicP2pError,
+};
 use futures::future::{self, TryFutureExt};
 use futures::stream::StreamExt;
 use log::{debug, info};
@@ -66,14 +67,7 @@ fn handle_new_conn(
                 pending_reads: Default::default(),
             };
 
-            let bootstrap_group = if let ToPeer::Established {
-                ref peer_cert_der, ..
-            } = conn.to_peer
-            {
-                let node_info = NodeInfo {
-                    peer_addr,
-                    peer_cert_der: peer_cert_der.clone(),
-                };
+            let bootstrap_group = if let ToPeer::Established { .. } = conn.to_peer {
                 let mut bootstrap_group = None;
 
                 // TODO come back to all the connected-to events and see if we are handling all
@@ -83,10 +77,10 @@ fn handle_new_conn(
                         return Action::HandleAlreadyBootstrapped;
                     }
                     bootstrap_group = Some(bootstrap_group_ref);
-                    Event::BootstrappedTo { node: node_info }
+                    Event::BootstrappedTo { node: peer_addr }
                 } else {
                     Event::ConnectedTo {
-                        peer: node_info.into(),
+                        peer: Peer::Node(peer_addr),
                     }
                 };
 

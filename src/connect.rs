@@ -17,7 +17,7 @@ use crate::event::Event;
 use crate::peer_config;
 use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
-use crate::{communicate, NodeInfo, Peer, R};
+use crate::{communicate, Peer, R};
 use futures::{
     future::{FutureExt, TryFutureExt},
     select,
@@ -28,33 +28,25 @@ use std::net::SocketAddr;
 
 /// Connect to the given peer
 pub fn connect_to(
-    peer_info: NodeInfo,
+    node_addr: SocketAddr,
     send_after_connect: Option<(WireMsg, Token)>,
     bootstrap_group_maker: Option<&BootstrapGroupMaker>,
 ) -> R<()> {
-    debug!("Connecting to {}", peer_info);
+    debug!("Connecting to {}", node_addr);
 
-    let peer_addr = peer_info.peer_addr;
-
-    let peer_cfg = match peer_config::new_client_cfg(&peer_info.peer_cert_der) {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            handle_connect_err(peer_addr, &e);
-            return Err(e);
-        }
-    };
+    let peer_cfg = peer_config::new_client_cfg();
 
     let r = ctx_mut(|c| {
         let event_tx = c.event_tx.clone();
 
         let (terminator, mut rx) = utils::connect_terminator();
 
-        let conn = c.connections.entry(peer_addr).or_insert_with(|| {
+        let conn = c.connections.entry(node_addr).or_insert_with(|| {
             Connection::new(
-                peer_addr,
+                node_addr,
                 event_tx.clone(),
                 bootstrap_group_maker
-                    .map(|m| m.add_member_and_get_group_ref(peer_addr, terminator.clone())),
+                    .map(|m| m.add_member_and_get_group_ref(node_addr, terminator.clone())),
             )
         });
 
@@ -70,7 +62,7 @@ pub fn connect_to(
             // If we already had an incoming from someone we are trying to bootstrap off
             if conn.bootstrap_group_ref.is_none() {
                 conn.bootstrap_group_ref = bootstrap_group_maker
-                    .map(|b| b.add_member_and_get_group_ref(peer_addr, terminator.clone()));
+                    .map(|b| b.add_member_and_get_group_ref(node_addr, terminator.clone()));
             }
 
             let mut pending_sends: Vec<_> = Default::default();
@@ -79,26 +71,25 @@ pub fn connect_to(
             }
             conn.to_peer = ToPeer::Initiated {
                 terminator: terminator.clone(),
-                peer_addr,
-                peer_cert_der: peer_info.peer_cert_der,
+                peer_addr: node_addr,
                 pending_sends,
                 event_tx,
             };
 
             let connecting = c
                 .quic_ep()
-                .connect_with(peer_cfg, &peer_addr, "MaidSAFE.net")?;
+                .connect_with(peer_cfg, &node_addr, "MaidSAFE.net")?;
 
             let _ = tokio::spawn(async move {
                 select! {
                     // Terminator leaf
                     _ = rx.recv().fuse() => {
-                        handle_connect_err(peer_addr, &QuicP2pError::ConnectionCancelled);
+                        handle_connect_err(node_addr, &QuicP2pError::ConnectionCancelled);
                     },
                     // New connection
                     new_peer_conn_res = connecting.fuse() => {
                         handle_new_connection_res(
-                            peer_addr,
+                            node_addr,
                             new_peer_conn_res
                         );
                     },
@@ -107,12 +98,14 @@ pub fn connect_to(
 
             Ok(())
         } else {
-            Err(QuicP2pError::DuplicateConnectionToPeer { peer_addr })
+            Err(QuicP2pError::DuplicateConnectionToPeer {
+                peer_addr: node_addr,
+            })
         }
     });
 
     if let Err(e) = r.as_ref() {
-        handle_connect_err(peer_addr, e);
+        handle_connect_err(node_addr, e);
     }
 
     r
@@ -153,12 +146,8 @@ fn handle_new_connection_res(
         };
 
         let mut to_peer_prev = mem::take(&mut conn.to_peer);
-        let (peer_cert_der, pending_sends) = match &mut to_peer_prev {
-            ToPeer::Initiated {
-                peer_cert_der,
-                pending_sends,
-                ..
-            } => (mem::take(peer_cert_der), mem::take(pending_sends)),
+        let pending_sends = match &mut to_peer_prev {
+            ToPeer::Initiated { pending_sends, .. } => mem::take(pending_sends),
             // TODO analyse if this is actually reachable in some wierd case where things were in
             // the event loop and resolving now etc
             x => unreachable!(
@@ -168,20 +157,14 @@ fn handle_new_connection_res(
             ),
         };
 
-        let node_info = NodeInfo {
-            peer_addr,
-            peer_cert_der: peer_cert_der.clone(),
-        };
         if conn.we_contacted_peer {
-            c.bootstrap_cache.add_peer(node_info.clone());
+            c.bootstrap_cache.add_peer(peer_addr);
         }
 
         match conn.from_peer {
             FromPeer::NoConnection => {
                 communicate::write_to_peer_connection(
-                    Peer::Node {
-                        node_info: node_info.clone(),
-                    },
+                    Peer::Node(peer_addr),
                     &q_conn,
                     WireMsg::Handshake(Handshake::Node {
                         cert_der: c.our_complete_cert.cert_der.clone(),
@@ -191,9 +174,7 @@ fn handle_new_connection_res(
             }
             FromPeer::NotNeeded => {
                 communicate::write_to_peer_connection(
-                    Peer::Node {
-                        node_info: node_info.clone(),
-                    },
+                    Peer::Node(peer_addr),
                     &q_conn,
                     WireMsg::Handshake(Handshake::Client),
                     0,
@@ -201,14 +182,10 @@ fn handle_new_connection_res(
 
                 let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
                     terminate_bootstrap_group = Some(bootstrap_group_ref);
-                    Event::BootstrappedTo {
-                        node: node_info.clone(),
-                    }
+                    Event::BootstrappedTo { node: peer_addr }
                 } else {
                     Event::ConnectedTo {
-                        peer: Peer::Node {
-                            node_info: node_info.clone(),
-                        },
+                        peer: Peer::Node(peer_addr),
                     }
                 };
 
@@ -224,12 +201,10 @@ fn handle_new_connection_res(
             } => {
                 let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
                     terminate_bootstrap_group = Some(bootstrap_group_ref);
-                    Event::BootstrappedTo {
-                        node: node_info.clone(),
-                    }
+                    Event::BootstrappedTo { node: peer_addr }
                 } else {
                     Event::ConnectedTo {
-                        peer: node_info.clone().into(),
+                        peer: Peer::Node(peer_addr),
                     }
                 };
 
@@ -239,9 +214,7 @@ fn handle_new_connection_res(
 
                 for pending_read in pending_reads.drain(..) {
                     communicate::dispatch_wire_msg(
-                        Peer::Node {
-                            node_info: node_info.clone(),
-                        },
+                        Peer::Node(peer_addr),
                         &q_conn,
                         c.our_ext_addr_tx.take(),
                         &c.event_tx,
@@ -255,19 +228,14 @@ fn handle_new_connection_res(
 
         for (pending_send, token) in pending_sends {
             communicate::write_to_peer_connection(
-                Peer::Node {
-                    node_info: node_info.clone(),
-                },
+                Peer::Node(peer_addr),
                 &q_conn,
                 pending_send,
                 token,
             );
         }
 
-        conn.to_peer = ToPeer::Established {
-            peer_cert_der,
-            q_conn,
-        };
+        conn.to_peer = ToPeer::Established { q_conn };
     });
 
     if let Some(bootstrap_group_ref) = terminate_bootstrap_group {

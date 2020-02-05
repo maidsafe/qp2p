@@ -9,21 +9,24 @@
 
 use crate::dirs::Dirs;
 use crate::utils;
-use crate::{NodeInfo, QuicP2pError, R};
+use crate::{QuicP2pError, R};
 use log::info;
-use std::collections::{HashSet, VecDeque};
-use std::path::PathBuf;
-use std::{fs, io};
+use std::{
+    collections::{HashSet, VecDeque},
+    fs, io,
+    net::SocketAddr,
+    path::PathBuf,
+};
 
 /// Maximum peers in the cache.
 const MAX_CACHE_SIZE: usize = 200;
 
 /// A very simple LRU like struct that writes itself to disk every 10 entries added.
 pub struct BootstrapCache {
-    peers: VecDeque<NodeInfo>,
+    peers: VecDeque<SocketAddr>,
     cache_path: PathBuf,
     add_count: u8,
-    hard_coded_contacts: HashSet<NodeInfo>,
+    hard_coded_contacts: HashSet<SocketAddr>,
 }
 
 impl BootstrapCache {
@@ -35,7 +38,7 @@ impl BootstrapCache {
     /// - hard_coded_contacts: these peers are hard coded into the binary and should
     ///   not be cached upon successful connection.
     pub fn new(
-        hard_coded_contacts: HashSet<NodeInfo>,
+        hard_coded_contacts: HashSet<SocketAddr>,
         user_override: Option<&Dirs>,
     ) -> R<BootstrapCache> {
         let path = |dir: &Dirs| {
@@ -48,7 +51,7 @@ impl BootstrapCache {
             |d| Ok(path(d)),
         )?;
 
-        let peers: VecDeque<NodeInfo> = if cache_path.exists() {
+        let peers = if cache_path.exists() {
             utils::read_from_disk(&cache_path)?
         } else {
             let cache_dir = cache_path
@@ -67,20 +70,20 @@ impl BootstrapCache {
         })
     }
 
-    pub fn peers_mut(&mut self) -> &mut VecDeque<NodeInfo> {
+    pub fn peers_mut(&mut self) -> &mut VecDeque<SocketAddr> {
         &mut self.peers
     }
 
-    pub fn peers(&self) -> &VecDeque<NodeInfo> {
+    pub fn peers(&self) -> &VecDeque<SocketAddr> {
         &self.peers
     }
 
-    pub fn hard_coded_contacts(&self) -> &HashSet<NodeInfo> {
+    pub fn hard_coded_contacts(&self) -> &HashSet<SocketAddr> {
         &self.hard_coded_contacts
     }
 
     /// Caches given peer if it's not in hard coded contacts.
-    pub fn add_peer(&mut self, peer: NodeInfo) {
+    pub fn add_peer(&mut self, peer: SocketAddr) {
         if self.hard_coded_contacts.contains(&peer) {
             return;
         }
@@ -92,7 +95,7 @@ impl BootstrapCache {
         }
     }
 
-    fn insert_new(&mut self, peer: NodeInfo) {
+    fn insert_new(&mut self, peer: SocketAddr) {
         self.peers.push_back(peer);
         self.add_count += 1;
         if self.peers.len() > MAX_CACHE_SIZE {
@@ -101,7 +104,7 @@ impl BootstrapCache {
         self.try_sync_to_disk();
     }
 
-    fn move_to_cache_top(&mut self, peer: NodeInfo) {
+    fn move_to_cache_top(&mut self, peer: SocketAddr) {
         if let Some(pos) = self.peers.iter().position(|p| *p == peer) {
             let _ = self.peers.remove(pos);
             self.peers.push_back(peer);
@@ -122,7 +125,7 @@ impl BootstrapCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{rand_node_info, test_dirs};
+    use crate::test_utils::{rand_node_addr, test_dirs};
     use unwrap::unwrap;
 
     mod add_peer {
@@ -134,7 +137,7 @@ mod tests {
             let mut cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs)));
 
             for _ in 0..10 {
-                cache.add_peer(rand_node_info());
+                cache.add_peer(rand_node_addr());
             }
 
             assert_eq!(cache.peers.len(), 10);
@@ -145,8 +148,8 @@ mod tests {
 
         #[test]
         fn when_given_peer_is_in_hard_coded_contacts_it_is_not_cached() {
-            let peer1 = rand_node_info();
-            let peer2 = rand_node_info();
+            let peer1 = rand_node_addr();
+            let peer2 = rand_node_addr();
             let mut hard_coded: HashSet<_> = Default::default();
             assert!(hard_coded.insert(peer1.clone()));
 
@@ -156,7 +159,7 @@ mod tests {
             cache.add_peer(peer1);
             cache.add_peer(peer2.clone());
 
-            let peers: Vec<NodeInfo> = cache.peers.iter().cloned().collect();
+            let peers: Vec<_> = cache.peers.iter().cloned().collect();
             assert_eq!(peers, vec![peer2]);
         }
 
@@ -166,11 +169,11 @@ mod tests {
             let mut cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs)));
 
             for _ in 0..MAX_CACHE_SIZE {
-                cache.add_peer(rand_node_info());
+                cache.add_peer(rand_node_addr());
             }
             assert_eq!(cache.peers.len(), MAX_CACHE_SIZE);
 
-            cache.add_peer(rand_node_info());
+            cache.add_peer(rand_node_addr());
             assert_eq!(cache.peers.len(), MAX_CACHE_SIZE);
         }
     }
@@ -182,16 +185,16 @@ mod tests {
         fn it_moves_given_node_to_the_top_of_the_list() {
             let dirs = test_dirs();
             let mut cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs)));
-            let peer1 = rand_node_info();
-            let peer2 = rand_node_info();
-            let peer3 = rand_node_info();
+            let peer1 = rand_node_addr();
+            let peer2 = rand_node_addr();
+            let peer3 = rand_node_addr();
             cache.add_peer(peer1.clone());
             cache.add_peer(peer2.clone());
             cache.add_peer(peer3.clone());
 
             cache.move_to_cache_top(peer2.clone());
 
-            let peers: Vec<NodeInfo> = cache.peers.iter().cloned().collect();
+            let peers: Vec<_> = cache.peers.iter().cloned().collect();
             assert_eq!(peers, vec![peer1, peer3, peer2]);
         }
     }

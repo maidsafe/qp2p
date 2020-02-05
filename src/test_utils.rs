@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::config::{Config, SerialisableCertificate};
+use crate::config::Config;
 use crate::connection::{Connection, FromPeer, QConn, ToPeer};
 use crate::context::ctx;
 use crate::context::Context;
@@ -15,7 +15,7 @@ use crate::dirs::{Dirs, OverRide};
 use crate::event::Event;
 use crate::utils::{Token, R};
 use crate::wire_msg::WireMsg;
-use crate::{communicate, Builder, NodeInfo, Peer, QuicP2p};
+use crate::{communicate, Builder, Peer, QuicP2p};
 use crossbeam_channel as mpmc;
 use futures::future::Future;
 use rand::Rng;
@@ -157,15 +157,10 @@ pub(crate) fn test_dirs() -> Dirs {
     Dirs::Overide(OverRide::new(&unwrap!(tmp_rand_dir().to_str())))
 }
 
-pub(crate) fn rand_node_info() -> NodeInfo {
-    let peer_cert_der = SerialisableCertificate::default().cert_der;
+pub(crate) fn rand_node_addr() -> SocketAddr {
     let mut rng = rand::thread_rng();
     let port: u16 = rng.gen();
-    let peer_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port));
-    NodeInfo {
-        peer_addr,
-        peer_cert_der,
-    }
+    SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
 }
 
 fn tmp_rand_dir() -> PathBuf {
@@ -178,7 +173,7 @@ fn tmp_rand_dir() -> PathBuf {
 /// Creates a new `QuicP2p` instance for testing.
 pub(crate) fn new_random_qp2p(
     is_addr_unspecified: bool,
-    contacts: HashSet<NodeInfo>,
+    contacts: HashSet<SocketAddr>,
 ) -> (QuicP2p, mpmc::Receiver<Event>) {
     let (tx, rx) = mpmc::unbounded();
     let qp2p = {

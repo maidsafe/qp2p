@@ -8,7 +8,6 @@
 // Software.
 
 use crate::context::ctx;
-use crate::error::QuicP2pError;
 use crate::R;
 use std::sync::Arc;
 
@@ -25,20 +24,15 @@ pub const DEFAULT_IDLE_TIMEOUT_MSEC: u64 = 30_000; // 30secs
 /// The value is in milliseconds.
 pub const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 10_000; // 10secs
 
-pub fn new_client_cfg(peer_cert_der: &[u8]) -> R<quinn::ClientConfig> {
-    let peer_cert = quinn::Certificate::from_der(peer_cert_der)?;
-
-    let mut peer_cfg_builder = {
-        let mut client_cfg = quinn::ClientConfig::default();
-        client_cfg.transport = Arc::new(new_transport_cfg(None, None));
-
-        quinn::ClientConfigBuilder::new(client_cfg)
-    };
-    let _ = peer_cfg_builder
-        .add_certificate_authority(peer_cert)
-        .map_err(|_| QuicP2pError::WebPki)?;
-
-    Ok(peer_cfg_builder.build())
+pub fn new_client_cfg() -> quinn::ClientConfig {
+    let mut cfg = quinn::ClientConfigBuilder::default().build();
+    let crypto_cfg =
+        Arc::get_mut(&mut cfg.crypto).expect("the crypto config should not be shared yet");
+    crypto_cfg
+        .dangerous()
+        .set_certificate_verifier(SkipServerVerification::new());
+    cfg.transport = Arc::new(new_transport_cfg(None, None));
+    cfg
 }
 
 pub fn new_our_cfg(
@@ -73,4 +67,25 @@ fn new_transport_cfg(
         keep_alive_interval_msec.unwrap_or_else(|| ctx(|c| c.keep_alive_interval_msec));
 
     transport_cfg
+}
+
+/// Dummy certificate verifier that treats any certificate as valid.
+struct SkipServerVerification;
+
+impl SkipServerVerification {
+    fn new() -> Arc<Self> {
+        Arc::new(Self)
+    }
+}
+
+impl rustls::ServerCertVerifier for SkipServerVerification {
+    fn verify_server_cert(
+        &self,
+        _roots: &rustls::RootCertStore,
+        _presented_certs: &[rustls::Certificate],
+        _dns_name: webpki::DNSNameRef,
+        _ocsp_response: &[u8],
+    ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
+        Ok(rustls::ServerCertVerified::assertion())
+    }
 }

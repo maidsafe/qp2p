@@ -205,17 +205,14 @@ fn handle_qp2p_events(
 
 fn print_ourinfo(qp2p: &mut QuicP2p) {
     let ourinfo: Peer = match qp2p.our_connection_info() {
-        Ok(ourinfo) => ourinfo.into(),
+        Ok(addr) => Peer::Node(addr),
         Err(e) => {
             println!("Error getting ourinfo: {}", e);
             return;
         }
     };
 
-    println!(
-        "Our info:\n\n{}\n",
-        serde_json::to_string(&ourinfo).unwrap()
-    );
+    println!("Our info: {}", ourinfo);
 }
 
 fn print_logo() {

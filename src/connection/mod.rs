@@ -12,12 +12,7 @@ pub use self::from_peer::FromPeer;
 pub use self::q_conn::QConn;
 pub use self::to_peer::ToPeer;
 
-use crate::{
-    context::ctx_mut,
-    error::QuicP2pError,
-    event::Event,
-    peer::{NodeInfo, Peer},
-};
+use crate::{context::ctx_mut, error::QuicP2pError, event::Event, peer::Peer};
 use crossbeam_channel as mpmc;
 use futures::future::FutureExt;
 use log::trace;
@@ -76,16 +71,9 @@ impl Drop for Connection {
             || ((self.to_peer.is_established() || self.to_peer.is_not_needed())
                 && (self.from_peer.is_established() || self.from_peer.is_not_needed()))
         {
-            let peer = match self.to_peer.peer_cert_der() {
-                Some(peer_cert_der) => Peer::Node {
-                    node_info: NodeInfo {
-                        peer_addr: self.peer_addr,
-                        peer_cert_der: peer_cert_der.clone(),
-                    },
-                },
-                None => Peer::Client {
-                    peer_addr: self.peer_addr,
-                },
+            let peer = match self.to_peer {
+                ToPeer::Initiated { .. } | ToPeer::Established { .. } => Peer::Node(self.peer_addr),
+                ToPeer::NoConnection | ToPeer::NotNeeded => Peer::Client(self.peer_addr),
             };
 
             // No need to log these as this will fire even when the QuicP2p handle is dropped and at
