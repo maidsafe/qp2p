@@ -1,7 +1,9 @@
 use crossbeam_channel as mpmc;
-use quic_p2p::{Builder, Config, Event, NodeInfo, OurType, Peer, QuicP2p};
-use std::collections::HashSet;
-use std::net::{IpAddr, Ipv4Addr};
+use quic_p2p::{Builder, Config, Event, OurType, Peer, QuicP2p};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 use unwrap::unwrap;
 
 /// Waits for `Event::ConnectedTo`.
@@ -20,7 +22,7 @@ fn test_node() -> (QuicP2p, mpmc::Receiver<Event>) {
 }
 
 fn test_peer_with_hcc(
-    hard_coded_contacts: HashSet<NodeInfo>,
+    hard_coded_contacts: HashSet<SocketAddr>,
     our_type: OurType,
 ) -> (QuicP2p, mpmc::Receiver<Event>) {
     let (ev_tx, ev_rx) = mpmc::unbounded();
@@ -40,32 +42,29 @@ fn test_peer_with_hcc(
 #[test]
 fn successfull_connection_stores_peer_in_bootstrap_cache() {
     let (mut peer1, _) = test_node();
-    let peer1_conn_info = unwrap!(peer1.our_connection_info());
+    let peer1_addr = unwrap!(peer1.our_connection_info());
 
     let (mut peer2, ev_rx) = test_node();
-    peer2.connect_to(peer1_conn_info.clone());
+    peer2.connect_to(peer1_addr);
 
     let connected_to = wait_till_connected(ev_rx);
-    assert_eq!(connected_to, peer1_conn_info.clone().into());
+    assert_eq!(connected_to, Peer::Node(peer1_addr));
 
     let cache = unwrap!(peer2.bootstrap_cache());
-    assert_eq!(cache, vec![peer1_conn_info]);
+    assert_eq!(cache, vec![peer1_addr]);
 }
 
 #[test]
 fn incoming_connections_yield_connected_to_event() {
     let (mut peer1, ev_rx) = test_node();
-    let peer1_conn_info = unwrap!(peer1.our_connection_info());
+    let peer1_addr = unwrap!(peer1.our_connection_info());
 
     let (mut peer2, _) = test_node();
-    peer2.connect_to(peer1_conn_info);
-    let peer2_conn_info = unwrap!(peer2.our_connection_info());
+    peer2.connect_to(peer1_addr);
+    let peer2_addr = unwrap!(peer2.our_connection_info());
 
     let peer = wait_till_connected(ev_rx);
-    assert_eq!(
-        unwrap!(peer.peer_cert_der()),
-        &peer2_conn_info.peer_cert_der[..]
-    );
+    assert_eq!(peer.peer_addr(), peer2_addr);
 }
 
 #[test]

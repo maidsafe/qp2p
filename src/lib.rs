@@ -54,7 +54,7 @@ pub use config::{Config, OurType, SerialisableCertificate};
 pub use dirs::{Dirs, OverRide};
 pub use error::QuicP2pError;
 pub use event::Event;
-pub use peer::{NodeInfo, Peer};
+pub use peer::Peer;
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
 pub use utils::{Token, R};
 
@@ -102,7 +102,7 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 pub struct Builder {
     event_tx: mpmc::Sender<Event>,
     cfg: Option<Config>,
-    bootstrap_nodes: VecDeque<NodeInfo>,
+    bootstrap_nodes: VecDeque<SocketAddr>,
     use_bootstrap_nodes_exclusively: bool,
 }
 
@@ -123,7 +123,7 @@ impl Builder {
     /// such a file exists
     pub fn with_bootstrap_nodes(
         mut self,
-        bootstrap_nodes: VecDeque<NodeInfo>,
+        bootstrap_nodes: VecDeque<SocketAddr>,
         use_exclusively: bool,
     ) -> Self {
         self.use_bootstrap_nodes_exclusively = use_exclusively;
@@ -178,7 +178,7 @@ impl Builder {
 pub struct QuicP2p {
     event_tx: mpmc::Sender<Event>,
     cfg: Config,
-    us: Option<NodeInfo>,
+    us: Option<SocketAddr>,
     el: EventLoop,
 }
 
@@ -198,19 +198,18 @@ impl QuicP2p {
 
     /// Connect to the given peer. This will error out if the peer is already in the process of
     /// being connected to OR for any other connection failure reasons.
-    pub fn connect_to(&mut self, node_info: NodeInfo) {
+    pub fn connect_to(&mut self, node_addr: SocketAddr) {
         self.el.post(move || {
-            let peer_addr = node_info.peer_addr;
-            if let Err(e) = connect::connect_to(node_info.clone(), None, None) {
-                info!("Could not connect to the asked peer {}: {}", peer_addr, e);
+            if let Err(e) = connect::connect_to(node_addr, None, None) {
+                info!("Could not connect to the asked peer {}: {}", node_addr, e);
                 ctx_mut(|c| {
                     let _ = c.event_tx.send(Event::ConnectionFailure {
-                        peer: Peer::Node { node_info },
+                        peer: Peer::Node(node_addr),
                         err: e,
                     });
                 });
             } else {
-                Self::set_we_contacted_peer(&peer_addr);
+                Self::set_we_contacted_peer(&node_addr);
             }
         });
     }
@@ -262,9 +261,9 @@ impl QuicP2p {
     /// such an address cannot be reached and hence not useful.
     // FIXME calling this mutliple times concurrently just now could have it hanging as only one tx
     // is registered and that replaces any previous tx registered. Fix by using a vec of txs
-    pub fn our_connection_info(&mut self) -> R<NodeInfo> {
-        if let Some(ref us) = self.us {
-            return Ok(us.clone());
+    pub fn our_connection_info(&mut self) -> R<SocketAddr> {
+        if let Some(us) = self.us {
+            return Ok(us);
         }
 
         let our_addr = match self.query_ip_echo_service() {
@@ -285,20 +284,13 @@ impl QuicP2p {
             Err(e) => return Err(e),
         };
 
-        let our_cert_der = self.our_certificate_der();
+        self.us = Some(our_addr);
 
-        let us = NodeInfo {
-            peer_addr: our_addr,
-            peer_cert_der: our_cert_der,
-        };
-
-        self.us = Some(us.clone());
-
-        Ok(us)
+        Ok(our_addr)
     }
 
     /// Retrieves current node bootstrap cache.
-    pub fn bootstrap_cache(&mut self) -> R<Vec<NodeInfo>> {
+    pub fn bootstrap_cache(&mut self) -> R<Vec<SocketAddr>> {
         let (tx, rx) = mpsc::channel();
         self.el.post(move || {
             let cache = ctx(|c| c.bootstrap_cache.peers().iter().cloned().collect());
@@ -310,8 +302,8 @@ impl QuicP2p {
     }
 
     /// Checks whether the given contact is hard-coded.
-    pub fn is_hard_coded_contact(&self, node_info: &NodeInfo) -> bool {
-        self.cfg.hard_coded_contacts.contains(node_info)
+    pub fn is_hard_coded_contact(&self, node_addr: &SocketAddr) -> bool {
+        self.cfg.hard_coded_contacts.contains(node_addr)
     }
 
     /// Returns a copy of the `Config` used to create this `QuicP2p`.
@@ -435,26 +427,15 @@ impl QuicP2p {
         Ok(())
     }
 
-    fn our_certificate_der(&mut self) -> Bytes {
-        let (tx, rx) = mpsc::channel();
-
-        self.el.post(move || {
-            let our_cert_der = ctx(|c| c.our_complete_cert.cert_der.clone());
-            unwrap!(tx.send(our_cert_der));
-        });
-
-        unwrap!(rx.recv())
-    }
-
     fn query_ip_echo_service(&mut self) -> R<SocketAddr> {
         // FIXME: For the purpose of simplicity we are asking only one peer just now. In production
         // ask multiple until one answers OR we exhaust the list
-        let node_info = if let Some(node_info) = self.cfg.hard_coded_contacts.iter().next() {
-            node_info.clone()
+        let node_addr = if let Some(node_addr) = self.cfg.hard_coded_contacts.iter().next() {
+            *node_addr
         } else {
             return Err(QuicP2pError::NoEndpointEchoServerFound);
         };
-        let echo_server = Peer::Node { node_info };
+        let echo_server = Peer::Node(node_addr);
 
         let (tx, rx) = mpsc::channel();
 
@@ -484,7 +465,7 @@ mod tests {
     use std::collections::HashSet;
     use std::iter;
     use std::time::Duration;
-    use test_utils::{new_random_qp2p, rand_node_info};
+    use test_utils::{new_random_qp2p, rand_node_addr};
 
     #[ignore] // This fails on fast machines FIXME
     #[test]
@@ -506,7 +487,7 @@ mod tests {
 
         // Now the only way to obtain info is via querring the quic_ep for the bound address
         let qp2p0_info = unwrap!(qp2p0.our_connection_info());
-        let qp2p0_port = qp2p0_info.peer_addr.port();
+        let qp2p0_port = qp2p0_info.port();
 
         let (mut qp2p1, rx1) = {
             let mut hcc: HashSet<_> = Default::default();
@@ -519,7 +500,7 @@ mod tests {
         let qp2p1_info = unwrap!(qp2p1.our_connection_info());
 
         assert_ne!(qp2p0_port, qp2p1_port);
-        assert_eq!(qp2p1_port, qp2p1_info.peer_addr.port());
+        assert_eq!(qp2p1_port, qp2p1_info.port());
 
         let (mut qp2p2, rx2) = {
             let mut hcc: HashSet<_> = Default::default();
@@ -535,27 +516,22 @@ mod tests {
 
         let data = bytes::Bytes::from(vec![12, 13, 14, 253]);
         const TOKEN: u64 = 19923;
-        qp2p2.send(qp2p1_info.clone().into(), data.clone(), TOKEN);
+        qp2p2.send(Peer::Node(qp2p1_info), data.clone(), TOKEN);
 
         match unwrap!(rx1.recv()) {
-            Event::ConnectedTo { peer } => assert_eq!(
-                peer,
-                Peer::Node {
-                    node_info: qp2p2_info.clone()
-                }
-            ),
+            Event::ConnectedTo { peer } => assert_eq!(peer, Peer::Node(qp2p2_info)),
             x => panic!("Received unexpected event: {:?}", x),
         }
         match unwrap!(rx1.recv()) {
             Event::NewMessage { peer, msg } => {
-                assert_eq!(peer.peer_addr(), qp2p2_info.peer_addr);
+                assert_eq!(peer.peer_addr(), qp2p2_info);
                 assert_eq!(msg, data);
             }
             x => panic!("Received unexpected event: {:?}", x),
         }
         match unwrap!(rx2.recv()) {
             Event::SentUserMessage { peer, msg, token } => {
-                assert_eq!(peer.peer_addr(), qp2p1_info.peer_addr);
+                assert_eq!(peer.peer_addr(), qp2p1_info);
                 assert_eq!(msg, data);
                 assert_eq!(token, TOKEN);
             }
@@ -569,17 +545,14 @@ mod tests {
         const TEST_TOKEN1: u64 = 3_435_235;
 
         let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
-        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
+        let qp2p0_addr = unwrap!(qp2p0.our_connection_info());
 
         let (mut qp2p1, rx1) = {
             let mut hcc: HashSet<_> = Default::default();
-            assert!(hcc.insert(qp2p0_info.clone()));
+            assert!(hcc.insert(qp2p0_addr));
             new_random_qp2p(true, hcc)
         };
-        let qp2p1_info = unwrap!(qp2p1.our_connection_info());
-
-        let qp2p0_addr = qp2p0_info.peer_addr;
-        let qp2p1_addr = qp2p1_info.peer_addr;
+        let qp2p1_addr = unwrap!(qp2p1.our_connection_info());
 
         // 400 MiB message
         let big_msg_to_qp2p0 = bytes::Bytes::from(vec![255; 400 * 1024 * 1024]);
@@ -601,8 +574,8 @@ mod tests {
             .spawn(move || {
                 match rx0.recv() {
                     Ok(Event::ConnectedTo {
-                        peer: Peer::Node { node_info },
-                    }) => assert_eq!(node_info.peer_addr, qp2p1_addr),
+                        peer: Peer::Node(node_addr),
+                    }) => assert_eq!(node_addr, qp2p1_addr),
                     Ok(x) => panic!("Expected Event::ConnectedTo - got {:?}", x),
                     Err(e) => panic!(
                         "QuicP2p0 Expected Event::ConnectedTo; got error: {:?} {}",
@@ -651,8 +624,8 @@ mod tests {
             .spawn(move || {
                 match rx1.recv() {
                     Ok(Event::ConnectedTo {
-                        peer: Peer::Node { node_info },
-                    }) => assert_eq!(node_info.peer_addr, qp2p0_addr),
+                        peer: Peer::Node(node_addr),
+                    }) => assert_eq!(node_addr, qp2p0_addr),
                     Ok(x) => panic!("Expected Event::ConnectedTo - got {:?}", x),
                     Err(e) => panic!(
                         "QuicP2p1 Expected Event::ConnectedTo; got error: {:?} {}",
@@ -686,14 +659,14 @@ mod tests {
 
         // Send the biggest message first and we'll assert that it arrives last hence not blocking
         // the rest of smaller messages sent after it
-        qp2p1.send(qp2p0_info.clone().into(), big_msg_to_qp2p0, TEST_TOKEN1);
-        qp2p1.send(qp2p0_info.clone().into(), small_msg0_to_qp2p0, TEST_TOKEN1);
+        qp2p1.send(Peer::Node(qp2p0_addr), big_msg_to_qp2p0, TEST_TOKEN1);
+        qp2p1.send(Peer::Node(qp2p0_addr), small_msg0_to_qp2p0, TEST_TOKEN1);
         // Even after a delay the following small message should arrive before the 1st sent big
         // message
         std::thread::sleep(Duration::from_millis(100));
-        qp2p1.send(qp2p0_info.into(), small_msg1_to_qp2p0, TEST_TOKEN1);
+        qp2p1.send(Peer::Node(qp2p0_addr), small_msg1_to_qp2p0, TEST_TOKEN1);
 
-        qp2p0.send(qp2p1_info.into(), msg_to_qp2p1, TEST_TOKEN0);
+        qp2p0.send(Peer::Node(qp2p1_addr), msg_to_qp2p1, TEST_TOKEN0);
 
         unwrap!(j0.join());
         unwrap!(j1.join());
@@ -705,7 +678,7 @@ mod tests {
     #[test]
     fn double_handshake_node() {
         let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
-        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
+        let qp2p0_addr = unwrap!(qp2p0.our_connection_info());
 
         let (tx1, rx1) = mpmc::unbounded();
         let mut malicious_client = unwrap!(Builder::new(tx1)
@@ -716,26 +689,26 @@ mod tests {
             })
             .build());
         malicious_client.send_wire_msg(
-            qp2p0_info.clone().into(),
+            Peer::Node(qp2p0_addr),
             WireMsg::Handshake(Handshake::Client),
             0,
         );
 
-        let malicious_client_info = unwrap!(malicious_client.our_connection_info());
+        let malicious_client_addr = unwrap!(malicious_client.our_connection_info());
 
         match rx0.recv() {
             Ok(Event::ConnectedTo {
-                peer: Peer::Node { node_info },
+                peer: Peer::Node(node_addr),
             }) => {
-                assert_eq!(node_info.peer_addr, malicious_client_info.peer_addr);
+                assert_eq!(node_addr, malicious_client_addr);
             }
             r => panic!("Unexpected result {:?}", r),
         }
         match rx1.recv() {
             Ok(Event::ConnectedTo {
-                peer: Peer::Node { node_info },
+                peer: Peer::Node(node_addr),
             }) => {
-                assert_eq!(node_info.peer_addr, qp2p0_info.peer_addr);
+                assert_eq!(node_addr, qp2p0_addr);
             }
             r => panic!("Unexpected result {:?}", r),
         }
@@ -751,11 +724,12 @@ mod tests {
         }
 
         // Check that both have unchanged `ToPeer`/`FromPeer` types.
-        let from_peer_is_established = unwrap!(malicious_client
-            .connections(move |c| { c[&qp2p0_info.peer_addr].from_peer.is_established() }));
-        let to_peer_is_established = unwrap!(qp2p0.connections(move |c| {
-            c[&malicious_client_info.peer_addr].to_peer.is_established()
-        }));
+        let from_peer_is_established =
+            unwrap!(malicious_client
+                .connections(move |c| { c[&qp2p0_addr].from_peer.is_established() }));
+        let to_peer_is_established = unwrap!(
+            qp2p0.connections(move |c| { c[&malicious_client_addr].to_peer.is_established() })
+        );
 
         assert!(from_peer_is_established && to_peer_is_established);
     }
@@ -766,7 +740,7 @@ mod tests {
     #[test]
     fn double_handshake_client() {
         let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
-        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
+        let qp2p0_addr = unwrap!(qp2p0.our_connection_info());
 
         let (tx1, _rx1) = mpmc::unbounded();
         let mut malicious_client = unwrap!(Builder::new(tx1)
@@ -777,18 +751,18 @@ mod tests {
             })
             .build());
         malicious_client.send_wire_msg(
-            qp2p0_info.clone().into(),
+            Peer::Node(qp2p0_addr),
             WireMsg::Handshake(Handshake::Node {
                 cert_der: Bytes::new(),
             }),
             0,
         );
 
-        let malicious_client_info = unwrap!(malicious_client.our_connection_info());
+        let malicious_client_addr = unwrap!(malicious_client.our_connection_info());
 
         match rx0.recv() {
             Ok(Event::ConnectedTo {
-                peer: Peer::Client { .. },
+                peer: Peer::Client(_),
             }) => {}
             r => panic!("Unexpected result {:?}", r),
         }
@@ -800,10 +774,12 @@ mod tests {
         }
 
         // Check that both have unchanged `ToPeer`/`FromPeer` types.
-        let from_peer_is_not_needed = unwrap!(malicious_client
-            .connections(move |c| { c[&qp2p0_info.peer_addr].from_peer.is_not_needed() }));
-        let to_peer_is_not_needed = unwrap!(qp2p0
-            .connections(move |c| { c[&malicious_client_info.peer_addr].to_peer.is_not_needed() }));
+        let from_peer_is_not_needed = unwrap!(
+            malicious_client.connections(move |c| { c[&qp2p0_addr].from_peer.is_not_needed() })
+        );
+        let to_peer_is_not_needed = unwrap!(
+            qp2p0.connections(move |c| { c[&malicious_client_addr].to_peer.is_not_needed() })
+        );
 
         assert!(from_peer_is_not_needed && to_peer_is_not_needed);
     }
@@ -812,10 +788,7 @@ mod tests {
     fn connect_to_fails() {
         let invalid_socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1);
         let (mut peer, rx) = new_random_qp2p(false, Default::default());
-        peer.connect_to(NodeInfo {
-            peer_addr: invalid_socket_addr,
-            peer_cert_der: Default::default(),
-        });
+        peer.connect_to(invalid_socket_addr);
 
         match rx.recv() {
             Ok(Event::ConnectionFailure { peer, .. }) => {
@@ -828,11 +801,10 @@ mod tests {
     #[test]
     fn connect_to_marks_that_we_attempted_to_contact_the_peer() {
         let (mut peer1, _) = new_random_qp2p(false, Default::default());
-        let peer1_conn_info = unwrap!(peer1.our_connection_info());
-        let peer1_addr = peer1_conn_info.peer_addr;
+        let peer1_addr = unwrap!(peer1.our_connection_info());
 
         let (mut peer2, ev_rx) = new_random_qp2p(false, Default::default());
-        peer2.connect_to(peer1_conn_info);
+        peer2.connect_to(peer1_addr);
 
         for event in ev_rx.iter() {
             if let Event::ConnectedTo { .. } = event {
@@ -852,10 +824,10 @@ mod tests {
 
     #[test]
     fn is_hard_coded_contact() {
-        let contact0 = rand_node_info();
-        let contact1 = rand_node_info();
+        let contact0 = rand_node_addr();
+        let contact1 = rand_node_addr();
 
-        let (peer, _) = new_random_qp2p(false, iter::once(contact0.clone()).collect());
+        let (peer, _) = new_random_qp2p(false, iter::once(contact0).collect());
 
         assert!(peer.is_hard_coded_contact(&contact0));
         assert!(!peer.is_hard_coded_contact(&contact1));

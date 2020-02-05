@@ -8,13 +8,13 @@
 // Software.
 
 use crate::bootstrap_cache::BootstrapCache;
+use crate::connect;
 use crate::connection::{Connection, FromPeer, QConn, ToPeer};
 use crate::context::{ctx, ctx_mut};
 use crate::error::QuicP2pError;
 use crate::event::Event;
 use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
-use crate::{connect, NodeInfo};
 use crate::{Peer, R};
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
@@ -26,10 +26,10 @@ use std::{io, net::SocketAddr, sync::mpsc};
 /// Send message to peer. If the peer is a node and is not connected, it will attempt to connect to
 /// it first and then send the message. For un-connected clients, it'll simply error out.
 pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
-    let node_info = match peer {
-        Peer::Client { peer_addr } => {
+    let node_addr = match peer {
+        Peer::Client(peer_addr) => {
             let user_msg = if let WireMsg::UserMsg(ref msg) = msg {
-                Some((Peer::Client { peer_addr }, msg.clone(), token))
+                Some((Peer::Client(peer_addr), msg.clone(), token))
             } else {
                 None
             };
@@ -43,18 +43,16 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
             }
             return Ok(());
         }
-        Peer::Node { node_info } => node_info,
+        Peer::Node(peer_addr) => peer_addr,
     };
 
     let connect_and_send = {
-        let node_info = node_info.clone();
         ctx_mut(|c| {
-            let peer_addr = node_info.peer_addr;
             let event_tx = c.event_tx.clone();
             let conn = c
                 .connections
-                .entry(peer_addr)
-                .or_insert_with(|| Connection::new(peer_addr, event_tx, None));
+                .entry(node_addr)
+                .or_insert_with(|| Connection::new(node_addr, event_tx, None));
 
             match conn.to_peer {
                 ToPeer::NoConnection => Some((msg, token)),
@@ -63,21 +61,14 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
                     None
                 }
                 ToPeer::Initiated {
-                    ref peer_cert_der,
                     ref mut pending_sends,
                     ..
                 } => {
-                    if *peer_cert_der != node_info.peer_cert_der {
-                        info!(
-                            "TODO Certificate we have for the peer already doesn't match with the \
-                    one given - we should disconnect from such peers - something fishy going on."
-                        );
-                    }
                     pending_sends.push((msg, token));
                     None
                 }
                 ToPeer::Established { ref q_conn, .. } => {
-                    write_to_peer_connection(Peer::Node { node_info }, q_conn, msg, token);
+                    write_to_peer_connection(Peer::Node(node_addr), q_conn, msg, token);
                     None
                 }
             }
@@ -85,7 +76,7 @@ pub fn try_write_to_peer(peer: Peer, msg: WireMsg, token: Token) -> R<()> {
     };
 
     if connect_and_send.is_some() {
-        connect::connect_to(node_info, connect_and_send, None)?;
+        connect::connect_to(node_addr, connect_and_send, None)?;
     }
 
     Ok(())
@@ -286,16 +277,9 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                                  longer or not yet connected to"
                             );
                         }
-                        ToPeer::Established {
-                            ref q_conn,
-                            ref peer_cert_der,
-                        } => {
-                            let node_info = NodeInfo {
-                                peer_addr,
-                                peer_cert_der: peer_cert_der.clone(),
-                            };
+                        ToPeer::Established { ref q_conn } => {
                             dispatch_wire_msg(
-                                node_info.into(),
+                                Peer::Node(peer_addr),
                                 q_conn,
                                 c.our_ext_addr_tx.take(),
                                 &c.event_tx,
@@ -313,7 +297,7 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                             pending_reads.push(wire_msg);
                         }
                         ToPeer::NotNeeded => dispatch_wire_msg(
-                            Peer::Client { peer_addr },
+                            Peer::Client(peer_addr),
                             q_conn,
                             c.our_ext_addr_tx.take(),
                             &c.event_tx,
@@ -321,16 +305,9 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                             &mut c.bootstrap_cache,
                             conn.we_contacted_peer,
                         ),
-                        ToPeer::Established {
-                            ref q_conn,
-                            ref peer_cert_der,
-                        } => {
-                            let node_info = NodeInfo {
-                                peer_addr,
-                                peer_cert_der: peer_cert_der.clone(),
-                            };
+                        ToPeer::Established { ref q_conn } => {
                             dispatch_wire_msg(
-                                node_info.into(),
+                                Peer::Node(peer_addr),
                                 q_conn,
                                 c.our_ext_addr_tx.take(),
                                 &c.event_tx,
@@ -404,7 +381,7 @@ fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
 
         conn.to_peer = ToPeer::NotNeeded;
 
-        let peer = Peer::Client { peer_addr };
+        let peer = Peer::Client(peer_addr);
 
         if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
             info!("ERROR in informing user about a new peer: {:?} - {}", e, e);
@@ -412,12 +389,7 @@ fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
     })
 }
 
-fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Bytes) {
-    let node_info = NodeInfo {
-        peer_addr,
-        peer_cert_der,
-    };
-
+fn handle_rx_cert(peer_addr: SocketAddr, _peer_cert_der: Bytes) {
     let reverse_connect_to_peer = ctx_mut(|c| {
         // FIXME: Dropping the connection most probably will not drop the incoming stream
         // and then if you get a message on it you might still end up here without an entry
@@ -431,7 +403,7 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Bytes) {
             None => {
                 trace!(
                     "Rxd certificate from someone we don't know. Probably it was a pending \
-                stream when we dropped the peer connection. Ignoring this message from peer: {}",
+                     stream when we dropped the peer connection. Ignoring this message from peer: {}",
                     peer_addr
                 );
                 return false;
@@ -447,26 +419,12 @@ fn handle_rx_cert(peer_addr: SocketAddr, peer_cert_der: Bytes) {
                 );
                 false
             }
-            ToPeer::Initiated {
-                ref peer_cert_der, ..
-            }
-            | ToPeer::Established {
-                ref peer_cert_der, ..
-            } => {
-                if *peer_cert_der != node_info.peer_cert_der {
-                    info!(
-                        "TODO Certificate we have for the peer already doesn't match with \
-                        the one given - we should disconnect to such peers - something fishy going \
-                        on."
-                    );
-                }
-                false
-            }
+            ToPeer::Initiated { .. } | ToPeer::Established { .. } => false,
         }
     });
 
     if reverse_connect_to_peer {
-        if let Err(e) = connect::connect_to(node_info, None, None) {
+        if let Err(e) = connect::connect_to(peer_addr, None, None) {
             debug!(
                 "ERROR: Could not reverse connect to peer {}: {}",
                 peer_addr, e
@@ -490,9 +448,9 @@ fn handle_user_msg(
         info!("Could not dispatch incoming user message: {:?}", e);
     }
 
-    if let Peer::Node { node_info } = peer {
+    if let Peer::Node(node_addr) = peer {
         if we_contacted_peer {
-            bootstrap_cache.add_peer(node_info);
+            bootstrap_cache.add_peer(node_addr);
         }
     }
 }
@@ -513,7 +471,7 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<mpsc::Sender<Soc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{new_random_qp2p, rand_node_info, test_dirs, write_to_bi_stream};
+    use crate::test_utils::{new_random_qp2p, rand_node_addr, test_dirs, write_to_bi_stream};
     use std::collections::HashSet;
     use unwrap::unwrap;
 
@@ -536,13 +494,13 @@ mod tests {
 
         // Create a bi-directional stream and write data
         qp2p1.el.post(move || {
-            write_to_bi_stream(qp2p0_info.peer_addr, WireMsg::UserMsg(From::from("123")));
+            write_to_bi_stream(qp2p0_info, WireMsg::UserMsg(From::from("123")));
         });
 
         // The connection should fail because we don't allow bi-directional streams
         match rx0.recv() {
             Ok(Event::ConnectionFailure { peer, err }) => {
-                assert_eq!(peer.peer_addr(), qp2p1_info.peer_addr);
+                assert_eq!(peer.peer_addr(), qp2p1_info);
                 assert_eq!(
                     format!("{}", err),
                     format!("{}", QuicP2pError::ConnectionCancelled)
@@ -558,15 +516,13 @@ mod tests {
         #[test]
         fn when_peer_is_node_and_we_contacted_it_before_it_is_moved_to_bootstrap_cache_top() {
             let (event_tx, _event_rx) = mpmc::unbounded();
-            let peer1 = rand_node_info();
-            let peer2 = rand_node_info();
-            let peer = Peer::Node {
-                node_info: peer1.clone(),
-            };
+            let peer1_addr = rand_node_addr();
+            let peer2_addr = rand_node_addr();
+            let peer = Peer::Node(peer1_addr);
             let mut bootstrap_cache =
                 unwrap!(BootstrapCache::new(Default::default(), Some(&test_dirs())));
-            bootstrap_cache.add_peer(peer1.clone());
-            bootstrap_cache.add_peer(peer2.clone());
+            bootstrap_cache.add_peer(peer1_addr);
+            bootstrap_cache.add_peer(peer2_addr);
 
             handle_user_msg(
                 peer,
@@ -577,7 +533,7 @@ mod tests {
             );
 
             let cached_peers: Vec<_> = bootstrap_cache.peers().iter().cloned().collect();
-            assert_eq!(cached_peers, vec![peer2, peer1]);
+            assert_eq!(cached_peers, vec![peer2_addr, peer1_addr]);
         }
     }
 }

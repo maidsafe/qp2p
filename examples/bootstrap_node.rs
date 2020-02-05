@@ -26,7 +26,6 @@ use env_logger;
 use log::{error, info, warn};
 use quic_p2p::{Builder, Config, Event, Peer};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::collections::HashMap;
 use std::io;
 use structopt::StructOpt;
@@ -56,13 +55,10 @@ fn main() -> Result<(), io::Error> {
         .with_config(bootstrap_node_config.quic_p2p_opts)
         .build());
 
-    let our_conn_info = unwrap!(qp2p.our_connection_info());
-    info!("QuicP2p started on {}", our_conn_info.peer_addr);
+    let our_addr = unwrap!(qp2p.our_connection_info());
+    info!("QuicP2p started on {}", our_addr);
 
-    println!(
-        "Our connection info:\n{}\n",
-        unwrap!(serde_json::to_string(&our_conn_info)),
-    );
+    println!("Our connection info: {}", our_addr);
 
     let expected_connections = bootstrap_node_config.expected_conns;
     let mut connected_peers = HashMap::new();
@@ -71,9 +67,9 @@ fn main() -> Result<(), io::Error> {
     for event in ev_rx.iter() {
         match event {
             Event::ConnectedTo { peer } => {
-                let peer_addr = match &peer {
-                    Peer::Node { node_info } => node_info.peer_addr,
-                    Peer::Client { .. } => panic!("In this example only Node peers are expected"),
+                let peer_addr = match peer {
+                    Peer::Node(node_addr) => node_addr,
+                    Peer::Client(_) => panic!("In this example only Node peers are expected"),
                 };
                 let _ = connected_peers.insert(peer_addr, peer);
                 if connected_peers.len() == expected_connections && !test_triggered {

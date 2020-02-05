@@ -10,17 +10,15 @@
 use crate::dirs::Dirs;
 use crate::error::QuicP2pError;
 use crate::utils;
-use crate::{NodeInfo, R};
+use crate::R;
 use base64;
 use bincode;
 use bytes::Bytes;
 use log::{trace, warn};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::net::IpAddr;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::{fmt, fs, io};
+use std::{
+    collections::HashSet, fmt, fs, io, net::IpAddr, net::SocketAddr, path::PathBuf, str::FromStr,
+};
 use structopt::StructOpt;
 use unwrap::unwrap;
 
@@ -35,7 +33,7 @@ pub struct Config {
         default_value = "[]",
         parse(try_from_str = "serde_json::from_str")
     )]
-    pub hard_coded_contacts: HashSet<NodeInfo>,
+    pub hard_coded_contacts: HashSet<SocketAddr>,
     /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
     #[structopt(short, long)]
     pub port: Option<u16>,

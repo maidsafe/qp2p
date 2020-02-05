@@ -1,6 +1,6 @@
 use crate::error::QuicP2pError;
-use crate::{utils, NodeInfo, Peer};
-use std::fmt;
+use crate::{utils, Peer};
+use std::{fmt, net::SocketAddr};
 use utils::Token;
 
 /// QuicP2p Events to the user
@@ -11,7 +11,7 @@ pub enum Event {
     /// Bootstrap connection to this node was successful.
     BootstrappedTo {
         /// Node information.
-        node: NodeInfo,
+        node: SocketAddr,
     },
     /// Connection to this peer failed.
     ConnectionFailure {

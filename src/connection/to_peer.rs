@@ -10,11 +10,10 @@
 use crate::{
     connection::QConn,
     event::Event,
-    peer::{NodeInfo, Peer},
+    peer::Peer,
     utils::{ConnectTerminator, Token},
     wire_msg::WireMsg,
 };
-use bytes::Bytes;
 use crossbeam_channel as mpmc;
 use std::{fmt, net::SocketAddr};
 
@@ -25,12 +24,10 @@ pub enum ToPeer {
     Initiated {
         terminator: ConnectTerminator,
         peer_addr: SocketAddr,
-        peer_cert_der: Bytes,
         pending_sends: Vec<(WireMsg, Token)>,
         event_tx: mpmc::Sender<Event>,
     },
     Established {
-        peer_cert_der: Bytes,
         q_conn: QConn,
     },
 }
@@ -68,15 +65,6 @@ impl ToPeer {
             false
         }
     }
-
-    pub fn peer_cert_der(&self) -> Option<&Bytes> {
-        match self {
-            Self::Initiated { peer_cert_der, .. } | Self::Established { peer_cert_der, .. } => {
-                Some(peer_cert_der)
-            }
-            Self::NoConnection | Self::NotNeeded => None,
-        }
-    }
 }
 
 impl Default for ToPeer {
@@ -109,7 +97,6 @@ impl Drop for ToPeer {
             ToPeer::Initiated {
                 terminator,
                 peer_addr,
-                peer_cert_der,
                 pending_sends,
                 event_tx,
                 ..
@@ -121,12 +108,7 @@ impl Drop for ToPeer {
                     // error out
                     if let WireMsg::UserMsg(msg) = wire_msg {
                         let _ = event_tx.send(Event::UnsentUserMessage {
-                            peer: Peer::Node {
-                                node_info: NodeInfo {
-                                    peer_addr: *peer_addr,
-                                    peer_cert_der: peer_cert_der.clone(),
-                                },
-                            },
+                            peer: Peer::Node(*peer_addr),
                             msg,
                             token,
                         });

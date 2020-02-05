@@ -34,8 +34,7 @@ pub fn start() {
 #[cfg(test)]
 mod tests {
     use crate::test_utils::new_random_qp2p;
-    use crate::{Builder, Config, Event, NodeInfo, OurType, QuicP2p};
-    use bytes::Bytes;
+    use crate::{Builder, Config, Event, OurType, QuicP2p};
     use crossbeam_channel as mpmc;
     use std::collections::{HashSet, VecDeque};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -71,10 +70,10 @@ mod tests {
                 qp2p.set_connect_delay(i * delay_ms);
             }
 
-            let ci_info = unwrap!(qp2p.our_connection_info());
+            let our_addr = unwrap!(qp2p.our_connection_info());
 
-            assert!(bs_peer_addrs.insert(ci_info.peer_addr));
-            assert!(hcc_contacts.insert(ci_info));
+            assert!(bs_peer_addrs.insert(our_addr));
+            assert!(hcc_contacts.insert(our_addr));
             bs_nodes.push((rx, qp2p));
         }
 
@@ -84,7 +83,7 @@ mod tests {
 
         match unwrap!(rx0.recv()) {
             Event::BootstrappedTo { node, .. } => {
-                assert!(bs_peer_addrs.contains(&node.peer_addr));
+                assert!(bs_peer_addrs.contains(&node));
             }
             ev => panic!("Unexpected event: {:?}", ev),
         }
@@ -123,12 +122,12 @@ mod tests {
             hcc_nodes.push((qp2p, rx));
         }
 
-        let bootstrap_cache: VecDeque<NodeInfo> = bootstrap_cache_nodes
+        let bootstrap_cache: VecDeque<_> = bootstrap_cache_nodes
             .iter_mut()
             .map(|(node, _)| unwrap!(node.our_connection_info()))
             .collect();
 
-        let hard_coded_contacts: HashSet<NodeInfo> = hcc_nodes
+        let hard_coded_contacts: HashSet<_> = hcc_nodes
             .iter_mut()
             .map(|(node, _)| unwrap!(node.our_connection_info()))
             .collect();
@@ -155,8 +154,8 @@ mod tests {
                     &attempted_conns[0..(NODES_COUNT as usize / 2)],
                     bootstrap_cache
                         .iter()
-                        .map(|node| node.peer_addr)
                         .rev()
+                        .copied()
                         .collect::<Vec<_>>()
                         .as_slice()
                 );
@@ -222,14 +221,14 @@ mod tests {
         }
 
         let is_peer1_state_valid = unwrap!(peer1.connections(move |c| {
-            c[&peer2_conn_info.peer_addr].from_peer.is_established()
-                && c[&peer2_conn_info.peer_addr].to_peer.is_established()
+            c[&peer2_conn_info].from_peer.is_established()
+                && c[&peer2_conn_info].to_peer.is_established()
         }));
         assert!(is_peer1_state_valid);
 
         let is_peer2_state_valid = unwrap!(peer2.connections(move |c| {
-            c[&peer1_conn_info.peer_addr].to_peer.is_established()
-                && c[&peer1_conn_info.peer_addr].from_peer.is_established()
+            c[&peer1_conn_info].to_peer.is_established()
+                && c[&peer1_conn_info].from_peer.is_established()
         }));
         assert!(is_peer2_state_valid);
     }
@@ -256,14 +255,14 @@ mod tests {
         }
 
         let is_peer1_state_valid = unwrap!(peer1.connections(move |c| {
-            c[&peer2_conn_info.peer_addr].from_peer.is_established()
-                && c[&peer2_conn_info.peer_addr].to_peer.is_not_needed()
+            c[&peer2_conn_info].from_peer.is_established()
+                && c[&peer2_conn_info].to_peer.is_not_needed()
         }));
         assert!(is_peer1_state_valid);
 
         let is_peer2_state_valid = unwrap!(peer2.connections(move |c| {
-            c[&peer1_conn_info.peer_addr].to_peer.is_established()
-                && c[&peer1_conn_info.peer_addr].from_peer.is_not_needed()
+            c[&peer1_conn_info].to_peer.is_established()
+                && c[&peer1_conn_info].from_peer.is_not_needed()
         }));
         assert!(is_peer2_state_valid);
     }
@@ -271,15 +270,15 @@ mod tests {
     #[test]
     fn node_will_attempt_cached_peers() {
         let (mut peer1, _) = test_node();
-        let peer1_conn_info = unwrap!(peer1.our_connection_info());
+        let peer1_addr = unwrap!(peer1.our_connection_info());
 
-        let (mut peer2, ev_rx) = test_peer_with_bootstrap_cache(vec![peer1_conn_info.clone()]);
+        let (mut peer2, ev_rx) = test_peer_with_bootstrap_cache(vec![peer1_addr]);
 
         peer2.bootstrap();
 
         for event in ev_rx.iter() {
             if let Event::BootstrappedTo { node } = event {
-                assert_eq!(node, peer1_conn_info);
+                assert_eq!(node, peer1_addr);
                 break;
             }
         }
@@ -300,13 +299,10 @@ mod tests {
 
     #[test]
     fn node_will_report_failure_when_bootstrap_cache_and_hard_coded_contacts_are_invalid() {
-        let dummy_peer_info = NodeInfo {
-            peer_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 37692)),
-            peer_cert_der: Bytes::from_static(&[1, 2, 3]),
-        };
+        let dummy_node_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 37692));
         let (mut peer, ev_rx) = {
             let mut hcc = HashSet::new();
-            assert!(hcc.insert(dummy_peer_info));
+            assert!(hcc.insert(dummy_node_addr));
             test_peer_with_hcc(hcc, OurType::Node)
         };
 
@@ -320,7 +316,7 @@ mod tests {
     }
 
     fn test_peer_with_bootstrap_cache(
-        mut cached_peers: Vec<NodeInfo>,
+        mut cached_peers: Vec<SocketAddr>,
     ) -> (QuicP2p, mpmc::Receiver<Event>) {
         let cached_peers: VecDeque<_> = cached_peers.drain(..).collect();
         let (ev_tx, ev_rx) = mpmc::unbounded();
@@ -341,7 +337,7 @@ mod tests {
 
     /// Construct a `QuicP2p` instance with optional set of hardcoded contacts.
     fn test_peer_with_hcc(
-        hard_coded_contacts: HashSet<NodeInfo>,
+        hard_coded_contacts: HashSet<SocketAddr>,
         our_type: OurType,
     ) -> (QuicP2p, mpmc::Receiver<Event>) {
         let (ev_tx, ev_rx) = mpmc::unbounded();
