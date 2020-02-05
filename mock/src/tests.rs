@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Builder, Config, Event, Network, NodeInfo, OurType, Peer, QuicP2p};
+use super::{Builder, Config, Event, Network, OurType, Peer, QuicP2p};
 use bytes::Bytes;
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
 use fxhash::FxHashSet;
@@ -347,8 +347,8 @@ fn our_connection_info_of_node() {
     };
     let mut node = unwrap!(Builder::new(tx).with_config(config).build());
 
-    let node_info = unwrap!(node.our_connection_info());
-    assert_eq!(node_info.peer_addr, addr);
+    let node_addr = unwrap!(node.our_connection_info());
+    assert_eq!(node_addr, addr);
 }
 
 #[test]
@@ -375,7 +375,7 @@ fn bootstrap_cache() {
     establish_connection(&mut rng, &network, &mut a, &mut b);
 
     // outgoing connections are cached
-    assert!(unwrap!(a.inner.bootstrap_cache()).contains(&NodeInfo::from(b.addr())));
+    assert!(unwrap!(a.inner.bootstrap_cache()).contains(&b.addr()));
 
     // incoming connections are not cached
     assert!(unwrap!(b.inner.bootstrap_cache()).is_empty());
@@ -452,7 +452,7 @@ impl Agent {
     }
 
     fn connect_to(&mut self, dst_addr: SocketAddr) {
-        self.inner.connect_to(NodeInfo::from(dst_addr));
+        self.inner.connect_to(dst_addr);
     }
 
     fn disconnect_from(&mut self, dst_addr: SocketAddr) {
@@ -460,7 +460,7 @@ impl Agent {
     }
 
     fn send(&mut self, dst_addr: SocketAddr, msg: Bytes, token: u64) {
-        self.inner.send(Peer::node(dst_addr), msg, token)
+        self.inner.send(Peer::Node(dst_addr), msg, token)
     }
 
     fn addr(&self) -> SocketAddr {
@@ -475,9 +475,7 @@ impl Agent {
     fn expect_bootstrapped_to(&self, addr: &SocketAddr) {
         let actual_addr = assert_match!(
             self.rx.try_recv(),
-            Ok(Event::BootstrappedTo {
-                node: NodeInfo { peer_addr, .. }
-            }) => peer_addr
+            Ok(Event::BootstrappedTo { node }) => node
         );
         assert_eq!(actual_addr, *addr);
     }
@@ -490,9 +488,7 @@ impl Agent {
     {
         let actual_addr = assert_match!(
             self.rx.try_recv(),
-            Ok(Event::BootstrappedTo {
-                node: NodeInfo { peer_addr, .. }
-            }) => peer_addr
+            Ok(Event::BootstrappedTo { node }) => node
         );
         assert!(addrs.into_iter().any(|addr| addr == actual_addr));
         self.expect_none();
@@ -515,7 +511,7 @@ impl Agent {
         let actual_peer_addr = assert_match!(
             self.rx.try_recv(),
             Ok(Event::ConnectedTo {
-                peer: Peer::Client { peer_addr }
+                peer: Peer::Client(peer_addr)
             }) => peer_addr
         );
         assert_eq!(actual_peer_addr, *addr);
@@ -613,10 +609,7 @@ fn assert_connected_to_node(event: Event, addr: &SocketAddr) {
     let actual_peer_addr = assert_match!(
         event,
         Event::ConnectedTo {
-            peer:
-                Peer::Node {
-                    node_info: NodeInfo { peer_addr, .. }
-                }
+            peer: Peer::Node(peer_addr)
         } => peer_addr
     );
     assert_eq!(actual_peer_addr, *addr);

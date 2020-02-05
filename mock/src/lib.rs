@@ -82,8 +82,8 @@ impl QuicP2p {
 
     /// Connect to the given peer. This will error out if the peer is already in the process of
     /// being connected to OR for any other connection failure reasons.
-    pub fn connect_to(&mut self, peer_info: NodeInfo) {
-        self.inner.borrow().connect(peer_info.peer_addr);
+    pub fn connect_to(&mut self, peer_addr: SocketAddr) {
+        self.inner.borrow().connect(peer_addr);
     }
 
     /// Disconnect from the given peer
@@ -101,17 +101,17 @@ impl QuicP2p {
     }
 
     /// Get our connection info to give to others for them to connect to us
-    pub fn our_connection_info(&mut self) -> Result<NodeInfo, QuicP2pError> {
+    pub fn our_connection_info(&mut self) -> Result<SocketAddr, QuicP2pError> {
         self.inner.borrow().our_connection_info()
     }
 
     /// Retrieves current node bootstrap cache.
-    pub fn bootstrap_cache(&mut self) -> Result<Vec<NodeInfo>, QuicP2pError> {
+    pub fn bootstrap_cache(&mut self) -> Result<Vec<SocketAddr>, QuicP2pError> {
         Ok(self.inner.borrow().bootstrap_cache())
     }
 
     /// Check whether the given contact is hard-coded (always `true` in mock).
-    pub fn is_hard_coded_contact(&self, _node_info: &NodeInfo) -> bool {
+    pub fn is_hard_coded_contact(&self, _addr: &SocketAddr) -> bool {
         true
     }
 
@@ -148,7 +148,7 @@ pub struct Config {
         default_value = "[]",
         parse(try_from_str = "serde_json::from_str")
     )]
-    pub hard_coded_contacts: HashSet<NodeInfo>,
+    pub hard_coded_contacts: HashSet<SocketAddr>,
     /// Type of our `QuicP2p` instance: node or client.
     #[structopt(short = "t", long, default_value = "node")]
     pub our_type: OurType,
@@ -179,7 +179,7 @@ impl Config {
     pub fn with_hard_coded_contacts<I>(self, contacts: I) -> Self
     where
         I: IntoIterator,
-        I::Item: Into<NodeInfo>,
+        I::Item: Into<SocketAddr>,
     {
         Self {
             hard_coded_contacts: contacts.into_iter().map(Into::into).collect(),
@@ -190,7 +190,7 @@ impl Config {
     /// Set the `hard_coded_contacts` to a single contact.
     pub fn with_hard_coded_contact<T>(self, contact: T) -> Self
     where
-        T: Into<NodeInfo>,
+        T: Into<SocketAddr>,
     {
         self.with_hard_coded_contacts(iter::once(contact))
     }
@@ -240,7 +240,7 @@ pub enum Event {
     /// Bootstrap succeeded.
     BootstrappedTo {
         /// Info about the node we are bootstrapped to.
-        node: NodeInfo,
+        node: SocketAddr,
     },
     /// Connection to the given address failed.
     ConnectionFailure {
@@ -291,59 +291,29 @@ pub enum Event {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Peer {
     /// Peer of type node.
-    Node {
-        /// Information about the node (it's address and certificate).
-        node_info: NodeInfo,
-    },
+    Node(SocketAddr),
     /// Peer of type client.
-    Client {
-        /// Address of the client.
-        peer_addr: SocketAddr,
-    },
+    Client(SocketAddr),
 }
 
 impl Peer {
     /// Create `Peer` with the given type and address.
     pub fn new(peer_type: OurType, addr: SocketAddr) -> Self {
         match peer_type {
-            OurType::Client => Self::Client { peer_addr: addr },
-            OurType::Node => Self::Node {
-                node_info: NodeInfo::from(addr),
-            },
-        }
-    }
-
-    /// Create `Peer::Node` with the given address.
-    pub fn node(addr: SocketAddr) -> Self {
-        Self::Node {
-            node_info: NodeInfo::from(addr),
+            OurType::Client => Self::Client(addr),
+            OurType::Node => Self::Node(addr),
         }
     }
 
     /// Return the peer address.
     pub fn peer_addr(&self) -> SocketAddr {
         match *self {
-            Self::Node { ref node_info } => node_info.peer_addr,
-            Self::Client { peer_addr } => peer_addr,
+            Self::Node(addr) => addr,
+            Self::Client(addr) => addr,
         }
     }
 }
 
-/// Information about a peer of type node.
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize, StructOpt)]
-pub struct NodeInfo {
-    /// Endpoint of the node
-    pub peer_addr: SocketAddr,
-    /// Certificate of the node
-    #[structopt(parse(from_str))]
-    pub peer_cert_der: Bytes,
-}
-
-impl From<SocketAddr> for NodeInfo {
-    fn from(addr: SocketAddr) -> Self {
-        Self {
-            peer_addr: addr,
-            peer_cert_der: Bytes::new(),
-        }
-    }
-}
+/// `QuicP2p` error.
+#[derive(Debug)]
+pub struct Error;

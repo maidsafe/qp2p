@@ -8,7 +8,7 @@
 
 use super::{
     network::{Inner, Message, Packet, NETWORK},
-    Config, Event, NodeInfo, OurType, Peer, QuicP2pError,
+    Config, Event, OurType, Peer, QuicP2pError,
 };
 use bytes::Bytes;
 use crossbeam_channel::Sender;
@@ -24,7 +24,7 @@ pub(super) struct Node {
     event_tx: Sender<Event>,
     config: Config,
     peers: FxHashMap<SocketAddr, (ConnectionType, OurType)>,
-    bootstrap_cache: FxHashSet<NodeInfo>,
+    bootstrap_cache: FxHashSet<SocketAddr>,
     pending_bootstraps: FxHashSet<SocketAddr>,
     pending_messages: FxHashMap<SocketAddr, (OurType, Vec<(Bytes, u64)>)>,
 }
@@ -75,10 +75,10 @@ impl Node {
             .iter()
             .chain(&self.bootstrap_cache)
         {
-            let _ = self.pending_bootstraps.insert(contact.peer_addr);
+            let _ = self.pending_bootstraps.insert(*contact);
             self.network.borrow_mut().send(
                 self.addr,
-                contact.peer_addr,
+                *contact,
                 Packet::BootstrapRequest(self.config.our_type),
             )
         }
@@ -133,9 +133,7 @@ impl Node {
                         .insert(src, (ConnectionType::Bootstrap, OurType::Node));
                     self.pending_bootstraps.clear();
 
-                    self.fire_event(Event::BootstrappedTo {
-                        node: NodeInfo::from(src),
-                    })
+                    self.fire_event(Event::BootstrappedTo { node: src })
                 } else {
                     self.network
                         .borrow_mut()
@@ -173,11 +171,11 @@ impl Node {
                     .insert(src, (ConnectionType::Normal, OurType::Node))
                     .is_none()
                 {
-                    let _ = self.bootstrap_cache.insert(NodeInfo::from(src));
+                    let _ = self.bootstrap_cache.insert(src);
                     self.send_pending_messages(src);
 
                     self.fire_event(Event::ConnectedTo {
-                        peer: Peer::node(src),
+                        peer: Peer::Node(src),
                     });
                 }
             }
@@ -190,7 +188,7 @@ impl Node {
             Packet::Message(msg) => {
                 if let Some((_, peer_type)) = self.peers.get(&src) {
                     self.fire_event(Event::NewMessage {
-                        peer: to_peer(src, *peer_type),
+                        peer: Peer::new(*peer_type, src),
                         msg: msg.content.clone(),
                     });
                     return Some(Packet::MessageSent(msg));
@@ -199,12 +197,12 @@ impl Node {
                 }
             }
             Packet::MessageFailure(msg) => self.fire_event(Event::UnsentUserMessage {
-                peer: to_peer(src, msg.dst_type),
+                peer: Peer::new(msg.dst_type, src),
                 msg: msg.content,
                 token: msg.token,
             }),
             Packet::MessageSent(msg) => self.fire_event(Event::SentUserMessage {
-                peer: to_peer(src, msg.dst_type),
+                peer: Peer::new(msg.dst_type, src),
                 msg: msg.content,
                 token: msg.token,
             }),
@@ -212,7 +210,7 @@ impl Node {
                 self.clear_pending_messages(src);
                 if let Some((_, peer_type)) = self.peers.remove(&src) {
                     self.fire_event(Event::ConnectionFailure {
-                        peer: to_peer(src, peer_type),
+                        peer: Peer::new(peer_type, src),
                         err: QuicP2pError,
                     })
                 }
@@ -222,14 +220,14 @@ impl Node {
         None
     }
 
-    pub fn our_connection_info(&self) -> Result<NodeInfo, QuicP2pError> {
+    pub fn our_connection_info(&self) -> Result<SocketAddr, QuicP2pError> {
         match self.config.our_type {
             OurType::Client => Err(QuicP2pError),
-            OurType::Node => Ok(NodeInfo::from(self.addr)),
+            OurType::Node => Ok(self.addr),
         }
     }
 
-    pub fn bootstrap_cache(&self) -> Vec<NodeInfo> {
+    pub fn bootstrap_cache(&self) -> Vec<SocketAddr> {
         self.bootstrap_cache.iter().cloned().collect()
     }
 
@@ -285,7 +283,7 @@ impl Node {
         };
 
         for (msg, token) in messages {
-            self.send_message(to_peer(addr, peer_type), msg, token)
+            self.send_message(Peer::new(peer_type, addr), msg, token)
         }
     }
 
@@ -298,7 +296,7 @@ impl Node {
 
         for (msg, token) in messages {
             self.fire_event(Event::UnsentUserMessage {
-                peer: to_peer(addr, peer_type),
+                peer: Peer::new(peer_type, addr),
                 msg,
                 token,
             })
@@ -345,18 +343,9 @@ impl ConnectionType {
     }
 }
 
-fn to_peer(addr: SocketAddr, peer_type: OurType) -> Peer {
-    match peer_type {
-        OurType::Client => Peer::Client { peer_addr: addr },
-        OurType::Node => Peer::Node {
-            node_info: NodeInfo::from(addr),
-        },
-    }
-}
-
 fn into_addr_and_peer_type(peer: Peer) -> (SocketAddr, OurType) {
     match peer {
-        Peer::Client { peer_addr } => (peer_addr, OurType::Client),
-        Peer::Node { node_info } => (node_info.peer_addr, OurType::Node),
+        Peer::Client(peer_addr) => (peer_addr, OurType::Client),
+        Peer::Node(peer_addr) => (peer_addr, OurType::Node),
     }
 }
