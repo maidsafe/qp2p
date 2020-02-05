@@ -9,7 +9,7 @@
 
 use crate::ctx_mut;
 use crate::dirs::Dirs;
-use crate::error::Error;
+use crate::error::QuicP2pError;
 use crate::event::Event;
 use log::debug;
 use serde::de::DeserializeOwned;
@@ -20,7 +20,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 
 /// Result used by `QuicP2p`.
-pub type R<T> = Result<T, Error>;
+pub type R<T> = Result<T, QuicP2pError>;
 /// Token accepted during sends and returned back to the user to help identify the context.
 pub type Token = u64;
 
@@ -42,7 +42,7 @@ pub fn connect_terminator() -> (ConnectTerminator, tokio::sync::mpsc::Receiver<(
 #[inline]
 pub fn project_dir() -> R<Dirs> {
     let dirs = directories::ProjectDirs::from("net", "MaidSafe", "quic-p2p")
-        .ok_or_else(|| Error::Io(::std::io::ErrorKind::NotFound.into()))?;
+        .ok_or_else(|| QuicP2pError::Io(::std::io::ErrorKind::NotFound.into()))?;
     Ok(Dirs::Desktop(dirs))
 }
 
@@ -87,7 +87,7 @@ pub fn bin_data_format(data: &[u8]) -> String {
 #[inline]
 pub fn handle_communication_err(
     peer_addr: SocketAddr,
-    e: &Error,
+    e: &QuicP2pError,
     details: &str,
     unsent_user_msg: Option<(bytes::Bytes, Token)>,
 ) {

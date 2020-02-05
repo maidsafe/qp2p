@@ -29,6 +29,9 @@ use structopt::StructOpt;
 
 pub type Token = u64;
 
+#[derive(Debug)]
+pub struct QuicP2pError;
+
 /// Builder for `QuickP2p`.
 pub struct Builder {
     event_tx: Sender<Event>,
@@ -52,7 +55,7 @@ impl Builder {
     }
 
     /// Construct `QuicP2p` with supplied parameters earlier, ready to be used.
-    pub fn build(self) -> Result<QuicP2p, Error> {
+    pub fn build(self) -> Result<QuicP2p, QuicP2pError> {
         Ok(QuicP2p::new(
             self.event_tx,
             self.config.unwrap_or_else(Config::default),
@@ -98,12 +101,12 @@ impl QuicP2p {
     }
 
     /// Get our connection info to give to others for them to connect to us
-    pub fn our_connection_info(&mut self) -> Result<NodeInfo, Error> {
+    pub fn our_connection_info(&mut self) -> Result<NodeInfo, QuicP2pError> {
         self.inner.borrow().our_connection_info()
     }
 
     /// Retrieves current node bootstrap cache.
-    pub fn bootstrap_cache(&mut self) -> Result<Vec<NodeInfo>, Error> {
+    pub fn bootstrap_cache(&mut self) -> Result<Vec<NodeInfo>, QuicP2pError> {
         Ok(self.inner.borrow().bootstrap_cache())
     }
 
@@ -244,7 +247,7 @@ pub enum Event {
         /// Address of the peer we attempted connecting to.
         peer_addr: SocketAddr,
         /// Error explaining connection failure.
-        err: Error,
+        err: QuicP2pError,
     },
     /// Message sent by us but not delivered due to connection drop.
     UnsentUserMessage {
@@ -343,7 +346,3 @@ impl From<SocketAddr> for NodeInfo {
         }
     }
 }
-
-/// `QuicP2p` error.
-#[derive(Debug)]
-pub struct Error;

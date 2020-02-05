@@ -13,7 +13,7 @@ pub use self::q_conn::QConn;
 pub use self::to_peer::ToPeer;
 
 use crate::context::ctx_mut;
-use crate::error::Error;
+use crate::error::QuicP2pError;
 use crate::event::Event;
 use crossbeam_channel as mpmc;
 use futures::future::FutureExt;
@@ -80,7 +80,7 @@ impl Drop for Connection {
             // that point there might be no one listening so sender will error out
             let _ = self.event_tx.send(Event::ConnectionFailure {
                 peer_addr: self.peer_addr,
-                err: Error::ConnectionCancelled,
+                err: QuicP2pError::ConnectionCancelled,
             });
         }
     }

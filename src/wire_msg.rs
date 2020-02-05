@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{error::Error, utils, R};
+use crate::{error::QuicP2pError, utils, R};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::net::SocketAddr;
@@ -43,7 +43,7 @@ impl WireMsg {
         match msg_flag {
             Some(flag) if flag == USER_MSG_FLAG => Ok(WireMsg::UserMsg(From::from(raw))),
             Some(flag) if flag == !USER_MSG_FLAG => Ok(bincode::deserialize(&raw)?),
-            _x => Err(Error::InvalidWireMsgFlag),
+            _x => Err(QuicP2pError::InvalidWireMsgFlag),
         }
     }
 }
