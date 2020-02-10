@@ -12,13 +12,15 @@
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
 use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
-use rand::{self, RngCore};
+use rand::{distributions::Standard, Rng};
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
-use serde_json;
-use std::sync::{Arc, Mutex};
-use std::thread::{self, JoinHandle};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    thread::{self, JoinHandle},
+};
 use structopt::StructOpt;
 use unwrap::unwrap;
 
@@ -31,10 +33,8 @@ impl PeerList {
         Self { peers: Vec::new() }
     }
 
-    fn insert_from_json(&mut self, peer_json: &str) -> Result<(), &str> {
-        serde_json::from_str(peer_json)
-            .map(|v| self.insert(v))
-            .map_err(|_| "Error parsing JSON")
+    fn insert_from_str(&mut self, input: &str) -> Result<(), &str> {
+        parse_peer(input).map(|v| self.insert(v))
     }
 
     fn insert(&mut self, peer: Peer) {
@@ -57,7 +57,10 @@ impl PeerList {
 
     fn list(&self) {
         for (idx, peer) in self.peers.iter().enumerate() {
-            println!("{:3}: {}", idx, peer.peer_addr());
+            match peer {
+                Peer::Client(addr) => println!("{:3}: client:{}", idx, addr),
+                Peer::Node(addr) => println!("{:3}: node:{}", idx, addr),
+            }
         }
     }
 }
@@ -99,9 +102,7 @@ fn main() {
                         print_ourinfo(&mut qp2p);
                         Ok(())
                     }
-                    "addpeer" => peerlist
-                        .insert_from_json(&args.collect::<Vec<_>>().join(" "))
-                        .and(Ok(())),
+                    "addpeer" => peerlist.insert_from_str(&args.collect::<Vec<_>>().join(" ")),
                     "listpeers" => {
                         peerlist.list();
                         Ok(())
@@ -203,9 +204,25 @@ fn handle_qp2p_events(
     })
 }
 
+fn parse_peer(input: &str) -> Result<Peer, &'static str> {
+    if input.starts_with("client:") {
+        return Ok(Peer::Client(parse_socket_addr(&input[7..])?));
+    }
+
+    if input.starts_with("node:") {
+        return Ok(Peer::Node(parse_socket_addr(&input[5..])?));
+    }
+
+    Err("Invalid peer (valid examples: \"client:1.2.3.4:5678\", \"node:8.7.6.5:4321\", ...)")
+}
+
+fn parse_socket_addr(input: &str) -> Result<SocketAddr, &'static str> {
+    input.parse().map_err(|_| "Invalid socket address")
+}
+
 fn print_ourinfo(qp2p: &mut QuicP2p) {
-    let ourinfo: Peer = match qp2p.our_connection_info() {
-        Ok(addr) => Peer::Node(addr),
+    let ourinfo = match qp2p.our_connection_info() {
+        Ok(addr) => addr,
         Err(e) => {
             println!("Error getting ourinfo: {}", e);
             return;
@@ -230,10 +247,9 @@ fn print_logo() {
     );
 }
 
-#[allow(unsafe_code)]
 fn random_vec(size: usize) -> Vec<u8> {
-    let mut ret = Vec::with_capacity(size);
-    unsafe { ret.set_len(size) };
-    rand::thread_rng().fill_bytes(&mut ret[..]);
-    ret
+    rand::thread_rng()
+        .sample_iter(&Standard)
+        .take(size)
+        .collect()
 }

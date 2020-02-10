@@ -25,7 +25,7 @@ use crossbeam_channel as mpmc;
 use env_logger;
 use log::{debug, error, info, warn};
 use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
-use rand::{self, seq::IteratorRandom, RngCore};
+use rand::{self, distributions::Standard, seq::IteratorRandom, Rng};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use structopt::StructOpt;
@@ -225,10 +225,9 @@ fn hash_correct(data: &[u8]) -> bool {
     encoded_hash == actual_hash
 }
 
-#[allow(unsafe_code)]
 fn random_vec(size: usize) -> Vec<u8> {
-    let mut ret = Vec::with_capacity(size);
-    unsafe { ret.set_len(size) };
-    rand::thread_rng().fill_bytes(&mut ret[..]);
-    ret
+    rand::thread_rng()
+        .sample_iter(&Standard)
+        .take(size)
+        .collect()
 }
