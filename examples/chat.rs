@@ -9,8 +9,10 @@
 
 //! Basic chat like example that demonstrates how to connect with peers and exchange data.
 
+mod common;
+
 use bytes::Bytes;
-use crossbeam_channel as mpmc;
+use common::{new_unbounded_channels, EventReceivers};
 use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
 use rand::{distributions::Standard, Rng};
 use rustyline::config::Configurer;
@@ -75,7 +77,7 @@ struct CliArgs {
 
 fn main() {
     let CliArgs { quic_p2p_opts } = CliArgs::from_args();
-    let (ev_tx, ev_rx) = mpmc::unbounded();
+    let (ev_tx, ev_rx) = new_unbounded_channels();
 
     let mut qp2p = unwrap!(Builder::new(ev_tx).with_config(quic_p2p_opts).build());
 
@@ -179,10 +181,7 @@ fn on_cmd_send_rand<'a>(
         })
 }
 
-fn handle_qp2p_events(
-    event_rx: mpmc::Receiver<Event>,
-    peer_list: Arc<Mutex<PeerList>>,
-) -> JoinHandle<()> {
+fn handle_qp2p_events(event_rx: EventReceivers, peer_list: Arc<Mutex<PeerList>>) -> JoinHandle<()> {
     thread::spawn(move || {
         for event in event_rx.iter() {
             match event {

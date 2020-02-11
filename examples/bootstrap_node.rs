@@ -20,8 +20,7 @@
 mod common;
 use bincode;
 use bytes::Bytes;
-use common::Rpc;
-use crossbeam_channel as mpmc;
+use common::{new_unbounded_channels, Rpc};
 use env_logger;
 use log::{error, info, warn};
 use quic_p2p::{Builder, Config, Event, Peer};
@@ -49,7 +48,7 @@ fn main() -> Result<(), io::Error> {
     let bootstrap_node_config = BootstrapNodeConfig::from_args();
 
     // Initialise QuicP2p
-    let (ev_tx, ev_rx) = mpmc::unbounded();
+    let (ev_tx, ev_rx) = new_unbounded_channels();
 
     let mut qp2p = unwrap!(Builder::new(ev_tx)
         .with_config(bootstrap_node_config.quic_p2p_opts)

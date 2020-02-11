@@ -98,9 +98,18 @@ pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
 /// before using a random port.
 pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 
+/// Senders for node and client events
+pub struct EventSenders {
+    /// The client event sender
+    #[allow(unused)]
+    pub client_tx: mpmc::Sender<Event>,
+    /// The node event sender
+    pub node_tx: mpmc::Sender<Event>,
+}
+
 /// Builder for `QuicP2p`. Convenient for setting various parameters and creating `QuicP2p`.
 pub struct Builder {
-    event_tx: mpmc::Sender<Event>,
+    event_tx: EventSenders,
     cfg: Option<Config>,
     bootstrap_nodes: VecDeque<SocketAddr>,
     use_bootstrap_nodes_exclusively: bool,
@@ -108,7 +117,7 @@ pub struct Builder {
 
 impl Builder {
     /// New `Builder`
-    pub fn new(event_tx: mpmc::Sender<Event>) -> Self {
+    pub fn new(event_tx: EventSenders) -> Self {
         Self {
             event_tx,
             cfg: Default::default(),
@@ -148,9 +157,9 @@ impl Builder {
     /// Construct `QuicP2p` with supplied parameters earlier, ready to be used.
     pub fn build(self) -> R<QuicP2p> {
         let mut qp2p = if let Some(cfg) = self.cfg {
-            QuicP2p::with_config(self.event_tx, cfg)
+            QuicP2p::with_config(self.event_tx.node_tx, cfg)
         } else {
-            QuicP2p::new(self.event_tx)?
+            QuicP2p::new(self.event_tx.node_tx)?
         };
 
         qp2p.activate()?;
@@ -467,12 +476,12 @@ mod tests {
     use std::collections::HashSet;
     use std::iter;
     use std::time::Duration;
-    use test_utils::{new_random_qp2p, rand_node_addr};
+    use test_utils::{new_random_qp2p, new_unbounded_channels, rand_node_addr};
 
     #[ignore] // This fails on fast machines FIXME
     #[test]
     fn dropping_qp2p_handle_gracefully_shutsdown_event_loop() {
-        let (tx, _rx) = mpmc::unbounded();
+        let (tx, _rx) = new_unbounded_channels();
         let _qp2p = unwrap!(Builder::new(tx).build());
     }
 
@@ -682,7 +691,7 @@ mod tests {
         let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
         let qp2p0_addr = unwrap!(qp2p0.our_connection_info());
 
-        let (tx1, rx1) = mpmc::unbounded();
+        let (tx1, rx1) = new_unbounded_channels();
         let mut malicious_client = unwrap!(Builder::new(tx1)
             .with_config(Config {
                 our_type: OurType::Node,
@@ -744,7 +753,7 @@ mod tests {
         let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
         let qp2p0_addr = unwrap!(qp2p0.our_connection_info());
 
-        let (tx1, _rx1) = mpmc::unbounded();
+        let (tx1, _rx1) = new_unbounded_channels();
         let mut malicious_client = unwrap!(Builder::new(tx1)
             .with_config(Config {
                 our_type: OurType::Client,
