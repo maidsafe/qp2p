@@ -754,9 +754,7 @@ mod tests {
             .build());
         malicious_client.send_wire_msg(
             Peer::Node(qp2p0_addr),
-            WireMsg::Handshake(Handshake::Node {
-                cert_der: Bytes::new(),
-            }),
+            WireMsg::Handshake(Handshake::Node),
             0,
         );
 

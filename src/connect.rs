@@ -163,9 +163,7 @@ fn handle_new_connection_res(
                 communicate::write_to_peer_connection(
                     Peer::Node(peer_addr),
                     &q_conn,
-                    WireMsg::Handshake(Handshake::Node {
-                        cert_der: c.our_complete_cert.cert_der.clone(),
-                    }),
+                    WireMsg::Handshake(Handshake::Node),
                     0,
                 );
             }
