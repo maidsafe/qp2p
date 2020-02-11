@@ -13,8 +13,8 @@ use crate::{
     peer::Peer,
     utils::{ConnectTerminator, Token},
     wire_msg::WireMsg,
+    EventSenders,
 };
-use crossbeam_channel as mpmc;
 use std::{fmt, net::SocketAddr};
 
 /// Represent various stages of connection from us to the peer.
@@ -25,7 +25,7 @@ pub enum ToPeer {
         terminator: ConnectTerminator,
         peer_addr: SocketAddr,
         pending_sends: Vec<(WireMsg, Token)>,
-        event_tx: mpmc::Sender<Event>,
+        event_tx: EventSenders,
     },
     Established {
         q_conn: QConn,

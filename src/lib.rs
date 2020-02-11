@@ -99,12 +99,19 @@ pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
 pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 
 /// Senders for node and client events
+#[derive(Clone)]
 pub struct EventSenders {
     /// The client event sender
     #[allow(unused)]
     pub client_tx: mpmc::Sender<Event>,
     /// The node event sender
     pub node_tx: mpmc::Sender<Event>,
+}
+
+impl EventSenders {
+    pub(crate) fn send(&self, event: Event) -> Result<(), mpmc::SendError<Event>> {
+        self.node_tx.send(event)
+    }
 }
 
 /// Builder for `QuicP2p`. Convenient for setting various parameters and creating `QuicP2p`.
@@ -157,9 +164,9 @@ impl Builder {
     /// Construct `QuicP2p` with supplied parameters earlier, ready to be used.
     pub fn build(self) -> R<QuicP2p> {
         let mut qp2p = if let Some(cfg) = self.cfg {
-            QuicP2p::with_config(self.event_tx.node_tx, cfg)
+            QuicP2p::with_config(self.event_tx, cfg)
         } else {
-            QuicP2p::new(self.event_tx.node_tx)?
+            QuicP2p::new(self.event_tx)?
         };
 
         qp2p.activate()?;
@@ -185,7 +192,7 @@ impl Builder {
 
 /// Main QuicP2p instance to communicate with QuicP2p
 pub struct QuicP2p {
-    event_tx: mpmc::Sender<Event>,
+    event_tx: EventSenders,
     cfg: Config,
     us: Option<SocketAddr>,
     el: EventLoop,
@@ -320,14 +327,14 @@ impl QuicP2p {
         self.cfg.clone()
     }
 
-    fn new(event_tx: mpmc::Sender<Event>) -> R<Self> {
+    fn new(event_tx: EventSenders) -> R<Self> {
         Ok(Self::with_config(
             event_tx,
             Config::read_or_construct_default(None)?,
         ))
     }
 
-    fn with_config(event_tx: mpmc::Sender<Event>, cfg: Config) -> Self {
+    fn with_config(event_tx: EventSenders, cfg: Config) -> Self {
         let el = EventLoop::spawn();
         Self {
             event_tx,

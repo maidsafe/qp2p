@@ -17,7 +17,7 @@
 use crate::context::ctx_mut;
 use crate::event::Event;
 use crate::utils::ConnectTerminator;
-use crossbeam_channel as mpmc;
+use crate::EventSenders;
 use log::info;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -35,7 +35,7 @@ pub struct BootstrapGroupMaker {
 
 impl BootstrapGroupMaker {
     /// Create a handle that refers to a newly created underlying group.
-    pub fn new(event_tx: mpmc::Sender<Event>) -> Self {
+    pub fn new(event_tx: EventSenders) -> Self {
         Self {
             group: Rc::new(RefCell::new(BootstrapGroup {
                 is_bootstrap_successful_yet: false,
@@ -118,13 +118,13 @@ impl Drop for BootstrapGroupRef {
 struct BootstrapGroup {
     is_bootstrap_successful_yet: bool,
     terminators: HashMap<SocketAddr, ConnectTerminator>,
-    event_tx: mpmc::Sender<Event>,
+    event_tx: EventSenders,
 }
 
 impl Drop for BootstrapGroup {
     fn drop(&mut self) {
         if !self.is_bootstrap_successful_yet {
-            if let Err(e) = self.event_tx.send(Event::BootstrapFailure) {
+            if let Err(e) = self.event_tx.node_tx.send(Event::BootstrapFailure) {
                 info!("Failed informing about bootstrap failure: {:?}", e);
             }
         }
