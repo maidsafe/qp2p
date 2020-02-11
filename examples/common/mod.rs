@@ -27,12 +27,48 @@ pub struct EventReceivers {
 impl EventReceivers {
     #[allow(unused)]
     pub fn recv(&self) -> Result<Event, mpmc::RecvError> {
-        self.node_rx.recv()
+        let mut sel = mpmc::Select::new();
+        let client_idx = sel.recv(&self.client_rx);
+        let node_idx = sel.recv(&self.node_rx);
+        let selected_operation = sel.ready();
+
+        if selected_operation == client_idx {
+            self.client_rx.recv()
+        } else if selected_operation == node_idx {
+            self.node_rx.recv()
+        } else {
+            panic!("invalid operation");
+        }
     }
 
     #[allow(unused)]
-    pub fn iter(&self) -> mpmc::Iter<Event> {
-        self.node_rx.iter()
+    pub fn iter(&self) -> IterEvent {
+        IterEvent { event_rx: &self }
+    }
+}
+
+pub struct IterEvent<'a> {
+    event_rx: &'a EventReceivers,
+}
+
+impl<'a> Iterator for IterEvent<'a> {
+    type Item = Event;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut sel = mpmc::Select::new();
+        let client_idx = sel.recv(&self.event_rx.client_rx);
+        let node_idx = sel.recv(&self.event_rx.node_rx);
+        let selected_operation = sel.ready();
+
+        let event = if selected_operation == client_idx {
+            self.event_rx.client_rx.recv()
+        } else if selected_operation == node_idx {
+            self.event_rx.node_rx.recv()
+        } else {
+            return None;
+        };
+
+        event.ok()
     }
 }
 
