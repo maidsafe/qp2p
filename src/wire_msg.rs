@@ -72,9 +72,8 @@ impl fmt::Display for WireMsg {
 /// Depending on the handshake we will categorise the peer and give this information to the user.
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Handshake {
-    /// The connecting peer is a node. Certificate is needed for allowing connection back to the
-    /// peer
-    Node { cert_der: Bytes },
+    /// The connecting peer is a node.
+    Node,
     /// The connecting peer is a client. No need for a reverse connection.
     Client,
 }
@@ -82,11 +81,7 @@ pub enum Handshake {
 impl fmt::Display for Handshake {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Handshake::Node { ref cert_der } => write!(
-                f,
-                "Handshake::Node {{ cert_der: {} }}",
-                utils::bin_data_format(cert_der)
-            ),
+            Handshake::Node => write!(f, "Handshake::Node",),
             Handshake::Client => write!(f, "Handshake::Client"),
         }
     }

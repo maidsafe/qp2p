@@ -349,8 +349,8 @@ pub fn dispatch_wire_msg(
 }
 
 fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
-    if let Handshake::Node { cert_der } = handshake {
-        return handle_rx_cert(peer_addr, cert_der);
+    if let Handshake::Node = handshake {
+        return handle_rx_handshake_from_node(peer_addr);
     }
 
     // Handshake from a client
@@ -389,7 +389,7 @@ fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
     })
 }
 
-fn handle_rx_cert(peer_addr: SocketAddr, _peer_cert_der: Bytes) {
+fn handle_rx_handshake_from_node(peer_addr: SocketAddr) {
     let reverse_connect_to_peer = ctx_mut(|c| {
         // FIXME: Dropping the connection most probably will not drop the incoming stream
         // and then if you get a message on it you might still end up here without an entry
