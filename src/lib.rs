@@ -102,7 +102,6 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 #[derive(Clone)]
 pub struct EventSenders {
     /// The client event sender
-    #[allow(unused)]
     pub client_tx: mpmc::Sender<Event>,
     /// The node event sender
     pub node_tx: mpmc::Sender<Event>,
@@ -110,7 +109,11 @@ pub struct EventSenders {
 
 impl EventSenders {
     pub(crate) fn send(&self, event: Event) -> Result<(), mpmc::SendError<Event>> {
-        self.node_tx.send(event)
+        if event.is_node_event() {
+            self.node_tx.send(event)
+        } else {
+            self.client_tx.send(event)
+        }
     }
 }
 
