@@ -49,6 +49,11 @@ impl Network {
         self.inner.borrow_mut().gen_addr(None, None)
     }
 
+    /// Simulate time progress to deliver delayed packets.
+    pub fn advance_time(&self) {
+        self.inner.borrow_mut().advance_time()
+    }
+
     /// Poll the network by delivering the queued messages.
     pub fn poll<R: Rng>(&self, rng: &mut R) {
         while let Some((connection, packet)) = self.pop_random_packet(rng) {
@@ -94,16 +99,20 @@ impl Network {
         };
 
         if let Some(packet) = response {
-            self.send(connection.dst, connection.src, packet)
+            if packet.is_failure() {
+                self.inner
+                    .borrow_mut()
+                    .send_delayed(connection.dst, connection.src, packet)
+            } else {
+                self.inner
+                    .borrow_mut()
+                    .send(connection.dst, connection.src, packet)
+            }
         }
     }
 
     fn find_node(&self, addr: &SocketAddr) -> Option<Rc<RefCell<Node>>> {
         self.inner.borrow().find_node(addr)
-    }
-
-    fn send(&self, src: SocketAddr, dst: SocketAddr, packet: Packet) {
-        self.inner.borrow_mut().send(src, dst, packet)
     }
 }
 
@@ -115,7 +124,7 @@ impl Default for Network {
 
 pub(super) struct Inner {
     nodes: FxHashMap<SocketAddr, Weak<RefCell<Node>>>,
-    connections: FxHashMap<Connection, Queue>,
+    connections: FxHashMap<Connection, Queues>,
     used_ips: FxHashSet<IpAddr>,
     message_sent_hook: Option<Box<dyn FnMut(&Bytes)>>,
 }
@@ -158,14 +167,21 @@ impl Inner {
             }
         }
 
-        self.connections
-            .entry(Connection::new(src, dst))
-            .or_insert_with(Queue::new)
-            .push(packet)
+        self.queues_mut(src, dst).main.push(packet)
+    }
+
+    pub fn send_delayed(&mut self, src: SocketAddr, dst: SocketAddr, packet: Packet) {
+        self.queues_mut(src, dst).delayed.push(packet)
     }
 
     pub fn disconnect(&mut self, src: SocketAddr, dst: SocketAddr) {
         self.send(src, dst, Packet::Disconnect);
+    }
+
+    fn advance_time(&mut self) {
+        for queues in self.connections.values_mut() {
+            queues.push_delayed()
+        }
     }
 
     fn find_node(&self, addr: &SocketAddr) -> Option<Rc<RefCell<Node>>> {
@@ -176,7 +192,7 @@ impl Inner {
         let connections: Vec<_> = self
             .connections
             .iter()
-            .filter(|(_, queue)| !queue.is_empty())
+            .filter(|(_, queues)| !queues.main.is_empty())
             .map(|(connection, _)| connection)
             .collect();
 
@@ -193,7 +209,7 @@ impl Inner {
     fn pop_packet<R: Rng>(&mut self, rng: &mut R, connection: Connection) -> Option<Packet> {
         match self.connections.entry(connection) {
             Entry::Occupied(mut entry) => {
-                let packet = entry.get_mut().pop_random_msg(rng);
+                let packet = entry.get_mut().main.pop_random_msg(rng);
                 if entry.get().is_empty() {
                     let _ = entry.remove_entry();
                 }
@@ -207,6 +223,12 @@ impl Inner {
         self.find_node(addr0)
             .map(|node| node.borrow().is_connected(addr1))
             .unwrap_or(false)
+    }
+
+    fn queues_mut(&mut self, src: SocketAddr, dst: SocketAddr) -> &mut Queues {
+        self.connections
+            .entry(Connection::new(src, dst))
+            .or_insert_with(Queues::new)
     }
 }
 
@@ -224,11 +246,42 @@ pub(super) enum Packet {
     Disconnect,
 }
 
+impl Packet {
+    fn is_failure(&self) -> bool {
+        match self {
+            Self::BootstrapFailure | Self::ConnectFailure | Self::MessageFailure(_) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Message {
     pub dst_type: OurType,
     pub content: Bytes,
     pub token: u64,
+}
+
+struct Queues {
+    main: Queue,
+    delayed: Queue,
+}
+
+impl Queues {
+    fn new() -> Self {
+        Self {
+            main: Queue::new(),
+            delayed: Queue::new(),
+        }
+    }
+
+    fn push_delayed(&mut self) {
+        self.main.0.append(&mut self.delayed.0)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.main.is_empty() && self.delayed.is_empty()
+    }
 }
 
 struct Queue(VecDeque<Packet>);

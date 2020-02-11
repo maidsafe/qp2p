@@ -55,6 +55,9 @@ fn bootstrap_to_nonexisting_node() {
     let config = Config::node().with_hard_coded_contacts(iter::once(a_addr));
     let mut b = Agent::with_config(config);
     b.inner.bootstrap();
+
+    network.poll(&mut rng);
+    network.advance_time();
     network.poll(&mut rng);
 
     b.expect_bootstrap_failure();
@@ -264,6 +267,9 @@ fn send_to_disconnecting_node() {
     let msg = gen_message();
     a.send(b.addr(), msg.clone(), 0);
     b.disconnect_from(a.addr());
+
+    network.poll(&mut rng);
+    network.advance_time();
     network.poll(&mut rng);
 
     a.expect_connection_failure(&b.addr());
@@ -281,6 +287,9 @@ fn send_to_nonexisting_node() {
 
     let msg = gen_message();
     a.send(b_addr, msg.clone(), 0);
+
+    network.poll(&mut rng);
+    network.advance_time();
     network.poll(&mut rng);
 
     // Note: the real quick-p2p will only emit `UnsentUserMessage` when a connection to the peer
