@@ -159,7 +159,10 @@ pub(crate) fn test_dirs() -> Dirs {
 
 pub(crate) fn rand_node_addr() -> SocketAddr {
     let mut rng = rand::thread_rng();
-    let port: u16 = rng.gen();
+    make_node_addr(rng.gen())
+}
+
+pub(crate) fn make_node_addr(port: u16) -> SocketAddr {
     SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
 }
 
