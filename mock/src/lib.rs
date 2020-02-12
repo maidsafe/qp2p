@@ -32,15 +32,34 @@ pub type Token = u64;
 #[derive(Debug)]
 pub struct QuicP2pError;
 
+/// Senders for node and client events
+#[derive(Clone)]
+pub struct EventSenders {
+    /// The client event sender
+    pub client_tx: Sender<Event>,
+    /// The node event sender
+    pub node_tx: Sender<Event>,
+}
+
+impl EventSenders {
+    pub(crate) fn send(&self, event: Event) -> Result<(), crossbeam_channel::SendError<Event>> {
+        if event.is_node_event() {
+            self.node_tx.send(event)
+        } else {
+            self.client_tx.send(event)
+        }
+    }
+}
+
 /// Builder for `QuickP2p`.
 pub struct Builder {
-    event_tx: Sender<Event>,
+    event_tx: EventSenders,
     config: Option<Config>,
 }
 
 impl Builder {
     /// New `Builder`
-    pub fn new(event_tx: Sender<Event>) -> Self {
+    pub fn new(event_tx: EventSenders) -> Self {
         Self {
             event_tx,
             config: Default::default(),
@@ -120,7 +139,7 @@ impl QuicP2p {
         self.inner.borrow().config().clone()
     }
 
-    fn new(event_tx: Sender<Event>, config: Config) -> Self {
+    fn new(event_tx: EventSenders, config: Config) -> Self {
         Self {
             inner: Node::new(event_tx, config),
         }
@@ -287,6 +306,21 @@ pub enum Event {
     Finish,
 }
 
+impl Event {
+    pub(crate) fn is_node_event(&self) -> bool {
+        match self {
+            Event::BootstrapFailure => true,
+            Event::BootstrappedTo { .. } => true,
+            Event::ConnectionFailure { peer, .. }
+            | Event::SentUserMessage { peer, .. }
+            | Event::UnsentUserMessage { peer, .. }
+            | Event::ConnectedTo { peer }
+            | Event::NewMessage { peer, .. } => peer.is_node(),
+            Event::Finish => true,
+        }
+    }
+}
+
 /// Information about peer.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Peer {
@@ -310,6 +344,13 @@ impl Peer {
         match *self {
             Self::Node(addr) => addr,
             Self::Client(addr) => addr,
+        }
+    }
+
+    pub(crate) fn is_node(&self) -> bool {
+        match *self {
+            Peer::Node { .. } => false,
+            Peer::Client { .. } => true,
         }
     }
 }
