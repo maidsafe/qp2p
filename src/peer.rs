@@ -29,8 +29,8 @@ impl Peer {
 
     pub(crate) fn is_node(&self) -> bool {
         match *self {
-            Peer::Node { .. } => false,
-            Peer::Client { .. } => true,
+            Peer::Node { .. } => true,
+            Peer::Client { .. } => false,
         }
     }
 }
