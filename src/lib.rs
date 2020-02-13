@@ -101,9 +101,11 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 443;
 /// Senders for node and client events
 #[derive(Clone)]
 pub struct EventSenders {
-    /// The client event sender
+    /// The event sender for events comming from clients.
     pub client_tx: mpmc::Sender<Event>,
-    /// The node event sender
+    /// The event sender for events comming from nodes.
+    /// This also includes our own bootstrapping events `Event::BootstrapFailure`
+    /// and `Event::BootstrappedTo` as well as `Event::Finish`.
     pub node_tx: mpmc::Sender<Event>,
 }
 

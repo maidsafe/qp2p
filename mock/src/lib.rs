@@ -35,9 +35,11 @@ pub struct QuicP2pError;
 /// Senders for node and client events
 #[derive(Clone)]
 pub struct EventSenders {
-    /// The client event sender
+    /// The event sender for events comming from clients.
     pub client_tx: Sender<Event>,
-    /// The node event sender
+    /// The event sender for events comming from nodes.
+    /// This also includes our own bootstrapping events `Event::BootstrapFailure`
+    /// and `Event::BootstrappedTo` as well as `Event::Finish`.
     pub node_tx: Sender<Event>,
 }
 
