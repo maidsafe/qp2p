@@ -8,10 +8,9 @@
 
 use super::{
     network::{Inner, Message, Packet, NETWORK},
-    Config, Event, OurType, Peer, QuicP2pError,
+    Config, Event, EventSenders, OurType, Peer, QuicP2pError,
 };
 use bytes::Bytes;
-use crossbeam_channel::Sender;
 // Note: using `FxHashMap` / `FxHashSet` because they don't use random state and thus guarantee
 // consistent iteration order (necessary for repeatable tests). Can't use `BTreeMap` / `BTreeSet`
 // because we key by `SocketAddr` which doesn't implement `Ord`.
@@ -21,7 +20,7 @@ use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 pub(super) struct Node {
     network: Rc<RefCell<Inner>>,
     addr: SocketAddr,
-    event_tx: Sender<Event>,
+    event_tx: EventSenders,
     config: Config,
     peers: FxHashMap<SocketAddr, (ConnectionType, OurType)>,
     bootstrap_cache: FxHashSet<SocketAddr>,
@@ -30,7 +29,7 @@ pub(super) struct Node {
 }
 
 impl Node {
-    pub fn new(event_tx: Sender<Event>, config: Config) -> Rc<RefCell<Self>> {
+    pub fn new(event_tx: EventSenders, config: Config) -> Rc<RefCell<Self>> {
         let network = NETWORK.with(|network| {
             Rc::clone(
                 network

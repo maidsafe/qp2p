@@ -8,16 +8,15 @@
 // Software.
 
 use crate::bootstrap_cache::BootstrapCache;
-use crate::connect;
 use crate::connection::{Connection, FromPeer, QConn, ToPeer};
 use crate::context::{ctx, ctx_mut};
 use crate::error::QuicP2pError;
 use crate::event::Event;
 use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
+use crate::{connect, EventSenders};
 use crate::{Peer, R};
 use bytes::Bytes;
-use crossbeam_channel as mpmc;
 use futures::future::TryFutureExt;
 use futures::stream::StreamExt;
 use log::{debug, info, trace, warn};
@@ -333,7 +332,7 @@ pub fn dispatch_wire_msg(
     peer: Peer,
     q_conn: &QConn,
     inform_tx: Option<mpsc::Sender<SocketAddr>>,
-    event_tx: &mpmc::Sender<Event>,
+    event_tx: &EventSenders,
     wire_msg: WireMsg,
     bootstrap_cache: &mut BootstrapCache,
     we_contacted_peer: bool,
@@ -435,7 +434,7 @@ fn handle_rx_handshake_from_node(peer_addr: SocketAddr) {
 
 fn handle_user_msg(
     peer: Peer,
-    event_tx: &mpmc::Sender<Event>,
+    event_tx: &EventSenders,
     msg: Bytes,
     bootstrap_cache: &mut BootstrapCache,
     we_contacted_peer: bool,
@@ -471,7 +470,9 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<mpsc::Sender<Soc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{new_random_qp2p, rand_node_addr, test_dirs, write_to_bi_stream};
+    use crate::test_utils::{
+        new_random_qp2p, new_unbounded_channels, rand_node_addr, test_dirs, write_to_bi_stream,
+    };
     use std::collections::HashSet;
     use unwrap::unwrap;
 
@@ -515,7 +516,7 @@ mod tests {
 
         #[test]
         fn when_peer_is_node_and_we_contacted_it_before_it_is_moved_to_bootstrap_cache_top() {
-            let (event_tx, _event_rx) = mpmc::unbounded();
+            let (event_tx, _event_rx) = new_unbounded_channels();
             let peer1_addr = rand_node_addr();
             let peer2_addr = rand_node_addr();
             let peer = Peer::Node(peer1_addr);

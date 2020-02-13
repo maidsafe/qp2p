@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use super::{Builder, Config, Event, Network, OurType, Peer, QuicP2p};
+use super::{Builder, Config, Event, EventSenders, Network, OurType, Peer, QuicP2p};
 use bytes::Bytes;
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
 use fxhash::FxHashSet;
@@ -26,6 +26,28 @@ macro_rules! assert_match {
     ($e:expr, $p:pat) => {
         assert_match!($e, $p => ())
     };
+}
+
+struct EventReceivers {
+    pub node_rx: Receiver<Event>,
+    pub client_rx: Receiver<Event>,
+}
+
+impl EventReceivers {
+    pub fn try_recv(&self) -> Result<Event, mpmc::TryRecvError> {
+        self.node_rx
+            .try_recv()
+            .or_else(|_| self.client_rx.try_recv())
+    }
+}
+
+fn new_unbounded_channels() -> (EventSenders, EventReceivers) {
+    let (client_tx, client_rx) = mpmc::unbounded();
+    let (node_tx, node_rx) = mpmc::unbounded();
+    (
+        EventSenders { node_tx, client_tx },
+        EventReceivers { node_rx, client_rx },
+    )
 }
 
 #[test]
@@ -337,7 +359,7 @@ fn send_multiple_messages_without_connecting_first() {
 fn our_connection_info_of_node() {
     let network = Network::new();
 
-    let (tx, _) = mpmc::unbounded();
+    let (tx, _) = new_unbounded_channels();
 
     let addr = network.gen_addr();
     let config = Config {
@@ -355,7 +377,7 @@ fn our_connection_info_of_node() {
 fn our_connection_info_of_client() {
     let _network = Network::new();
 
-    let (tx, _) = mpmc::unbounded();
+    let (tx, _) = new_unbounded_channels();
     let mut client = unwrap!(Builder::new(tx).with_config(Config::client()).build());
 
     assert!(client.our_connection_info().is_err())
@@ -401,7 +423,7 @@ fn drop_disconnects() {
 
 struct Agent {
     inner: QuicP2p,
-    rx: Receiver<Event>,
+    rx: EventReceivers,
 }
 
 impl Agent {
@@ -416,7 +438,7 @@ impl Agent {
     }
 
     fn with_config(config: Config) -> Self {
-        let (tx, rx) = mpmc::unbounded();
+        let (tx, rx) = new_unbounded_channels();
         let inner = unwrap!(Builder::new(tx).with_config(config).build());
 
         Self { inner, rx }

@@ -15,7 +15,7 @@ use crate::dirs::{Dirs, OverRide};
 use crate::event::Event;
 use crate::utils::{Token, R};
 use crate::wire_msg::WireMsg;
-use crate::{communicate, Builder, Peer, QuicP2p};
+use crate::{communicate, Builder, EventSenders, Peer, QuicP2p};
 use crossbeam_channel as mpmc;
 use futures::future::Future;
 use rand::Rng;
@@ -173,12 +173,78 @@ fn tmp_rand_dir() -> PathBuf {
     path
 }
 
+pub(crate) struct EventReceivers {
+    pub node_rx: mpmc::Receiver<Event>,
+    pub client_rx: mpmc::Receiver<Event>,
+}
+
+impl EventReceivers {
+    pub fn recv(&self) -> Result<Event, mpmc::RecvError> {
+        let mut sel = mpmc::Select::new();
+        let client_idx = sel.recv(&self.client_rx);
+        let node_idx = sel.recv(&self.node_rx);
+        let selected_operation = sel.ready();
+
+        if selected_operation == client_idx {
+            self.client_rx.recv()
+        } else if selected_operation == node_idx {
+            self.node_rx.recv()
+        } else {
+            panic!("invalid operation");
+        }
+    }
+
+    pub fn try_recv(&self) -> Result<Event, mpmc::TryRecvError> {
+        self.node_rx
+            .try_recv()
+            .or_else(|_| self.client_rx.try_recv())
+    }
+
+    pub fn iter(&self) -> IterEvent {
+        IterEvent { event_rx: &self }
+    }
+}
+
+pub struct IterEvent<'a> {
+    event_rx: &'a EventReceivers,
+}
+
+impl<'a> Iterator for IterEvent<'a> {
+    type Item = Event;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut sel = mpmc::Select::new();
+        let client_idx = sel.recv(&self.event_rx.client_rx);
+        let node_idx = sel.recv(&self.event_rx.node_rx);
+        let selected_operation = sel.ready();
+
+        let event = if selected_operation == client_idx {
+            self.event_rx.client_rx.recv()
+        } else if selected_operation == node_idx {
+            self.event_rx.node_rx.recv()
+        } else {
+            return None;
+        };
+
+        event.ok()
+    }
+}
+
+pub(crate) fn new_unbounded_channels() -> (EventSenders, EventReceivers) {
+    let (client_tx, client_rx) = mpmc::unbounded();
+    let (node_tx, node_rx) = mpmc::unbounded();
+    (
+        EventSenders { node_tx, client_tx },
+        EventReceivers { node_rx, client_rx },
+    )
+}
+
 /// Creates a new `QuicP2p` instance for testing.
 pub(crate) fn new_random_qp2p(
     is_addr_unspecified: bool,
     contacts: HashSet<SocketAddr>,
-) -> (QuicP2p, mpmc::Receiver<Event>) {
-    let (tx, rx) = mpmc::unbounded();
+) -> (QuicP2p, EventReceivers) {
+    let (tx, rx) = new_unbounded_channels();
     let qp2p = {
         let mut cfg = Config::with_default_cert();
         cfg.hard_coded_contacts = contacts;

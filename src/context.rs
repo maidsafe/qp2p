@@ -10,8 +10,7 @@
 use crate::bootstrap_cache::BootstrapCache;
 use crate::config::{OurType, SerialisableCertificate};
 use crate::connection::Connection;
-use crate::event::Event;
-use crossbeam_channel as mpmc;
+use crate::EventSenders;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -78,7 +77,7 @@ where
 /// The context to the event loop. This holds all the states that are necessary to be persistant
 /// between calls to poll the event loop for the next event.
 pub struct Context {
-    pub event_tx: mpmc::Sender<Event>,
+    pub event_tx: EventSenders,
     pub connections: HashMap<SocketAddr, Connection>,
     pub our_ext_addr_tx: Option<mpsc::Sender<SocketAddr>>,
     pub our_complete_cert: SerialisableCertificate,
@@ -92,7 +91,7 @@ pub struct Context {
 impl Context {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        event_tx: mpmc::Sender<Event>,
+        event_tx: EventSenders,
         our_complete_cert: SerialisableCertificate,
         max_msg_size_allowed: usize,
         our_type: OurType,

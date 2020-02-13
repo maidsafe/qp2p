@@ -19,9 +19,8 @@
 mod common;
 
 use bytes::Bytes;
-use common::Rpc;
+use common::{new_unbounded_channels, EventReceivers, Rpc};
 use crc::crc32;
-use crossbeam_channel as mpmc;
 use env_logger;
 use log::{debug, error, info, warn};
 use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
@@ -43,7 +42,7 @@ struct CliArgs {
 struct ClientNode {
     qp2p: QuicP2p,
     bootstrap_node_addr: SocketAddr,
-    event_rx: mpmc::Receiver<Event>,
+    event_rx: EventReceivers,
     /// Other nodes we will be communicating with.
     client_nodes: HashSet<SocketAddr>,
     our_addr: SocketAddr,
@@ -80,7 +79,7 @@ impl ClientNode {
             .choose(&mut rand::thread_rng())
             .ok_or_else(|| "No valid bootstrap node was provided.".to_string())?;
 
-        let (event_tx, event_rx) = mpmc::unbounded();
+        let (event_tx, event_rx) = new_unbounded_channels();
         let mut qp2p = unwrap!(Builder::new(event_tx).with_config(config).build());
 
         let large_msg = Bytes::from(random_data_with_hash(LARGE_MSG_SIZE));
