@@ -79,8 +79,11 @@ impl EventLoop {
                     }
                 };
 
-                let mut runtime =
-                    tokio::runtime::Runtime::new().expect("Cannot start Tokio runtime, aborting");
+                let mut runtime = tokio::runtime::Builder::new()
+                    .enable_all()
+                    .basic_scheduler()
+                    .build()
+                    .expect("Cannot start Tokio runtime, aborting");
                 runtime.block_on(event_loop_future);
 
                 debug!("Exiting QuicP2p Event Loop");
