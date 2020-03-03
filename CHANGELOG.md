@@ -1,5 +1,22 @@
 # quic-p2p - Change Log
 
+## [0.4.0]
+- Force the use of the basic single-threaded Tokio scheduler to prevent conflicts when used by a crate using Tokio `rt-threaded` feature
+- Take two channels, one for client event and a second one for a node
+- Use node or client channel for sending a message depending on the peer we are receiving the message from
+- Remove the use of peer certificate, and therefore remove it from the handshake process
+- Use shared QUIC `ClientConfig` instead of one per peer
+- Update for Rust 1.41 (mem::replace -> mem::take)
+- Use structopt to parse command line arguments
+- Rename `proxies` to `bootstrap_nodes`
+- Migrate to async/await syntax with new quinn v0.5
+- Update CI to run all packages in the worspace
+- Migrate CI/CD pipeline to GitHub Actions
+- Use new new-style macro import
+- Unsent user messages in the pending queues of an ongoing connection attempt will now be sent back to the user library if the connection attempt fails.
+- Report connection failure for all cases where the connection was initiated by us. Previously some of the cases where not handled.
+- Fire unsent user messages to the clients back to the user library. Previously unsent messages to clients were silently ignored.
+
 ## [0.3.0]
 - Expose `Dirs` and `OverRide` structs publicly.
 - Add `boostrap_cache_dir` field to the config to specify a custom path for the bootstrap cache.
