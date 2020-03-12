@@ -57,10 +57,6 @@ pub struct Config {
     /// The interval is in milliseconds. A value of 0 disables this feature.
     #[structopt(long)]
     pub keep_alive_interval_msec: Option<u32>,
-    /// Our TLS Certificate. If passed as a command line argument, it should be encoded in base64
-    /// (see `SerialisableCertificate::to_string`).
-    #[structopt(long, parse(try_from_str))]
-    pub our_complete_cert: Option<SerialisableCertificate>,
     /// Directory in which the bootstrap cache will be stored. If none is supplied, the platform specific
     /// default cache directory is used.
     #[structopt(long)]
@@ -87,20 +83,10 @@ impl Config {
                 .map_err(QuicP2pError::Io)?;
             fs::create_dir_all(&config_dir)?;
 
-            let cfg = Config::with_default_cert();
+            let cfg = Config::default();
             utils::write_to_disk(&config_path, &cfg)?;
 
             Ok(cfg)
-        }
-    }
-
-    /// Create a default Config with random Certificate
-    pub fn with_default_cert() -> Config {
-        trace!("Constructing default Config");
-
-        Self {
-            our_complete_cert: Some(Default::default()),
-            ..Self::default()
         }
     }
 }
@@ -108,7 +94,7 @@ impl Config {
 /// To be used to read and write our certificate and private key to disk esp. as a part of our
 /// configuration file
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
-pub struct SerialisableCertificate {
+pub(crate) struct SerialisableCertificate {
     /// DER encoded certificate
     pub cert_der: Bytes,
     /// DER encoded private key

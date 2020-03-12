@@ -25,11 +25,11 @@ particular the Cloudflare blog posts (10 minute read).
 
 ### Encryption of connections
 
-QUIC proved connection security via the use of TLS 1.3. This library allows 3 different connection types with regard to encryption and validation.
+QUIC proved connection security via the use of TLS 1.3. This library will allow 3 different connection types with regard to encryption and validation.
 
 1. Require peers have certificates from an agreed certificate authority.
 1. Allow use of a private certificate authority.
-1. Allow no identity validation of peers, but do encrypt connections.
+1. Allow no identity validation of peers, but do encrypt connections. (currently implemented)
 
 This should satisfy the requirements of many P2P networks, whether they trust any clearnet certificate authority (which may be a centralised attack source) or whether they pass the identity management up to a different layer to validate identities and simply use quic-p2p as a secured network in terms of encrypted connections.
 

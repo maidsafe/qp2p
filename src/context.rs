@@ -8,7 +8,7 @@
 // Software.
 
 use crate::bootstrap_cache::BootstrapCache;
-use crate::config::{OurType, SerialisableCertificate};
+use crate::config::OurType;
 use crate::connection::Connection;
 use crate::EventSenders;
 use std::cell::RefCell;
@@ -80,7 +80,6 @@ pub struct Context {
     pub event_tx: EventSenders,
     pub connections: HashMap<SocketAddr, Connection>,
     pub our_ext_addr_tx: Option<mpsc::Sender<SocketAddr>>,
-    pub our_complete_cert: SerialisableCertificate,
     pub max_msg_size_allowed: usize,
     pub our_type: OurType,
     pub bootstrap_cache: BootstrapCache,
@@ -92,7 +91,6 @@ impl Context {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         event_tx: EventSenders,
-        our_complete_cert: SerialisableCertificate,
         max_msg_size_allowed: usize,
         our_type: OurType,
         bootstrap_cache: BootstrapCache,
@@ -103,7 +101,6 @@ impl Context {
             event_tx,
             connections: Default::default(),
             our_ext_addr_tx: Default::default(),
-            our_complete_cert,
             max_msg_size_allowed,
             our_type,
             bootstrap_cache,

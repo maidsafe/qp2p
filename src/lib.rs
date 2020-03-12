@@ -50,7 +50,7 @@
     unused_results
 )]
 
-pub use config::{Config, OurType, SerialisableCertificate};
+pub use config::{Config, OurType};
 pub use dirs::{Dirs, OverRide};
 pub use error::QuicP2pError;
 pub use event::Event;
@@ -58,6 +58,7 @@ pub use peer::Peer;
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
 pub use utils::{Token, R};
 
+use crate::config::SerialisableCertificate;
 use crate::wire_msg::WireMsg;
 use bootstrap_cache::BootstrapCache;
 use bytes::Bytes;
@@ -378,16 +379,9 @@ impl QuicP2p {
 
         let tx = self.event_tx.clone();
 
-        let ((key, cert), our_complete_cert) = {
-            let our_complete_cert = self
-                .cfg
-                .our_complete_cert
-                .clone()
-                .unwrap_or_else(Default::default);
-            (
-                our_complete_cert.obtain_priv_key_and_cert()?,
-                our_complete_cert,
-            )
+        let (key, cert) = {
+            let our_complete_cert: SerialisableCertificate = Default::default();
+            our_complete_cert.obtain_priv_key_and_cert()?
         };
         let custom_dirs = self
             .cfg
@@ -431,7 +425,6 @@ impl QuicP2p {
 
             let ctx = Context::new(
                 tx,
-                our_complete_cert,
                 max_msg_size_allowed,
                 our_type,
                 bootstrap_cache,
