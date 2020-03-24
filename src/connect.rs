@@ -17,10 +17,7 @@ use crate::event::Event;
 use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
 use crate::{communicate, Peer, R};
-use futures::{
-    future::{FutureExt, TryFutureExt},
-    select,
-};
+use futures::{future::FutureExt, select};
 use log::{debug, info, trace};
 use std::mem;
 use std::net::SocketAddr;
@@ -112,17 +109,15 @@ fn handle_new_connection_res(
     peer_addr: SocketAddr,
     new_peer_conn_res: Result<quinn::NewConnection, quinn::ConnectionError>,
 ) {
-    let (driver, q_conn, uni_streams, bi_streams) = match new_peer_conn_res {
+    let (q_conn, uni_streams, bi_streams) = match new_peer_conn_res {
         Ok(quinn::NewConnection {
-            driver,
             connection,
             uni_streams,
             bi_streams,
             ..
-        }) => (driver, QConn::from(connection), uni_streams, bi_streams),
+        }) => (QConn::from(connection), uni_streams, bi_streams),
         Err(e) => return handle_connect_err(peer_addr, &From::from(e)),
     };
-    let _ = tokio::spawn(driver.map_err(move |e| handle_connect_err(peer_addr, &From::from(e))));
 
     trace!("Successfully connected to peer: {}", peer_addr);
 

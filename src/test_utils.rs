@@ -84,7 +84,6 @@ impl<'a> EndpointWrap<'a> {
         test_ctx_mut(|ctx| ctx.attempted_connections.push(addr.clone()));
 
         let connecting_res = self.0.connect_with(config, addr, server_name)?;
-
         let delay_ms = test_ctx(|ctx| ctx.connect_delay);
         Ok(async move {
             if delay_ms > 0 {

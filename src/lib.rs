@@ -64,7 +64,6 @@ use bytes::Bytes;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use crossbeam_channel as mpmc;
 use event_loop::EventLoop;
-use futures::future::TryFutureExt;
 use log::{debug, info, warn};
 use std::collections::VecDeque;
 use std::mem;
@@ -406,7 +405,7 @@ impl QuicP2p {
 
             let mut ep_builder = quinn::Endpoint::builder();
             let _ = ep_builder.listen(our_cfg);
-            let (dr, ep, incoming_connections) = {
+            let (ep, incoming_connections) = {
                 match UdpSocket::bind(&(ip, port)) {
                     Ok(udp) => unwrap!(ep_builder.with_socket(udp)),
                     Err(e) => {
@@ -427,7 +426,7 @@ impl QuicP2p {
             };
 
             let client_cfg =
-                peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
+                peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec).unwrap();
 
             let ctx = Context::new(
                 tx,
@@ -439,8 +438,6 @@ impl QuicP2p {
                 client_cfg,
             );
             initialise_ctx(ctx);
-
-            let _ = tokio::spawn(dr.map_err(|e| warn!("Error in quinn Driver: {:?}", e)));
 
             if our_type != OurType::Client {
                 listener::listen(incoming_connections);
