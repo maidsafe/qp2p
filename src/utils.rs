@@ -53,10 +53,10 @@ pub fn project_dir() -> R<Dirs> {
 )))]
 #[inline]
 pub fn project_dir() -> R<Dirs> {
-    Err(Error::Configuration(
-        "No default project dir on non-desktop platforms. User must provide an override path."
+    Err(QuicP2pError::Configuration {
+        e: "No default project dir on non-desktop platforms. User must provide an override path."
             .to_string(),
-    ))
+    })
 }
 
 /// Convert binary data to a diplay-able format
