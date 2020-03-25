@@ -1,5 +1,9 @@
 # quic-p2p - Change Log
 
+## [0.5.0]
+- Update quinn to 0.6.0
+- Update rustls to 0.17.0
+
 ## [0.4.0]
 - Force the use of the basic single-threaded Tokio scheduler to prevent conflicts when used by a crate using Tokio `rt-threaded` feature
 - Take two channels, one for client event and a second one for a node
