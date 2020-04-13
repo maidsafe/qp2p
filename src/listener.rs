@@ -13,7 +13,7 @@ use crate::{
     context::ctx_mut,
     event::Event,
     peer::Peer,
-    utils, QuicP2pError,
+    QuicP2pError,
 };
 use futures::future::{self, TryFutureExt};
 use futures::stream::StreamExt;
@@ -40,7 +40,6 @@ enum Action {
 
 fn handle_new_conn(
     quinn::NewConnection {
-        driver,
         connection,
         uni_streams,
         bi_streams,
@@ -50,10 +49,6 @@ fn handle_new_conn(
     let q_conn = QConn::from(connection);
 
     let peer_addr = q_conn.remote_address();
-
-    let _ = tokio::spawn(driver.map_err(move |e| {
-        utils::handle_communication_err(peer_addr, &From::from(e), "Driver failed", None);
-    }));
 
     let state = ctx_mut(|c| {
         let event_tx = c.event_tx.clone();

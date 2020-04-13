@@ -6,12 +6,12 @@ homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/maidsafe/quic-p2p"
-version = "0.3.0"
+version = "0.5.0"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 edition = "2018"
 
 [dependencies]
-quinn = "^0.5.3"
+quinn = { version = "~0.6.0", features = ["tls-rustls"], default-features = false }
 futures = "~0.3.1"
 tokio = { version = "~0.2.5", features = ["rt-core", "sync", "time", "io-driver"] }
 unwrap = "~1.2.1"
@@ -22,7 +22,7 @@ serde = { version = "~1.0.91", features = ["derive"] }
 serde_json = "~1.0.39"
 structopt = "~0.2.15"
 rcgen = "~0.7.0"
-rustls = { version = "~0.16.0", features = ["dangerous_configuration"] }
+rustls = { version = "~0.17.0", features = ["dangerous_configuration"] }
 log = "~0.4.6"
 base64 = "~0.10.1"
 err-derive = "^0.2.2"

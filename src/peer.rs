@@ -26,6 +26,13 @@ impl Peer {
             Self::Node(addr) | Self::Client(addr) => addr,
         }
     }
+
+    pub(crate) fn is_node(&self) -> bool {
+        match *self {
+            Peer::Node { .. } => true,
+            Peer::Client { .. } => false,
+        }
+    }
 }
 
 impl fmt::Display for Peer {

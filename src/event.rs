@@ -55,6 +55,21 @@ pub enum Event {
     Finish,
 }
 
+impl Event {
+    pub(crate) fn is_node_event(&self) -> bool {
+        match self {
+            Event::BootstrapFailure => true,
+            Event::BootstrappedTo { .. } => true,
+            Event::ConnectionFailure { peer, .. }
+            | Event::SentUserMessage { peer, .. }
+            | Event::UnsentUserMessage { peer, .. }
+            | Event::ConnectedTo { peer }
+            | Event::NewMessage { peer, .. } => peer.is_node(),
+            Event::Finish => true,
+        }
+    }
+}
+
 impl fmt::Display for Event {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

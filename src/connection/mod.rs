@@ -12,8 +12,7 @@ pub use self::from_peer::FromPeer;
 pub use self::q_conn::QConn;
 pub use self::to_peer::ToPeer;
 
-use crate::{context::ctx_mut, error::QuicP2pError, event::Event, peer::Peer};
-use crossbeam_channel as mpmc;
+use crate::{context::ctx_mut, error::QuicP2pError, event::Event, peer::Peer, EventSenders};
 use futures::future::FutureExt;
 use log::trace;
 use std::{collections::hash_map::Entry, fmt, net::SocketAddr, time::Duration};
@@ -42,14 +41,14 @@ pub struct Connection {
     /// end of this connection.
     pub we_contacted_peer: bool,
     peer_addr: SocketAddr,
-    event_tx: mpmc::Sender<Event>,
+    event_tx: EventSenders,
 }
 
 impl Connection {
     /// New Connection with defaults
     pub fn new(
         peer_addr: SocketAddr,
-        event_tx: mpmc::Sender<Event>,
+        event_tx: EventSenders,
         bootstrap_group_ref: Option<BootstrapGroupRef>,
     ) -> Self {
         spawn_incomplete_conn_killer(peer_addr);
