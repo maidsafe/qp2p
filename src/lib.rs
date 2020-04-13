@@ -9,8 +9,6 @@
 
 //! quic-p2p enables communication within a peer to peer network over the QUIC protocol.
 
-// Required for the quick_error! macro
-#![recursion_limit = "128"]
 // For explanation of lint checks, run `rustc -W help`
 #![forbid(
     exceeding_bitshifts,
@@ -89,7 +87,6 @@ mod peer_config;
 mod test_utils;
 mod utils;
 mod wire_msg;
-
 /// Default maximum allowed message size. We'll error out on any bigger messages and probably
 /// shutdown the connection. This value can be overridden via the `Config` option.
 pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
@@ -829,7 +826,6 @@ mod tests {
                 break;
             }
         }
-
         let (tx, rx) = mpsc::channel();
         peer2.el.post(move || {
             let contacted = ctx(|c| unwrap!(c.connections.get(&peer1_addr)).we_contacted_peer);
