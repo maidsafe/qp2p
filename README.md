@@ -25,9 +25,9 @@ particular the Cloudflare blog posts (10 minute read).
 
 ### Encryption of connections
 
-QUIC proved connection security via the use of TLS 1.3. This library allows 3 different connection types with regard to encryption and validation.
+QUIC provides connection security via the use of TLS 1.3. This library allows 3 different connection types with regard to encryption and validation.
 
-1. Require peers have certificates from an agreed certificate authority.
+1. Require peers to have certificates from an agreed certificate authority.
 1. Allow use of a private certificate authority.
 1. Allow no identity validation of peers, but do encrypt connections.
 
@@ -35,21 +35,18 @@ This should satisfy the requirements of many P2P networks, whether they trust an
 
 ### Bootstrap Cache
 
-quic-p2p will save any endpoints and certificates of nodes that are connectible
-without any setup such as is required via NAT hole punching. The most recently
-connected 200 nodes are stored and these are then used to re-join the network
-after any restart.
+quic-p2p will save any endpoints and certificates of nodes that are connectible without any setup such as is required by NAT hole punching. The most recently connected 200 nodes are stored and these are then used to re-join the network after any restart.
 
 ### Connectivity types
 
-quic-p2p sets 2 connection types when in P2P mode. This allows the connections to be defined as:
+quic-p2p uses 2 connection types when in P2P mode. This allows the connections to be defined as:
 
 1. A bi-directional connection.
 
 1. A uni-directional connection.
 
 Where 1 allows connections from consumers of the network, such as clients or
-perhaps P2P nodes who are simply obtaining information, such as bootstrapping,
+perhaps P2P nodes that are simply obtaining information, such as bootstrapping,
 2 is used where the network is allowing another P2P worker. These peers must be
 both able to connect and be able to be connected to. Using a uni-directional
 stream per connection forces the node to confirm both incoming and outgoing
