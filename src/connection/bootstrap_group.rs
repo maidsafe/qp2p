@@ -18,6 +18,7 @@ use crate::context::ctx_mut;
 use crate::event::Event;
 use crate::utils::ConnectTerminator;
 use crate::EventSenders;
+use crossbeam_channel as mpmc;
 use log::info;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -28,7 +29,7 @@ use std::rc::Rc;
 /// Creator of a `BootstrapGroup`. Use this to obtain the reference to the undelying group.
 ///
 /// Destroy the maker once all references of the group have been obtained to not hold the internal
-/// references for longer than needed. The maker going out of scope is enough for it's destruction.
+/// references for longer than needed. The maker going out of scope is enough for its destruction.
 pub struct BootstrapGroupMaker {
     group: Rc<RefCell<BootstrapGroup>>,
 }
@@ -66,6 +67,34 @@ impl BootstrapGroupMaker {
             group: self.group.clone(),
         }
     }
+
+    /// Notify this group that it's already been boostrapped.
+    pub fn set_already_bootstrapped(&mut self, peer_addr: SocketAddr) {
+        // Drop connections for the rest of the group.
+        let mut terminators = {
+            let mut group = self.group.borrow_mut();
+            group.is_bootstrap_successful_yet = true;
+            mem::take(&mut group.terminators)
+        };
+
+        ctx_mut(|c| {
+            for (peer_addr, mut terminator) in terminators.drain() {
+                let _ = terminator.try_send(());
+                let _conn = c.connections.remove(&peer_addr);
+            }
+        });
+
+        // Notify about successful bootstrap.
+        if let Err(e) = self
+            .group
+            .borrow_mut()
+            .event_tx
+            .node_tx
+            .send(Event::BootstrappedTo { node: peer_addr })
+        {
+            info!("Failed informing about bootstrap success: {:?}", e);
+        }
+    }
 }
 
 /// Reference to the underlying `BootstrapGroup`.
@@ -85,6 +114,7 @@ impl BootstrapGroupRef {
     pub fn terminate_group(&self, is_due_to_success: bool) {
         let mut terminators = {
             let mut group = self.group.borrow_mut();
+
             if is_due_to_success {
                 group.is_bootstrap_successful_yet = true;
             }
@@ -106,6 +136,10 @@ impl BootstrapGroupRef {
 
     pub fn is_bootstrap_successful_yet(&self) -> bool {
         self.group.borrow().is_bootstrap_successful_yet
+    }
+
+    pub fn send(&mut self, event: Event) -> Result<(), mpmc::SendError<Event>> {
+        self.group.borrow_mut().event_tx.node_tx.send(event)
     }
 }
 

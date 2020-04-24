@@ -13,7 +13,7 @@ mod common;
 
 use bytes::Bytes;
 use common::{new_unbounded_channels, EventReceivers};
-use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
+use quic_p2p::{Config, Event, Peer, QuicP2p};
 use rand::{distributions::Standard, Rng};
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
@@ -79,7 +79,12 @@ fn main() {
     let CliArgs { quic_p2p_opts } = CliArgs::from_args();
     let (ev_tx, ev_rx) = new_unbounded_channels();
 
-    let mut qp2p = unwrap!(Builder::new(ev_tx).with_config(quic_p2p_opts).build());
+    let mut qp2p = unwrap!(QuicP2p::with_config(
+        ev_tx,
+        Some(quic_p2p_opts),
+        Default::default(),
+        false
+    ));
 
     print_logo();
     println!("Type 'help' to get started.");

@@ -41,7 +41,7 @@ pub struct Connection {
     /// end of this connection.
     pub we_contacted_peer: bool,
     peer_addr: SocketAddr,
-    event_tx: EventSenders,
+    pub(crate) event_tx: EventSenders,
 }
 
 impl Connection {

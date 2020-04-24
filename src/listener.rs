@@ -17,7 +17,7 @@ use crate::{
 };
 use futures::future::{self, TryFutureExt};
 use futures::stream::StreamExt;
-use log::{debug, info};
+use log::{debug, info, trace};
 
 /// Start listening
 pub fn listen(incoming_connections: quinn::Incoming) {
@@ -50,6 +50,8 @@ fn handle_new_conn(
 
     let peer_addr = q_conn.remote_address();
 
+    trace!("Incoming connection from peer: {}", peer_addr);
+
     let state = ctx_mut(|c| {
         let event_tx = c.event_tx.clone();
         let conn = c
@@ -62,32 +64,29 @@ fn handle_new_conn(
                 pending_reads: Default::default(),
             };
 
-            let bootstrap_group = if let ToPeer::Established { .. } = conn.to_peer {
-                let mut bootstrap_group = None;
-
+            if let ToPeer::Established { .. } = conn.to_peer {
                 // TODO come back to all the connected-to events and see if we are handling all
                 // cases
-                let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
+                if let Some(mut bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
                     if bootstrap_group_ref.is_bootstrap_successful_yet() {
                         return Action::HandleAlreadyBootstrapped;
                     }
-                    bootstrap_group = Some(bootstrap_group_ref);
-                    Event::BootstrappedTo { node: peer_addr }
-                } else {
-                    Event::ConnectedTo {
-                        peer: Peer::Node(peer_addr),
+
+                    if let Err(e) =
+                        bootstrap_group_ref.send(Event::BootstrappedTo { node: peer_addr })
+                    {
+                        info!("ERROR in informing user about a new peer: {:?} - {}", e, e);
                     }
-                };
 
-                if let Err(e) = c.event_tx.send(event) {
+                    return Action::Continue(Some(bootstrap_group_ref));
+                } else if let Err(e) = c.event_tx.send(Event::ConnectedTo {
+                    peer: Peer::Node(peer_addr),
+                }) {
                     info!("ERROR in informing user about a new peer: {:?} - {}", e, e);
-                }
-
-                bootstrap_group
-            } else {
-                None
+                };
             };
-            Action::Continue(bootstrap_group)
+
+            Action::Continue(None)
         } else {
             Action::HandleDuplicate(q_conn)
         }

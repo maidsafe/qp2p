@@ -21,9 +21,8 @@ mod common;
 use bytes::Bytes;
 use common::{new_unbounded_channels, EventReceivers, Rpc};
 use crc::crc32;
-use env_logger;
 use log::{debug, error, info, warn};
-use quic_p2p::{Builder, Config, Event, Peer, QuicP2p};
+use quic_p2p::{Config, Event, Peer, QuicP2p};
 use rand::{self, distributions::Standard, seq::IteratorRandom, Rng};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
@@ -59,7 +58,9 @@ const LARGE_MSG_SIZE: usize = 20 * 1024 * 1024; // 20 MB
 const SMALL_MSG_SIZE: usize = 16 * 1024; // 16 KB
 
 fn main() {
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .init();
 
     let config = CliArgs::from_args();
     println!("{:?}", config);
@@ -80,7 +81,12 @@ impl ClientNode {
             .ok_or_else(|| "No valid bootstrap node was provided.".to_string())?;
 
         let (event_tx, event_rx) = new_unbounded_channels();
-        let mut qp2p = unwrap!(Builder::new(event_tx).with_config(config).build());
+        let mut qp2p = unwrap!(QuicP2p::with_config(
+            event_tx,
+            Some(config),
+            Default::default(),
+            false
+        ));
 
         let large_msg = Bytes::from(random_data_with_hash(LARGE_MSG_SIZE));
         assert!(hash_correct(&large_msg));
@@ -89,6 +95,7 @@ impl ClientNode {
         assert!(hash_correct(&small_msg));
 
         let our_addr = unwrap!(qp2p.our_connection_info());
+        info!("Our address: {}", our_addr);
 
         Ok(Self {
             qp2p,
