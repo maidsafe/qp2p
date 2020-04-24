@@ -14,7 +14,7 @@ use std::{fmt, net::SocketAddr};
 use unwrap::unwrap;
 
 /// Final type serialised and sent on the wire by QuicP2p
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WireMsg {
     Handshake(Handshake),
     EndpointEchoReq,
@@ -70,7 +70,7 @@ impl fmt::Display for WireMsg {
 /// passive connection from a peer will allow only incoming uni-directional streams from it.
 ///
 /// Depending on the handshake we will categorise the peer and give this information to the user.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum Handshake {
     /// The connecting peer is a node.
     Node,

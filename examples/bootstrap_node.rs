@@ -18,12 +18,10 @@
 //! ```
 
 mod common;
-use bincode;
 use bytes::Bytes;
 use common::{new_unbounded_channels, Rpc};
-use env_logger;
 use log::{error, info, warn};
-use quic_p2p::{Builder, Config, Event, Peer};
+use quic_p2p::{Config, Event, Peer, QuicP2p};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io;
@@ -42,7 +40,9 @@ pub struct BootstrapNodeConfig {
 }
 
 fn main() -> Result<(), io::Error> {
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .init();
 
     // Initialise configuration
     let bootstrap_node_config = BootstrapNodeConfig::from_args();
@@ -50,9 +50,12 @@ fn main() -> Result<(), io::Error> {
     // Initialise QuicP2p
     let (ev_tx, ev_rx) = new_unbounded_channels();
 
-    let mut qp2p = unwrap!(Builder::new(ev_tx)
-        .with_config(bootstrap_node_config.quic_p2p_opts)
-        .build());
+    let mut qp2p = unwrap!(QuicP2p::with_config(
+        ev_tx,
+        Some(bootstrap_node_config.quic_p2p_opts),
+        Default::default(),
+        false
+    ));
 
     let our_addr = unwrap!(qp2p.our_connection_info());
     info!("QuicP2p started on {}", our_addr);

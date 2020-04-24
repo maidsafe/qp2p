@@ -8,8 +8,8 @@
 // Software.
 
 use log::{debug, warn};
-use std::fmt;
 use std::thread::{self, JoinHandle};
+use std::{fmt, sync};
 use tokio::sync::mpsc::{self, UnboundedSender};
 use unwrap::unwrap;
 
@@ -104,6 +104,22 @@ impl EventLoop {
         F: FnOnce() + Send + 'static,
     {
         post(&mut self.tx, f)
+    }
+
+    /// Post messages to event loop and return a result sent through a channel
+    pub fn post_and_return<F, T>(&mut self, f: F) -> Result<T, sync::mpsc::RecvError>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        let (tx, rx) = sync::mpsc::channel();
+        self.post(move || {
+            let res = f();
+            if let Err(e) = tx.send(res) {
+                warn!("Error trying to send a result: {:?}", e);
+            }
+        });
+        rx.recv()
     }
 }
 
