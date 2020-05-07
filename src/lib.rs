@@ -28,7 +28,6 @@
     unconditional_recursion,
     unknown_lints,
     unsafe_code,
-    unused,
     unused_allocation,
     unused_attributes,
     unused_comparisons,
@@ -42,6 +41,7 @@
 #![warn(
     trivial_casts,
     trivial_numeric_casts,
+    unused,
     unused_extern_crates,
     unused_import_braces,
     unused_qualifications,
@@ -262,10 +262,9 @@ impl QuicP2p {
         let (igd_res_tx, igd_res_rx) = mpmc::unbounded();
 
         // Attempt to use IGD for port forwarding, if UPnP feature is enabled.
-        let local_port = self
+        let local_addr = self
             .el
-            .post_and_return(move || ctx(|c| c.quic_ep().local_addr()))??
-            .port();
+            .post_and_return(move || ctx(|c| c.quic_ep().local_addr()))??;
         let lease_duration = self
             .cfg
             .upnp_lease_duration
@@ -273,7 +272,7 @@ impl QuicP2p {
 
         self.el.post(move || {
             let _ = tokio::spawn(async move {
-                let igd_res = igd::forward_port(local_port, lease_duration).await;
+                let igd_res = igd::forward_port(local_addr, lease_duration).await;
                 if let Err(e) = igd_res_tx.send(igd_res) {
                     info!("Could not send the IGD response: {} - {:?}", e, e);
                 }
@@ -292,10 +291,10 @@ impl QuicP2p {
                     .post_and_return(move || ctx(|c| c.quic_ep().local_addr()))??;
 
                 if addr.ip().is_unspecified() {
+                    Err(e)
+                } else {
                     self.us = Some(addr);
                     Ok(addr)
-                } else {
-                    Err(e)
                 }
             }
             Err(e) => {
@@ -309,11 +308,11 @@ impl QuicP2p {
         match igd_res_rx.recv_timeout(idle_timeout_msec) {
             Ok(Ok(public_sa)) => {
                 let sa = SocketAddr::V4(public_sa);
-                self.us = Some(sa);
+                if let Some(ref mut sa) = self.us {
+                    sa.set_port(public_sa.port());
+                }
 
                 debug!("IGD success: {:?}", sa);
-
-                return Ok(sa);
             }
             Ok(Err(e)) => {
                 info!("IGD request failed: {} - {:?}", e, e);
@@ -323,7 +322,13 @@ impl QuicP2p {
             }
         }
 
-        echo_service_res
+        echo_service_res.map(|addr| {
+            if let Some(our_address) = self.us {
+                our_address
+            } else {
+                addr
+            }
+        })
     }
 
     /// Get our connection info to give to others for them to connect to us
