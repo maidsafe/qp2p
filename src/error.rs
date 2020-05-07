@@ -65,6 +65,9 @@ pub enum QuicP2pError {
     #[error(display = "Could not use IGD for automatic port forwarding")]
     IgdAddPort(#[source] igd::AddAnyPortError),
     #[cfg(feature = "upnp")]
+    #[error(display = "Could not renew port mapping using IGD")]
+    IgdRenewPort(#[source] igd::AddPortError),
+    #[cfg(feature = "upnp")]
     #[error(display = "Could not find the gateway device for IGD")]
     IgdSearch(#[source] igd::SearchError),
     #[cfg(feature = "upnp")]

@@ -7,8 +7,6 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-#![allow(unused)]
-
 use crate::{ctx_mut, dirs::Dirs, error::QuicP2pError, event::Event, peer::Peer, EventSenders};
 use crossbeam_channel as mpmc;
 use log::debug;
@@ -38,6 +36,7 @@ pub(crate) struct EventReceivers {
 }
 
 impl EventReceivers {
+    #![allow(unused)]
     pub fn recv(&self) -> Result<Event, mpmc::RecvError> {
         let mut sel = mpmc::Select::new();
         let client_idx = sel.recv(&self.client_rx);
