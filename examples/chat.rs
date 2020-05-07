@@ -156,7 +156,7 @@ fn on_cmd_send<'a>(
         .and_then(|idx| idx.parse().or(Err("Invalid index argument")))
         .and_then(|idx| peer_list.get(idx).ok_or("Index out of bounds"))
         .map(|peer| {
-            let msg = Bytes::from(args.collect::<Vec<_>>().join(" ").as_bytes());
+            let msg = Bytes::from(args.collect::<Vec<_>>().join(" "));
             // TODO: handle tokens properly. Currently just hardcoding to 0 in example
             qp2p.send(peer.clone(), msg, 0);
         })

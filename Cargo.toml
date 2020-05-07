@@ -11,12 +11,12 @@ authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 edition = "2018"
 
 [dependencies]
-quinn = { version = "~0.6.0", features = ["tls-rustls"], default-features = false }
+quinn = { version = "~0.6.1", features = ["tls-rustls"], default-features = false }
 futures = "~0.3.1"
 tokio = { version = "~0.2.5", features = ["rt-core", "sync", "time", "io-driver"] }
 unwrap = "~1.2.1"
 bincode = "~1.1.2"
-bytes = { version = "~0.4.12", features = ["serde"] }
+bytes = { version = "~0.5.4", features = ["serde"] }
 crossbeam-channel = "~0.4.2"
 igd = { version = "~0.10.2", features = ["aio"], optional = true }
 serde = { version = "~1.0.91", features = ["derive"] }
