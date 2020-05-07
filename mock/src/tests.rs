@@ -8,7 +8,7 @@
 
 #![allow(clippy::mutable_key_type)]
 
-use super::{Builder, Config, Event, EventSenders, Network, OurType, Peer, QuicP2p};
+use super::{Config, Event, EventSenders, Network, OurType, Peer, QuicP2p};
 use bytes::Bytes;
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
 use fxhash::FxHashSet;
@@ -369,7 +369,7 @@ fn our_connection_info_of_node() {
         port: Some(addr.port()),
         ..Config::node()
     };
-    let mut node = unwrap!(Builder::new(tx).with_config(config).build());
+    let mut node = QuicP2p::with_config(tx, Some(config), Default::default(), false).unwrap();
 
     let node_addr = unwrap!(node.our_connection_info());
     assert_eq!(node_addr, addr);
@@ -380,7 +380,8 @@ fn our_connection_info_of_client() {
     let _network = Network::new();
 
     let (tx, _) = new_unbounded_channels();
-    let mut client = unwrap!(Builder::new(tx).with_config(Config::client()).build());
+    let mut client =
+        QuicP2p::with_config(tx, Some(Config::client()), Default::default(), false).unwrap();
 
     assert!(client.our_connection_info().is_err())
 }
@@ -441,7 +442,7 @@ impl Agent {
 
     fn with_config(config: Config) -> Self {
         let (tx, rx) = new_unbounded_channels();
-        let inner = unwrap!(Builder::new(tx).with_config(config).build());
+        let inner = QuicP2p::with_config(tx, Some(config), Default::default(), false).unwrap();
 
         Self { inner, rx }
     }

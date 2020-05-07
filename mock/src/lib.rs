@@ -19,7 +19,7 @@ use crossbeam_channel::Sender;
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     iter,
     net::{IpAddr, SocketAddr},
     rc::Rc,
@@ -50,37 +50,6 @@ impl EventSenders {
         } else {
             self.client_tx.send(event)
         }
-    }
-}
-
-/// Builder for `QuickP2p`.
-pub struct Builder {
-    event_tx: EventSenders,
-    config: Option<Config>,
-}
-
-impl Builder {
-    /// New `Builder`
-    pub fn new(event_tx: EventSenders) -> Self {
-        Self {
-            event_tx,
-            config: Default::default(),
-        }
-    }
-
-    /// Configuration for `QuicP2p`.
-    /// If not specified, will use `Config::default()`.
-    pub fn with_config(mut self, config: Config) -> Self {
-        self.config = Some(config);
-        self
-    }
-
-    /// Construct `QuicP2p` with supplied parameters earlier, ready to be used.
-    pub fn build(self) -> Result<QuicP2p, QuicP2pError> {
-        Ok(QuicP2p::new(
-            self.event_tx,
-            self.config.unwrap_or_else(Config::default),
-        ))
     }
 }
 
@@ -141,10 +110,23 @@ impl QuicP2p {
         self.inner.borrow().config().clone()
     }
 
-    fn new(event_tx: EventSenders, config: Config) -> Self {
-        Self {
-            inner: Node::new(event_tx, config),
-        }
+    pub fn new(event_tx: EventSenders) -> Result<QuicP2p, QuicP2pError> {
+        Ok(Self {
+            inner: Node::new(event_tx, Config::default()),
+        })
+    }
+
+    /// Construct `QuicP2p` with supplied parameters, ready to be used.
+    /// If config is not specified it'll call `Config::read_or_construct_default()`
+    pub fn with_config(
+        event_tx: EventSenders,
+        cfg: Option<Config>,
+        _bootstrap_nodes: VecDeque<SocketAddr>,
+        _use_bootstrap_nodes_exclusively: bool,
+    ) -> Result<QuicP2p, QuicP2pError> {
+        Ok(Self {
+            inner: Node::new(event_tx, cfg.unwrap_or_default()),
+        })
     }
 }
 
