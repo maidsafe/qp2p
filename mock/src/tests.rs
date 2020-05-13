@@ -6,6 +6,8 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
+#![allow(clippy::mutable_key_type)]
+
 use super::{Builder, Config, Event, EventSenders, Network, OurType, Peer, QuicP2p};
 use bytes::Bytes;
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};

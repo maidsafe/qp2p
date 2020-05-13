@@ -7,8 +7,10 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use crate::QuicP2pError;
 use crate::R;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Default interval within which if we hear nothing from the peer we declare it offline to us.
 ///
@@ -26,7 +28,7 @@ pub const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 10_000; // 10secs
 pub fn new_client_cfg(
     idle_timeout_msec: u64,
     keep_alive_interval_msec: u32,
-) -> quinn::ClientConfig {
+) -> R<quinn::ClientConfig> {
     let mut cfg = quinn::ClientConfigBuilder::default().build();
     let crypto_cfg =
         Arc::get_mut(&mut cfg.crypto).expect("the crypto config should not be shared yet");
@@ -36,8 +38,8 @@ pub fn new_client_cfg(
     cfg.transport = Arc::new(new_transport_cfg(
         idle_timeout_msec,
         keep_alive_interval_msec,
-    ));
-    cfg
+    )?);
+    Ok(cfg)
 }
 
 pub fn new_our_cfg(
@@ -51,7 +53,7 @@ pub fn new_our_cfg(
         our_cfg.transport = Arc::new(new_transport_cfg(
             idle_timeout_msec,
             keep_alive_interval_msec,
-        ));
+        )?);
 
         quinn::ServerConfigBuilder::new(our_cfg)
     };
@@ -65,11 +67,14 @@ pub fn new_our_cfg(
 fn new_transport_cfg(
     idle_timeout_msec: u64,
     keep_alive_interval_msec: u32,
-) -> quinn::TransportConfig {
-    let mut transport_cfg = quinn::TransportConfig::default();
-    transport_cfg.idle_timeout = idle_timeout_msec;
-    transport_cfg.keep_alive_interval = keep_alive_interval_msec;
-    transport_cfg
+) -> R<quinn::TransportConfig> {
+    let mut transport_config = quinn::TransportConfig::default();
+    let _ = transport_config
+        .max_idle_timeout(Some(Duration::from_millis(idle_timeout_msec)))
+        .map_err(|e| QuicP2pError::Configuration { e: e.to_string() })?;
+    let _ = transport_config
+        .keep_alive_interval(Some(Duration::from_millis(keep_alive_interval_msec.into())));
+    Ok(transport_config)
 }
 
 /// Dummy certificate verifier that treats any certificate as valid.

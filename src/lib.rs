@@ -9,8 +9,6 @@
 
 //! quic-p2p enables communication within a peer to peer network over the QUIC protocol.
 
-// Required for the quick_error! macro
-#![recursion_limit = "128"]
 // For explanation of lint checks, run `rustc -W help`
 #![forbid(
     exceeding_bitshifts,
@@ -65,7 +63,6 @@ use bytes::Bytes;
 use context::{ctx, ctx_mut, initialise_ctx, Context};
 use crossbeam_channel as mpmc;
 use event_loop::EventLoop;
-use futures::future::TryFutureExt;
 use log::{debug, info, warn};
 use std::collections::VecDeque;
 use std::mem;
@@ -91,7 +88,6 @@ mod peer_config;
 mod test_utils;
 mod utils;
 mod wire_msg;
-
 /// Default maximum allowed message size. We'll error out on any bigger messages and probably
 /// shutdown the connection. This value can be overridden via the `Config` option.
 pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
@@ -400,7 +396,7 @@ impl QuicP2p {
 
             let mut ep_builder = quinn::Endpoint::builder();
             let _ = ep_builder.listen(our_cfg);
-            let (dr, ep, incoming_connections) = {
+            let (ep, incoming_connections) = {
                 match UdpSocket::bind(&(ip, port)) {
                     Ok(udp) => unwrap!(ep_builder.with_socket(udp)),
                     Err(e) => {
@@ -421,7 +417,7 @@ impl QuicP2p {
             };
 
             let client_cfg =
-                peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
+                peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec).unwrap();
 
             let ctx = Context::new(
                 tx,
@@ -432,8 +428,6 @@ impl QuicP2p {
                 client_cfg,
             );
             initialise_ctx(ctx);
-
-            let _ = tokio::spawn(dr.map_err(|e| warn!("Error in quinn Driver: {:?}", e)));
 
             if our_type != OurType::Client {
                 listener::listen(incoming_connections);
@@ -825,7 +819,6 @@ mod tests {
                 break;
             }
         }
-
         let (tx, rx) = mpsc::channel();
         peer2.el.post(move || {
             let contacted = ctx(|c| unwrap!(c.connections.get(&peer1_addr)).we_contacted_peer);
