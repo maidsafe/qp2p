@@ -178,7 +178,7 @@ pub(crate) fn new_random_qp2p(
 
     let (tx, rx) = new_unbounded_channels();
     let qp2p = {
-        let mut cfg = Config::with_default_cert();
+        let mut cfg = Config::default();
         cfg.hard_coded_contacts = contacts;
         cfg.port = Some(0);
         if !is_addr_unspecified {
