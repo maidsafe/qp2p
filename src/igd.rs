@@ -10,7 +10,7 @@
 use crate::error::QuicP2pError;
 use crate::utils::R;
 use log::{debug, info, warn};
-use std::net::{SocketAddr, SocketAddrV4};
+use std::net::{IpAddr, SocketAddr, SocketAddrV4};
 use std::time::Duration;
 use tokio::time::{self, Instant};
 
@@ -62,8 +62,6 @@ pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> R<S
 
     debug!("Found IGD gateway: {:?}", gateway);
 
-    // Find our local IP address by connecting to the gateway and querying local socket address.
-
     if let SocketAddr::V4(socket_addr) = local_addr {
         let ext_addr = gateway
             .get_any_address(
@@ -110,4 +108,13 @@ pub(crate) async fn renew_port(
         info!("IPv6 for IGD is not supported");
         Err(QuicP2pError::IgdNotSupported)
     }
+}
+
+// Find our local IP address by connecting to the gateway and querying local socket address.
+pub(crate) fn get_local_ip() -> R<IpAddr> {
+    let gateway = igd::search_gateway(Default::default())?;
+    let gateway_conn = std::net::TcpStream::connect(gateway.addr)?;
+    let local_sa = gateway_conn.local_addr()?;
+    info!("Fetched IP address from IGD gateway: {:?}", &local_sa.ip());
+    Ok(local_sa.ip())
 }

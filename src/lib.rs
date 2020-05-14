@@ -147,13 +147,24 @@ impl QuicP2p {
     ) -> R<QuicP2p> {
         let el = EventLoop::spawn();
 
+        let cfg = if let Some(cfg) = cfg {
+            cfg
+        } else {
+            Config::read_or_construct_default(None)?
+        };
+
+        #[cfg(feature = "upnp")]
+        let cfg = if cfg.ip.is_none() {
+            let mut cfg = cfg.clone();
+            cfg.ip = igd::get_local_ip().map_or(None, |ip| Some(ip));
+            cfg
+        } else {
+            cfg
+        };
+
         let mut qp2p = Self {
             event_tx,
-            cfg: if let Some(cfg) = cfg {
-                cfg
-            } else {
-                Config::read_or_construct_default(None)?
-            },
+            cfg,
             us: None,
             el,
         };
