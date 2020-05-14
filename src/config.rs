@@ -11,8 +11,6 @@ use crate::dirs::Dirs;
 use crate::error::QuicP2pError;
 use crate::utils;
 use crate::R;
-use base64;
-use bincode;
 use bytes::Bytes;
 use log::{trace, warn};
 use serde::{Deserialize, Serialize};
@@ -61,6 +59,9 @@ pub struct Config {
     /// default cache directory is used.
     #[structopt(long)]
     pub bootstrap_cache_dir: Option<String>,
+    /// Duration of a UPnP port mapping.
+    #[structopt(long)]
+    pub upnp_lease_duration: Option<u32>,
     /// Specify if we are a client or a node
     #[structopt(short = "t", long, default_value = "node")]
     pub our_type: OurType,
@@ -159,12 +160,12 @@ impl fmt::Debug for SerialisableCertificate {
     }
 }
 
-/// Whether we are a client or a node
+/// Whether we are a client or a node.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq)]
 pub enum OurType {
-    /// We are a client
+    /// We are a client. Clients do not expect a reverse connection from a peer.
     Client,
-    /// We are a node
+    /// We are a node. Nodes require a reverse connection from a peer.
     Node,
 }
 

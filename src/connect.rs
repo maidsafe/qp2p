@@ -33,7 +33,7 @@ pub fn connect_to(
     let r = ctx_mut(|c| {
         let event_tx = c.event_tx.clone();
 
-        let (terminator, mut rx) = utils::connect_terminator();
+        let (terminator, mut terminator_rx) = utils::connect_terminator();
 
         let conn = c.connections.entry(node_addr).or_insert_with(|| {
             Connection::new(
@@ -77,7 +77,7 @@ pub fn connect_to(
             let _ = tokio::spawn(async move {
                 select! {
                     // Terminator leaf
-                    _ = rx.recv().fuse() => {
+                    _ = terminator_rx.recv().fuse() => {
                         handle_connect_err(node_addr, &QuicP2pError::ConnectionCancelled);
                     },
                     // New connection
@@ -92,6 +92,26 @@ pub fn connect_to(
 
             Ok(())
         } else {
+            if let Some((pending_send, token)) = send_after_connect {
+                debug!("Duplicate connection. Will send pending messages.");
+                match conn.to_peer {
+                    ToPeer::Established { ref q_conn } => {
+                        communicate::write_to_peer_connection(
+                            Peer::Node(node_addr),
+                            q_conn,
+                            pending_send,
+                            token,
+                        );
+                    }
+                    ToPeer::Initiated {
+                        ref mut pending_sends,
+                        ..
+                    } => {
+                        pending_sends.push((pending_send, token));
+                    }
+                    _ => {}
+                }
+            }
             Err(QuicP2pError::DuplicateConnectionToPeer {
                 peer_addr: node_addr,
             })
@@ -170,16 +190,16 @@ fn handle_new_connection_res(
                     0,
                 );
 
-                let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
-                    terminate_bootstrap_group = Some(bootstrap_group_ref);
-                    Event::BootstrappedTo { node: peer_addr }
-                } else {
-                    Event::ConnectedTo {
-                        peer: Peer::Node(peer_addr),
+                if let Some(mut bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
+                    if let Err(e) =
+                        bootstrap_group_ref.send(Event::BootstrappedTo { node: peer_addr })
+                    {
+                        info!("Could not fire event: {:?}", e);
                     }
-                };
-
-                if let Err(e) = c.event_tx.send(event) {
+                    terminate_bootstrap_group = Some(bootstrap_group_ref);
+                } else if let Err(e) = c.event_tx.send(Event::ConnectedTo {
+                    peer: Peer::Node(peer_addr),
+                }) {
                     info!("Could not fire event: {:?}", e);
                 }
 
@@ -189,16 +209,16 @@ fn handle_new_connection_res(
                 ref mut pending_reads,
                 ..
             } => {
-                let event = if let Some(bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
-                    terminate_bootstrap_group = Some(bootstrap_group_ref);
-                    Event::BootstrappedTo { node: peer_addr }
-                } else {
-                    Event::ConnectedTo {
-                        peer: Peer::Node(peer_addr),
+                if let Some(mut bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
+                    if let Err(e) =
+                        bootstrap_group_ref.send(Event::BootstrappedTo { node: peer_addr })
+                    {
+                        info!("Could not fire event: {:?}", e);
                     }
-                };
-
-                if let Err(e) = c.event_tx.send(event) {
+                    terminate_bootstrap_group = Some(bootstrap_group_ref);
+                } else if let Err(e) = c.event_tx.send(Event::ConnectedTo {
+                    peer: Peer::Node(peer_addr),
+                }) {
                     info!("Could not fire event: {:?}", e);
                 }
 

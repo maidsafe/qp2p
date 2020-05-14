@@ -9,8 +9,8 @@ authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 edition = "2018"
 
 [dependencies]
-bytes = { version = "~0.4.12", features = ["serde"] }
-crossbeam-channel = "~0.3.8"
+bytes = { version = "~0.5.4", features = ["serde"] }
+crossbeam-channel = "~0.4.2"
 fxhash = "~0.2.1"
 rand = "~0.7.2"
 serde = { version = "~1.0.91", features = ["derive"] }

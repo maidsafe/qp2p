@@ -1,5 +1,5 @@
 use crossbeam_channel as mpmc;
-use quic_p2p::{Builder, Config, Event, EventSenders, OurType, Peer, QuicP2p};
+use quic_p2p::{Config, Event, EventSenders, OurType, Peer, QuicP2p};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -70,17 +70,20 @@ fn test_peer_with_hcc(
     our_type: OurType,
 ) -> (QuicP2p, EventReceivers) {
     let (ev_tx, ev_rx) = new_unbounded_channels();
-    let builder = Builder::new(ev_tx)
-        .with_config(Config {
+    let qp2p = unwrap!(QuicP2p::with_config(
+        ev_tx,
+        Some(Config {
             port: Some(0),
             ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             hard_coded_contacts,
             our_type,
             ..Default::default()
-        })
+        }),
         // Make sure we start with an empty cache. Otherwise, we might get into unexpected state.
-        .with_bootstrap_nodes(Default::default(), true);
-    (unwrap!(builder.build()), ev_rx)
+        Default::default(),
+        true,
+    ));
+    (qp2p, ev_rx)
 }
 
 #[test]

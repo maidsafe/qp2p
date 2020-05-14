@@ -9,9 +9,8 @@
 
 use err_derive::Error;
 
-use std::io;
 use std::net::SocketAddr;
-use std::sync::mpsc;
+use std::{io, sync::mpsc};
 
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
@@ -34,7 +33,7 @@ pub enum QuicP2pError {
     DuplicateConnectionToPeer { peer_addr: SocketAddr },
     #[error(display = "Could not find enpoint server")]
     NoEndpointEchoServerFound,
-    #[error(display = "Oneshot receiver ")]
+    #[error(display = "Oneshot receiver")]
     OneShotRx(#[source] tokio::sync::oneshot::error::RecvError),
     #[error(display = "TLS Error ")]
     TLS(#[source] rustls::TLSError),
@@ -48,16 +47,30 @@ pub enum QuicP2pError {
     OperationNotAllowed,
     #[error(display = "Connection cancelled")]
     ConnectionCancelled,
-    #[error(display = "Channel receive error ")]
+    #[error(display = "MPMC channel receive error")]
+    MultiChannelRecv(#[source] crossbeam_channel::RecvError),
+    #[error(display = "Channel receive error")]
     ChannelRecv(#[source] mpsc::RecvError),
     #[error(display = "Could not add certificate to PKI")]
     WebPki,
     #[error(display = "Invalid wire message.")]
     InvalidWireMsgFlag,
-    #[error(display = "Stream write error ")]
+    #[error(display = "Stream write error")]
     WriteError(#[source] quinn::WriteError),
-    #[error(display = "Read to end error ")]
+    #[error(display = "Read to end error")]
     ReadToEndError(#[source] quinn::ReadToEndError),
-    #[error(display = "Could not add certificate ")]
+    #[error(display = "Could not add certificate")]
     AddCertificateError(#[source] quinn::ParseError),
+    #[cfg(feature = "upnp")]
+    #[error(display = "Could not use IGD for automatic port forwarding")]
+    IgdAddPort(#[source] igd::AddAnyPortError),
+    #[cfg(feature = "upnp")]
+    #[error(display = "Could not renew port mapping using IGD")]
+    IgdRenewPort(#[source] igd::AddPortError),
+    #[cfg(feature = "upnp")]
+    #[error(display = "Could not find the gateway device for IGD")]
+    IgdSearch(#[source] igd::SearchError),
+    #[cfg(feature = "upnp")]
+    #[error(display = "IGD is not supported")]
+    IgdNotSupported,
 }
