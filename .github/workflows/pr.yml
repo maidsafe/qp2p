@@ -20,20 +20,18 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
+        name: Install Rust and required components
         with:
           profile: minimal
           toolchain: stable
           override: true
           components: rustfmt, clippy
       # Check if the code is formatted correctly.
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-      # Generate Cargo.lock, needed for the cache.
-      - uses: actions-rs/cargo@v1
-        with:
-          command: update
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+        # Generate Cargo.lock, needed for the cache.
+      - name: Generate lockfile
+        run: cargo generate-lockfile
       # Cache.
       - name: Cache cargo registry
         uses: actions/cache@v1
@@ -51,10 +49,8 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       # Run Clippy.
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --workspace --all-targets
+      - name: Clippy checks
+        run: cargo clippy --workspace --all-targets
 
   test:
     name: Test
@@ -64,15 +60,15 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
       - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
       # Generate Cargo.lock, needed for the cache.
-      - uses: actions-rs/cargo@v1
-        with:
-          command: update
+      - name: Generate lockfile
+        run: cargo generate-lockfile
       # Cache.
       - name: Cache cargo registry
         uses: actions/cache@v1
@@ -90,10 +86,8 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       # Run tests.
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --release --workspace
+      - name: Run tests
+        run: cargo test --release --workspace
 
   # Test publish using --dry-run.
   test-publish:
@@ -101,12 +95,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: publish
-          args: --dry-run
+      - name: Test publish
+        run: cargo publish --dry-run
