@@ -1,5 +1,9 @@
 # quic-p2p - Change Log
 
+## [0.6.0]
+- Include support for UPnP and improve echo service.
+- Use IGD for port forwarding and use the IGD gateway to find a node's local IP address.
+
 ## [0.5.0]
 - Update quinn to 0.6.0
 - Update rustls to 0.17.0
