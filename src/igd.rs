@@ -29,8 +29,7 @@ pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> R<Sock
         let lease_interval = Duration::from_secs(lease_duration.into());
 
         let _ = tokio::spawn(async move {
-            let mut timer =
-                time::interval_at(Instant::now() + lease_interval.into(), lease_interval);
+            let mut timer = time::interval_at(Instant::now() + lease_interval, lease_interval);
 
             loop {
                 let _ = timer.tick().await;
@@ -99,7 +98,7 @@ pub(crate) async fn renew_port(
                 "MaidSafe.net",
             )
             .await
-            .map_err(|error| QuicP2pError::IgdRenewPort(error))?;
+            .map_err(QuicP2pError::IgdRenewPort)?;
 
         debug!("Successfully renewed the port mapping");
 
