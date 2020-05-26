@@ -147,7 +147,8 @@ impl QuicP2p {
     ) -> R<QuicP2p> {
         let el = EventLoop::spawn();
 
-        let cfg = if let Some(cfg) = cfg {
+        #[allow(unused_mut)] // Needs to be mutable when `upnp` is enabled
+        let mut cfg = if let Some(cfg) = cfg {
             cfg
         } else {
             Config::read_or_construct_default(None)?
@@ -155,8 +156,7 @@ impl QuicP2p {
 
         #[cfg(feature = "upnp")]
         let cfg = if cfg.ip.is_none() {
-            let mut cfg = cfg.clone();
-            cfg.ip = igd::get_local_ip().map_or(None, |ip| Some(ip));
+            cfg.ip = igd::get_local_ip().map_or(None, Some);
             cfg
         } else {
             cfg
