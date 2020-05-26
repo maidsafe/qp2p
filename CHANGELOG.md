@@ -1,5 +1,8 @@
 # quic-p2p - Change Log
 
+## [0.6.1]
+- Skip port forwarding if quic-p2p is running on the loopback address.
+
 ## [0.6.0]
 - Include support for UPnP and improve echo service.
 - Use IGD for port forwarding and use the IGD gateway to find a node's local IP address.
