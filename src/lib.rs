@@ -271,25 +271,30 @@ impl QuicP2p {
             return Ok(us);
         }
 
-        let (igd_res_tx, igd_res_rx) = mpmc::unbounded();
+        let is_loopback = self.config.ip.is_loopback();
 
-        // Attempt to use IGD for port forwarding, if UPnP feature is enabled.
-        let local_addr = self
-            .el
-            .post_and_return(move || ctx(|c| c.quic_ep().local_addr()))??;
-        let lease_duration = self
-            .cfg
-            .upnp_lease_duration
-            .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC);
+        // Skip port forwarding if we are running locally
+        if !is_loopback {
+            let (igd_res_tx, igd_res_rx) = mpmc::unbounded();
 
-        self.el.post(move || {
-            let _ = tokio::spawn(async move {
-                let igd_res = igd::forward_port(local_addr, lease_duration).await;
-                if let Err(e) = igd_res_tx.send(igd_res) {
-                    info!("Could not send the IGD response: {} - {:?}", e, e);
-                }
+            // Attempt to use IGD for port forwarding, if UPnP feature is enabled.
+            let local_addr = self
+                .el
+                .post_and_return(move || ctx(|c| c.quic_ep().local_addr()))??;
+            let lease_duration = self
+                .cfg
+                .upnp_lease_duration
+                .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC);
+
+            self.el.post(move || {
+                let _ = tokio::spawn(async move {
+                    let igd_res = igd::forward_port(local_addr, lease_duration).await;
+                    if let Err(e) = igd_res_tx.send(igd_res) {
+                        info!("Could not send the IGD response: {} - {:?}", e, e);
+                    }
+                });
             });
-        });
+        }
 
         // In parallel, try to contact an echo service
         let echo_service_res = match self.query_ip_echo_service() {
@@ -315,22 +320,24 @@ impl QuicP2p {
             }
         };
 
-        // See if we have the IGD result
-        let idle_timeout_msec = Duration::from_millis(UPNP_RESPONSE_TIMEOUT_MSEC);
-        match igd_res_rx.recv_timeout(idle_timeout_msec) {
-            Ok(Ok(public_sa)) => {
-                let sa = SocketAddr::V4(public_sa);
-                if let Some(ref mut sa) = self.us {
-                    sa.set_port(public_sa.port());
-                }
+        if !is_loopback {
+            // See if we have the IGD result
+            let idle_timeout_msec = Duration::from_millis(UPNP_RESPONSE_TIMEOUT_MSEC);
+            match igd_res_rx.recv_timeout(idle_timeout_msec) {
+                Ok(Ok(public_sa)) => {
+                    let sa = SocketAddr::V4(public_sa);
+                    if let Some(ref mut sa) = self.us {
+                        sa.set_port(public_sa.port());
+                    }
 
-                debug!("IGD success: {:?}", sa);
-            }
-            Ok(Err(e)) => {
-                info!("IGD request failed: {} - {:?}", e, e);
-            }
-            Err(e) => {
-                debug!("Error while receiving IGD response: {}", e);
+                    debug!("IGD success: {:?}", sa);
+                }
+                Ok(Err(e)) => {
+                    info!("IGD request failed: {} - {:?}", e, e);
+                }
+                Err(e) => {
+                    debug!("Error while receiving IGD response: {}", e);
+                }
             }
         }
 
