@@ -1,5 +1,9 @@
 # quic-p2p - Change Log
 
+## [0.6.2]
+- Fix clippy errors in feature-gated code
+- Fix bug in get_connection_info with `upnp` enabled.
+
 ## [0.6.1]
 - Skip port forwarding if quic-p2p is running on the loopback address.
 
