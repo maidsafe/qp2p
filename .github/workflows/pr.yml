@@ -50,7 +50,7 @@ jobs:
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       # Run Clippy.
       - name: Clippy checks
-        run: cargo clippy --workspace --all-targets
+        run: cargo clippy --workspace --all-targets --all-features
 
   test:
     name: Test
