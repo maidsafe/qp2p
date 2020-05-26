@@ -271,12 +271,11 @@ impl QuicP2p {
             return Ok(us);
         }
 
-        let is_loopback = self.config.ip.is_loopback();
+        let is_loopback = self.config().ip.map_or(false, |ip| ip.is_loopback());
 
+        let (igd_res_tx, igd_res_rx) = mpmc::unbounded();
         // Skip port forwarding if we are running locally
         if !is_loopback {
-            let (igd_res_tx, igd_res_rx) = mpmc::unbounded();
-
             // Attempt to use IGD for port forwarding, if UPnP feature is enabled.
             let local_addr = self
                 .el
