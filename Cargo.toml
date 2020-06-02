@@ -14,13 +14,13 @@ edition = "2018"
 quinn = { version = "~0.6.1", features = ["tls-rustls"], default-features = false }
 futures = "~0.3.1"
 tokio = { version = "~0.2.5", features = ["rt-core", "sync", "time", "io-driver"] }
-unwrap = "~1.2.1"
-bincode = "~1.1.2"
+unwrap = "1.2.1"
+bincode = "1.2.1"
 bytes = { version = "~0.5.4", features = ["serde"] }
 crossbeam-channel = "~0.4.2"
 igd = { version = "~0.10.2", features = ["aio"], optional = true }
-serde = { version = "~1.0.91", features = ["derive"] }
-serde_json = "~1.0.39"
+serde = { version = "1.0.111", features = ["derive"] }
+serde_json = "1.0.53"
 structopt = "~0.2.15"
 rcgen = "~0.7.0"
 rustls = { version = "~0.17.0", features = ["dangerous_configuration"] }
@@ -31,14 +31,13 @@ derive_more = "^0.99.2"
 webpki = "~0.21.2"
 
 [dev-dependencies]
-clap = "~2.32.0"
-crc = "~1.8.1"
+clap = "2.32.0"
+crc = "1.8.1"
 env_logger = "~0.6.1"
-rustyline = "~4.1.0"
+rustyline = "4.1.0"
 tracing = "0.1"
 tracing-subscriber = "~0.2.4"
-unwrap = "~1.2.1"
-rand = "~0.6.5"
+rand = "~0.7.3"
 
 [features]
 upnp = ["igd"]
