@@ -17,7 +17,7 @@ use tokio::time::{self, Instant};
 /// Default duration of a UPnP lease, in seconds.
 pub const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
 /// Duration of wait for a UPnP result to come back.
-pub const UPNP_RESPONSE_TIMEOUT_MSEC: u64 = 1_000;
+pub const UPNP_RESPONSE_TIMEOUT_MSEC: u64 = 3_000;
 
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
 pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> R<SocketAddrV4> {

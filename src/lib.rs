@@ -333,6 +333,7 @@ impl QuicP2p {
                 }
                 Ok(Err(e)) => {
                     info!("IGD request failed: {} - {:?}", e, e);
+                    return Err(QuicP2pError::IgdNotSupported);
                 }
                 Err(e) => {
                     debug!("Error while receiving IGD response: {}", e);
