@@ -78,7 +78,7 @@ impl<'a> EndpointWrap<'a> {
         impl Future<Output = Result<quinn::NewConnection, quinn::ConnectionError>>,
         quinn::ConnectError,
     > {
-        test_ctx_mut(|ctx| ctx.attempted_connections.push(addr.clone()));
+        test_ctx_mut(|ctx| ctx.attempted_connections.push(*addr));
 
         let connecting_res = self.0.connect_with(config, addr, server_name)?;
         let delay_ms = test_ctx(|ctx| ctx.connect_delay);

@@ -480,18 +480,18 @@ mod tests {
     #[test]
     fn disallow_bidirectional_streams() {
         let (mut qp2p0, rx0) = new_random_qp2p(false, Default::default());
-        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
+        let qp2p0_info = qp2p0.our_connection_info().unwrap();
 
         let (mut qp2p1, rx1) = {
             let mut hcc: HashSet<_> = Default::default();
-            assert!(hcc.insert(qp2p0_info.clone()));
+            assert!(hcc.insert(qp2p0_info));
             new_random_qp2p(true, hcc)
         };
         let qp2p1_info = unwrap!(qp2p1.our_connection_info());
 
         // Drain the message queues
-        while let Ok(_) = rx1.try_recv() {}
-        while let Ok(_) = rx0.try_recv() {}
+        while rx1.try_recv().is_ok() {}
+        while rx0.try_recv().is_ok() {}
 
         // Create a bi-directional stream and write data
         qp2p1.el.post(move || {

@@ -241,7 +241,7 @@ mod tests {
 
         let (mut peer2, ev_rx) = {
             let mut hcc = HashSet::new();
-            assert!(hcc.insert(peer1_conn_info.clone()));
+            assert!(hcc.insert(peer1_conn_info));
             test_peer_with_hcc(hcc, OurType::Node)
         };
 
@@ -275,7 +275,7 @@ mod tests {
 
         let (mut peer2, ev_rx) = {
             let mut hcc = HashSet::new();
-            assert!(hcc.insert(peer1_conn_info.clone()));
+            assert!(hcc.insert(peer1_conn_info));
             test_peer_with_hcc(hcc, OurType::Client)
         };
 

@@ -151,13 +151,13 @@ mod tests {
             let peer1 = rand_node_addr();
             let peer2 = rand_node_addr();
             let mut hard_coded: HashSet<_> = Default::default();
-            assert!(hard_coded.insert(peer1.clone()));
+            assert!(hard_coded.insert(peer1));
 
             let dirs = test_dirs();
-            let mut cache = unwrap!(BootstrapCache::new(hard_coded, Some(&dirs)));
+            let mut cache = BootstrapCache::new(hard_coded, Some(&dirs)).unwrap();
 
             cache.add_peer(peer1);
-            cache.add_peer(peer2.clone());
+            cache.add_peer(peer2);
 
             let peers: Vec<_> = cache.peers.iter().cloned().collect();
             assert_eq!(peers, vec![peer2]);
@@ -186,15 +186,15 @@ mod tests {
         #[test]
         fn it_moves_given_node_to_the_top_of_the_list() {
             let dirs = test_dirs();
-            let mut cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs)));
+            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs)).unwrap();
             let peer1 = rand_node_addr();
             let peer2 = rand_node_addr();
             let peer3 = rand_node_addr();
-            cache.add_peer(peer1.clone());
-            cache.add_peer(peer2.clone());
-            cache.add_peer(peer3.clone());
+            cache.add_peer(peer1);
+            cache.add_peer(peer2);
+            cache.add_peer(peer3);
 
-            cache.move_to_cache_top(peer2.clone());
+            cache.move_to_cache_top(peer2);
 
             let peers: Vec<_> = cache.peers.iter().cloned().collect();
             assert_eq!(peers, vec![peer1, peer3, peer2]);
