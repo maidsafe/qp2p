@@ -156,7 +156,7 @@ impl QuicP2p {
 
         #[cfg(feature = "upnp")]
         let cfg = if cfg.ip.is_none() {
-            cfg.ip = igd::get_local_ip().map_or(None, Some);
+            cfg.ip = igd::get_local_ip().ok();
             cfg
         } else {
             cfg
@@ -610,12 +610,12 @@ mod tests {
         }
 
         // Now the only way to obtain info is via querring the quic_ep for the bound address
-        let qp2p0_info = unwrap!(qp2p0.our_connection_info());
+        let qp2p0_info = qp2p0.our_connection_info().unwrap();
         let qp2p0_port = qp2p0_info.port();
 
         let (mut qp2p1, rx1) = {
             let mut hcc: HashSet<_> = Default::default();
-            assert!(hcc.insert(qp2p0_info.clone()));
+            assert!(hcc.insert(qp2p0_info));
             new_random_qp2p(true, hcc)
         };
 
@@ -635,8 +635,8 @@ mod tests {
 
         // The two qp2p can now send data to each other
         // Drain the receiver first
-        while let Ok(_) = rx1.try_recv() {}
-        while let Ok(_) = rx2.try_recv() {}
+        while rx1.try_recv().is_ok() {}
+        while rx2.try_recv().is_ok() {}
 
         let data = bytes::Bytes::from(vec![12, 13, 14, 253]);
         const TOKEN: u64 = 19923;
