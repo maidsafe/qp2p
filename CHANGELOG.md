@@ -1,5 +1,9 @@
 # quic-p2p - Change Log
 
+## [0.7.0]
+- Standardize cargo dependency versioning
+- Return an error when IGD fails
+
 ## [0.6.2]
 - Fix clippy errors in feature-gated code
 - Fix bug in get_connection_info with `upnp` enabled.
