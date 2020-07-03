@@ -19,7 +19,8 @@ jobs:
     name: Clippy, fmt & code coverage checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
+      # Install Rust and required components
       - uses: actions-rs/toolchain@v1
         name: Install Rust and required components
         with:
@@ -27,28 +28,25 @@ jobs:
           toolchain: stable
           override: true
           components: rustfmt, clippy
+
       # Check if the code is formatted correctly.
       - name: Check formatting
         run: cargo fmt --all -- --check
+
         # Generate Cargo.lock, needed for the cache.
       - name: Generate lockfile
         run: cargo generate-lockfile
+
       # Cache.
-      - name: Cache cargo registry
-        uses: actions/cache@v1
+      - name: Cargo cache registry, index and build
+        uses: actions/cache@v2
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo index
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo build
-        uses: actions/cache@v1
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
+
       # Run Clippy.
       - name: Clippy checks
         run: cargo clippy --workspace --all-targets --all-features
@@ -77,32 +75,29 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
+
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
+
       # Generate Cargo.lock, needed for the cache.
       - name: Generate lockfile
         run: cargo generate-lockfile
+
       # Cache.
-      - name: Cache cargo registry
-        uses: actions/cache@v1
+      - name: Cargo cache registry, index and build
+        uses: actions/cache@v2
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo index
-        uses: actions/cache@v1
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache cargo build
-        uses: actions/cache@v1
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
+
       # Run tests.
       - name: Run tests
         run: cargo test --release --workspace
@@ -112,12 +107,14 @@ jobs:
     name: Test Publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
+
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
+
       - name: Test publish
         run: cargo publish --dry-run
