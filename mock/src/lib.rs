@@ -32,6 +32,14 @@ pub type Token = u64;
 #[derive(Debug)]
 pub struct QuicP2pError;
 
+impl std::fmt::Display for QuicP2pError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "mock quic-p2p error")
+    }
+}
+
+impl std::error::Error for QuicP2pError {}
+
 /// Senders for node and client events
 #[derive(Clone)]
 pub struct EventSenders {
@@ -338,7 +346,3 @@ impl Peer {
         }
     }
 }
-
-/// `QuicP2p` error.
-#[derive(Debug)]
-pub struct Error;
