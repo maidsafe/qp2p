@@ -16,7 +16,7 @@ env:
 
 jobs:
   checks:
-    name: Clippy, fmt & code coverage checks
+    name: Clippy & fmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -28,10 +28,6 @@ jobs:
           toolchain: stable
           override: true
           components: rustfmt, clippy
-
-      # Check if the code is formatted correctly.
-      - name: Check formatting
-        run: cargo fmt --all -- --check
 
         # Generate Cargo.lock, needed for the cache.
       - name: Generate lockfile
@@ -47,9 +43,39 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
 
+      # Check if the code is formatted correctly.
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
       # Run Clippy.
       - name: Clippy checks
         run: cargo clippy --workspace --all-targets --all-features
+
+  coverage:
+    name: Code coverage check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      # Install Rust and required components
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      # Generate Cargo.lock, needed for the cache.
+      - name: Generate Cargo.lock
+        run: cargo generate-lockfile
+
+      # Cache.
+      - name: Cargo cache registry, index and build
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
 
       # Run cargo tarpaulin & push result to coveralls.io
       - name: rust-tarpaulin code coverage check
