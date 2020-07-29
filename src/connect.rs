@@ -125,7 +125,7 @@ pub fn connect_to(
     r
 }
 
-fn handle_new_connection_res(
+async fn handle_new_connection_res(
     peer_addr: SocketAddr,
     new_peer_conn_res: Result<quinn::NewConnection, quinn::ConnectionError>,
 ) {
@@ -191,15 +191,20 @@ fn handle_new_connection_res(
                 );
 
                 if let Some(mut bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
-                    if let Err(e) =
-                        bootstrap_group_ref.send(Event::BootstrappedTo { node: peer_addr })
+                    if let Err(e) = bootstrap_group_ref
+                        .send(Event::BootstrappedTo { node: peer_addr })
+                        .await
                     {
                         info!("Could not fire event: {:?}", e);
                     }
                     terminate_bootstrap_group = Some(bootstrap_group_ref);
-                } else if let Err(e) = c.event_tx.send(Event::ConnectedTo {
-                    peer: Peer::Node(peer_addr),
-                }) {
+                } else if let Err(e) = c
+                    .event_tx
+                    .send(Event::ConnectedTo {
+                        peer: Peer::Node(peer_addr),
+                    })
+                    .await
+                {
                     info!("Could not fire event: {:?}", e);
                 }
 
@@ -210,15 +215,20 @@ fn handle_new_connection_res(
                 ..
             } => {
                 if let Some(mut bootstrap_group_ref) = conn.bootstrap_group_ref.take() {
-                    if let Err(e) =
-                        bootstrap_group_ref.send(Event::BootstrappedTo { node: peer_addr })
+                    if let Err(e) = bootstrap_group_ref
+                        .send(Event::BootstrappedTo { node: peer_addr })
+                        .await
                     {
                         info!("Could not fire event: {:?}", e);
                     }
                     terminate_bootstrap_group = Some(bootstrap_group_ref);
-                } else if let Err(e) = c.event_tx.send(Event::ConnectedTo {
-                    peer: Peer::Node(peer_addr),
-                }) {
+                } else if let Err(e) = c
+                    .event_tx
+                    .send(Event::ConnectedTo {
+                        peer: Peer::Node(peer_addr),
+                    })
+                    .await
+                {
                     info!("Could not fire event: {:?}", e);
                 }
 
@@ -227,7 +237,7 @@ fn handle_new_connection_res(
                         Peer::Node(peer_addr),
                         &q_conn,
                         c.our_ext_addr_tx.take(),
-                        &c.event_tx,
+                        &mut c.event_tx,
                         pending_read,
                         &mut c.bootstrap_cache,
                         conn.we_contacted_peer,

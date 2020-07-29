@@ -1,5 +1,5 @@
 use crossbeam_channel as mpmc;
-use quic_p2p::{Config, Event, EventSenders, OurType, Peer, QuicP2p};
+use quic_p2p::{Config, Event, EventSender, OurType, Peer, QuicP2p};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -7,7 +7,7 @@ use std::{
 use unwrap::unwrap;
 
 /// Waits for `Event::ConnectedTo`.
-fn wait_till_connected(ev_rx: EventReceivers) -> Peer {
+fn wait_till_connected(ev_rx: EventReceiver) -> Peer {
     for event in ev_rx.iter() {
         if let Event::ConnectedTo { peer } = event {
             return peer;
@@ -16,18 +16,18 @@ fn wait_till_connected(ev_rx: EventReceivers) -> Peer {
     panic!("Didn't receive the expected ConnectedTo event");
 }
 
-struct EventReceivers {
+struct EventReceiver {
     pub node_rx: mpmc::Receiver<Event>,
     pub client_rx: mpmc::Receiver<Event>,
 }
 
-impl EventReceivers {
+impl EventReceiver {
     pub fn iter(&self) -> IterEvent {
         IterEvent { event_rx: &self }
     }
 }
 pub struct IterEvent<'a> {
-    event_rx: &'a EventReceivers,
+    event_rx: &'a EventReceiver,
 }
 
 impl<'a> Iterator for IterEvent<'a> {
@@ -51,24 +51,24 @@ impl<'a> Iterator for IterEvent<'a> {
     }
 }
 
-fn new_unbounded_channels() -> (EventSenders, EventReceivers) {
+fn new_unbounded_channels() -> (EventSender, EventReceiver) {
     let (client_tx, client_rx) = mpmc::unbounded();
     let (node_tx, node_rx) = mpmc::unbounded();
     (
-        EventSenders { node_tx, client_tx },
-        EventReceivers { node_rx, client_rx },
+        EventSender { node_tx, client_tx },
+        EventReceiver { node_rx, client_rx },
     )
 }
 
 /// Constructs a `QuicP2p` node with some sane defaults for testing.
-fn test_node() -> (QuicP2p, EventReceivers) {
+fn test_node() -> (QuicP2p, EventReceiver) {
     test_peer_with_hcc(Default::default(), OurType::Node)
 }
 
 fn test_peer_with_hcc(
     hard_coded_contacts: HashSet<SocketAddr>,
     our_type: OurType,
-) -> (QuicP2p, EventReceivers) {
+) -> (QuicP2p, EventReceiver) {
     let (ev_tx, ev_rx) = new_unbounded_channels();
     let qp2p = unwrap!(QuicP2p::with_config(
         ev_tx,

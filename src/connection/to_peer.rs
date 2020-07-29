@@ -13,7 +13,7 @@ use crate::{
     peer::Peer,
     utils::{ConnectTerminator, Token},
     wire_msg::WireMsg,
-    EventSenders,
+    EventSender,
 };
 use std::{fmt, net::SocketAddr};
 
@@ -25,7 +25,7 @@ pub enum ToPeer {
         terminator: ConnectTerminator,
         peer_addr: SocketAddr,
         pending_sends: Vec<(WireMsg, Token)>,
-        event_tx: EventSenders,
+        event_tx: EventSender,
     },
     Established {
         q_conn: QConn,

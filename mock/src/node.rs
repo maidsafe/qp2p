@@ -8,7 +8,7 @@
 
 use super::{
     network::{Inner, Message, Packet, NETWORK},
-    Config, Event, EventSenders, OurType, Peer, QuicP2pError,
+    Config, Event, EventSender, OurType, Peer, QuicP2pError,
 };
 use bytes::Bytes;
 // Note: using `FxHashMap` / `FxHashSet` because they don't use random state and thus guarantee
@@ -20,7 +20,7 @@ use std::{cell::RefCell, net::SocketAddr, rc::Rc};
 pub(super) struct Node {
     network: Rc<RefCell<Inner>>,
     addr: SocketAddr,
-    event_tx: EventSenders,
+    event_tx: EventSender,
     config: Config,
     peers: FxHashMap<SocketAddr, (ConnectionType, OurType)>,
     bootstrap_cache: FxHashSet<SocketAddr>,
@@ -29,7 +29,7 @@ pub(super) struct Node {
 }
 
 impl Node {
-    pub fn new(event_tx: EventSenders, config: Config) -> Rc<RefCell<Self>> {
+    pub fn new(event_tx: EventSender, config: Config) -> Rc<RefCell<Self>> {
         let network = NETWORK.with(|network| {
             Rc::clone(
                 network

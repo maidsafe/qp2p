@@ -8,7 +8,7 @@
 // Software.
 
 use crossbeam_channel as mpmc;
-use quic_p2p::{Event, EventSenders, Peer};
+use quic_p2p::{Event, EventSender, Peer};
 use serde::{Deserialize, Serialize};
 
 /// Remote procedure call for our examples to communicate.
@@ -19,12 +19,12 @@ pub enum Rpc {
 }
 
 /// Receivers side for events
-pub struct EventReceivers {
+pub struct EventReceiver {
     pub node_rx: mpmc::Receiver<Event>,
     pub client_rx: mpmc::Receiver<Event>,
 }
 
-impl EventReceivers {
+impl EventReceiver {
     #[allow(unused)]
     pub fn recv(&self) -> Result<Event, mpmc::RecvError> {
         let mut sel = mpmc::Select::new();
@@ -48,7 +48,7 @@ impl EventReceivers {
 }
 
 pub struct IterEvent<'a> {
-    event_rx: &'a EventReceivers,
+    event_rx: &'a EventReceiver,
 }
 
 impl<'a> Iterator for IterEvent<'a> {
@@ -73,11 +73,11 @@ impl<'a> Iterator for IterEvent<'a> {
 }
 
 /// Create channels for events
-pub fn new_unbounded_channels() -> (EventSenders, EventReceivers) {
+pub fn new_unbounded_channels() -> (EventSender, EventReceiver) {
     let (client_tx, client_rx) = mpmc::unbounded();
     let (node_tx, node_rx) = mpmc::unbounded();
     (
-        EventSenders { node_tx, client_tx },
-        EventReceivers { node_rx, client_rx },
+        EventSender { node_tx, client_tx },
+        EventReceiver { node_rx, client_rx },
     )
 }

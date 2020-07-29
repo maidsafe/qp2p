@@ -14,13 +14,14 @@ use crate::error::QuicP2pError;
 use crate::event::Event;
 use crate::utils::{self, Token};
 use crate::wire_msg::{Handshake, WireMsg};
-use crate::{connect, EventSenders};
+use crate::{connect, EventSender};
 use crate::{Peer, R};
 use bytes::Bytes;
 use futures::future::TryFutureExt;
 use futures::stream::StreamExt;
 use log::{debug, info, trace, warn};
-use std::{io, net::SocketAddr, sync::mpsc};
+use std::{io, net::SocketAddr};
+use tokio::sync::mpsc;
 
 /// Send message to peer. If the peer is a node and is not connected, it will attempt to connect to
 /// it first and then send the message. For un-connected clients, it'll simply error out.
@@ -248,9 +249,9 @@ fn read_peer_stream(peer_addr: SocketAddr, i_stream: quinn::RecvStream) {
 }
 
 /// Handle wire messages from peer
-pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
+pub async fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
     match wire_msg {
-        WireMsg::Handshake(h) => handle_rx_handshake(peer_addr, h),
+        WireMsg::Handshake(h) => handle_rx_handshake(peer_addr, h).await,
         wire_msg => {
             ctx_mut(|c| {
                 let conn = match c.connections.get_mut(&peer_addr) {
@@ -281,11 +282,12 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                                 Peer::Node(peer_addr),
                                 q_conn,
                                 c.our_ext_addr_tx.take(),
-                                &c.event_tx,
+                                &mut c.event_tx,
                                 wire_msg,
                                 &mut c.bootstrap_cache,
                                 conn.we_contacted_peer,
-                            );
+                            )
+                            .await;
                         }
                     },
                     FromPeer::Established {
@@ -295,25 +297,29 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
                         ToPeer::NoConnection | ToPeer::Initiated { .. } => {
                             pending_reads.push(wire_msg);
                         }
-                        ToPeer::NotNeeded => dispatch_wire_msg(
-                            Peer::Client(peer_addr),
-                            q_conn,
-                            c.our_ext_addr_tx.take(),
-                            &c.event_tx,
-                            wire_msg,
-                            &mut c.bootstrap_cache,
-                            conn.we_contacted_peer,
-                        ),
+                        ToPeer::NotNeeded => {
+                            dispatch_wire_msg(
+                                Peer::Client(peer_addr),
+                                q_conn,
+                                c.our_ext_addr_tx.take(),
+                                &mut c.event_tx,
+                                wire_msg,
+                                &mut c.bootstrap_cache,
+                                conn.we_contacted_peer,
+                            )
+                            .await
+                        }
                         ToPeer::Established { ref q_conn } => {
                             dispatch_wire_msg(
                                 Peer::Node(peer_addr),
                                 q_conn,
                                 c.our_ext_addr_tx.take(),
-                                &c.event_tx,
+                                &mut c.event_tx,
                                 wire_msg,
                                 &mut c.bootstrap_cache,
                                 conn.we_contacted_peer,
-                            );
+                            )
+                            .await;
                         }
                     },
                     FromPeer::NoConnection => unreachable!(
@@ -328,26 +334,26 @@ pub fn handle_wire_msg(peer_addr: SocketAddr, wire_msg: WireMsg) {
 
 /// Dispatch wire message
 // TODO: Improve by not taking `inform_tx` which is necessary right now to prevent double borrow
-pub fn dispatch_wire_msg(
+pub async fn dispatch_wire_msg(
     peer: Peer,
     q_conn: &QConn,
     inform_tx: Option<mpsc::Sender<SocketAddr>>,
-    event_tx: &EventSenders,
+    event_tx: &mut EventSender,
     wire_msg: WireMsg,
     bootstrap_cache: &mut BootstrapCache,
     we_contacted_peer: bool,
 ) {
     match wire_msg {
         WireMsg::UserMsg(m) => {
-            handle_user_msg(peer, event_tx, m, bootstrap_cache, we_contacted_peer)
+            handle_user_msg(peer, event_tx, m, bootstrap_cache, we_contacted_peer).await
         }
         WireMsg::EndpointEchoReq => handle_echo_req(peer, q_conn),
-        WireMsg::EndpointEchoResp(our_addr) => handle_echo_resp(our_addr, inform_tx),
+        WireMsg::EndpointEchoResp(our_addr) => handle_echo_resp(our_addr, inform_tx).await,
         WireMsg::Handshake(_) => unreachable!("Should have been handled already"),
     }
 }
 
-fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
+async fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
     if let Handshake::Node = handshake {
         return handle_rx_handshake_from_node(peer_addr);
     }
@@ -382,7 +388,7 @@ fn handle_rx_handshake(peer_addr: SocketAddr, handshake: Handshake) {
 
         let peer = Peer::Client(peer_addr);
 
-        if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }) {
+        if let Err(e) = c.event_tx.send(Event::ConnectedTo { peer }).await {
             info!("ERROR in informing user about a new peer: {:?} - {}", e, e);
         }
     })
@@ -432,9 +438,9 @@ fn handle_rx_handshake_from_node(peer_addr: SocketAddr) {
     }
 }
 
-fn handle_user_msg(
+async fn handle_user_msg(
     peer: Peer,
-    event_tx: &EventSenders,
+    event_tx: &mut EventSender,
     msg: Bytes,
     bootstrap_cache: &mut BootstrapCache,
     we_contacted_peer: bool,
@@ -443,7 +449,7 @@ fn handle_user_msg(
         peer: peer.clone(),
         msg,
     };
-    if let Err(e) = event_tx.send(new_msg) {
+    if let Err(e) = event_tx.send(new_msg).await {
         info!("Could not dispatch incoming user message: {:?}", e);
     }
 
@@ -459,10 +465,10 @@ fn handle_echo_req(peer: Peer, q_conn: &QConn) {
     write_to_peer_connection(peer, q_conn, msg, 0);
 }
 
-fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<mpsc::Sender<SocketAddr>>) {
+async fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<mpsc::Sender<SocketAddr>>) {
     debug!("Echo service response. our_ext_addr: {:?}", our_ext_addr);
-    if let Some(tx) = inform_tx {
-        if let Err(e) = tx.send(our_ext_addr) {
+    if let Some(mut tx) = inform_tx {
+        if let Err(e) = tx.send(our_ext_addr).await {
             info!("Error informing endpoint echo service response: {:?}", e);
         }
     }
@@ -472,8 +478,8 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<mpsc::Sender<Soc
 mod tests {
     use super::*;
     use crate::test_utils::{new_random_qp2p, rand_node_addr, test_dirs, write_to_bi_stream};
-    use crate::utils::new_unbounded_channels;
     use std::collections::HashSet;
+    use tokio::sync::mpsc;
     use unwrap::unwrap;
 
     // Test for the case of bi-directional stream usage attempt.
@@ -516,7 +522,7 @@ mod tests {
 
         #[test]
         fn when_peer_is_node_and_we_contacted_it_before_it_is_moved_to_bootstrap_cache_top() {
-            let (event_tx, _event_rx) = new_unbounded_channels();
+            let (event_tx, _event_rx) = mpsc::channel(1);
             let peer1_addr = rand_node_addr();
             let peer2_addr = rand_node_addr();
             let peer = Peer::Node(peer1_addr);

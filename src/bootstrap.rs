@@ -8,7 +8,7 @@
 // Software.
 
 use crate::{
-    connect, connection::BootstrapGroupMaker, context::ctx, EventSenders, QuicP2pError, WireMsg,
+    connect, connection::BootstrapGroupMaker, context::ctx, EventSender, QuicP2pError, WireMsg,
 };
 use log::trace;
 use std::net::SocketAddr;
@@ -27,7 +27,7 @@ pub fn start() {
 
 /// Send a request to an echo service. By default uses the list of hardcoded contacts and the bootstrap cache.
 /// Returns `true` if we have been bootstrapped to someone already (in this case just an echo request will be sent).
-pub(crate) fn echo_request(notify: EventSenders) -> bool {
+pub(crate) fn echo_request(notify: EventSender) -> bool {
     let bootstrap_nodes = bootstrap_nodes();
 
     let mut maker = BootstrapGroupMaker::new(notify);
@@ -61,11 +61,7 @@ fn bootstrap_nodes() -> Vec<SocketAddr> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        test_utils::new_random_qp2p,
-        utils::{new_unbounded_channels, EventReceivers},
-        Config, Event, OurType, QuicP2p,
-    };
+    use crate::{test_utils::new_random_qp2p, Config, Event, OurType, QuicP2p};
     use std::collections::{HashSet, VecDeque};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
     use std::thread;
@@ -356,7 +352,7 @@ mod tests {
 
     fn test_peer_with_bootstrap_cache(
         mut cached_peers: Vec<SocketAddr>,
-    ) -> (QuicP2p, EventReceivers) {
+    ) -> (QuicP2p, EventReceiver) {
         let cached_peers: VecDeque<_> = cached_peers.drain(..).collect();
         let (ev_tx, ev_rx) = new_unbounded_channels();
         let quic_p2p = unwrap!(QuicP2p::with_config(
@@ -373,7 +369,7 @@ mod tests {
     }
 
     /// Constructs a `QuicP2p` node with some sane defaults for testing.
-    fn test_node() -> (QuicP2p, EventReceivers) {
+    fn test_node() -> (QuicP2p, EventReceiver) {
         test_peer_with_hcc(Default::default(), OurType::Node)
     }
 
@@ -381,7 +377,7 @@ mod tests {
     fn test_peer_with_hcc(
         hard_coded_contacts: HashSet<SocketAddr>,
         our_type: OurType,
-    ) -> (QuicP2p, EventReceivers) {
+    ) -> (QuicP2p, EventReceiver) {
         let (ev_tx, ev_rx) = new_unbounded_channels();
         let quic_p2p = unwrap!(QuicP2p::with_config(
             ev_tx,

@@ -19,7 +19,7 @@
 mod common;
 
 use bytes::Bytes;
-use common::{new_unbounded_channels, EventReceivers, Rpc};
+use common::{new_unbounded_channels, EventReceiver, Rpc};
 use crc::crc32;
 use log::{debug, error, info, warn};
 use quic_p2p::{Config, Event, Peer, QuicP2p};
@@ -41,7 +41,7 @@ struct CliArgs {
 struct ClientNode {
     qp2p: QuicP2p,
     bootstrap_node_addr: SocketAddr,
-    event_rx: EventReceivers,
+    event_rx: EventReceiver,
     /// Other nodes we will be communicating with.
     client_nodes: HashSet<SocketAddr>,
     our_addr: SocketAddr,

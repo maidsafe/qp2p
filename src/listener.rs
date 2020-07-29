@@ -38,7 +38,7 @@ enum Action {
     Continue(Option<BootstrapGroupRef>),
 }
 
-fn handle_new_conn(
+async fn handle_new_conn(
     quinn::NewConnection {
         connection,
         uni_streams,
@@ -72,16 +72,21 @@ fn handle_new_conn(
                         return Action::HandleAlreadyBootstrapped;
                     }
 
-                    if let Err(e) =
-                        bootstrap_group_ref.send(Event::BootstrappedTo { node: peer_addr })
+                    if let Err(e) = bootstrap_group_ref
+                        .send(Event::BootstrappedTo { node: peer_addr })
+                        .await
                     {
                         info!("ERROR in informing user about a new peer: {:?} - {}", e, e);
                     }
 
                     return Action::Continue(Some(bootstrap_group_ref));
-                } else if let Err(e) = c.event_tx.send(Event::ConnectedTo {
-                    peer: Peer::Node(peer_addr),
-                }) {
+                } else if let Err(e) = c
+                    .event_tx
+                    .send(Event::ConnectedTo {
+                        peer: Peer::Node(peer_addr),
+                    })
+                    .await
+                {
                     info!("ERROR in informing user about a new peer: {:?} - {}", e, e);
                 };
             };

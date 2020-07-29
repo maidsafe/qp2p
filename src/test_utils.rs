@@ -12,7 +12,7 @@ use crate::connection::{Connection, FromPeer, QConn, ToPeer};
 use crate::context::ctx;
 use crate::context::Context;
 use crate::dirs::{Dirs, OverRide};
-use crate::utils::{new_unbounded_channels, EventReceivers, Token, R};
+use crate::utils::{new_unbounded_channels, EventReceiver, Token, R};
 use crate::wire_msg::WireMsg;
 use crate::{communicate, Peer, QuicP2p};
 use futures::future::Future;
@@ -173,7 +173,7 @@ fn tmp_rand_dir() -> PathBuf {
 pub(crate) fn new_random_qp2p(
     is_addr_unspecified: bool,
     contacts: HashSet<SocketAddr>,
-) -> (QuicP2p, EventReceivers) {
+) -> (QuicP2p, EventReceiver) {
     let _ = env_logger::try_init();
 
     let (tx, rx) = new_unbounded_channels();

@@ -12,7 +12,7 @@
 mod common;
 
 use bytes::Bytes;
-use common::{new_unbounded_channels, EventReceivers};
+use common::{new_unbounded_channels, EventReceiver};
 use quic_p2p::{Config, Event, Peer, QuicP2p};
 use rand::{distributions::Standard, Rng};
 use rustyline::config::Configurer;
@@ -186,7 +186,7 @@ fn on_cmd_send_rand<'a>(
         })
 }
 
-fn handle_qp2p_events(event_rx: EventReceivers, peer_list: Arc<Mutex<PeerList>>) -> JoinHandle<()> {
+fn handle_qp2p_events(event_rx: EventReceiver, peer_list: Arc<Mutex<PeerList>>) -> JoinHandle<()> {
     thread::spawn(move || {
         for event in event_rx.iter() {
             match event {

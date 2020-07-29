@@ -67,7 +67,8 @@ use crossbeam_channel as mpmc;
 use event_loop::EventLoop;
 use log::{debug, info, warn};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::{collections::VecDeque, mem, sync::mpsc, time::Duration};
+use std::{collections::VecDeque, mem, time::Duration};
+use tokio::sync::mpsc;
 use unwrap::unwrap;
 
 mod bootstrap;
@@ -96,31 +97,15 @@ pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.
 pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
+/// Buffer size for the events received on the channels
+pub const QUEUED_EVENTS_BUFFER: usize = DEFAULT_MAX_ALLOWED_MSG_SIZE * 1024;
 
 /// Senders for node and client events
-#[derive(Clone)]
-pub struct EventSenders {
-    /// The event sender for events comming from clients.
-    pub client_tx: mpmc::Sender<Event>,
-    /// The event sender for events comming from nodes.
-    /// This also includes our own bootstrapping events `Event::BootstrapFailure`
-    /// and `Event::BootstrappedTo` as well as `Event::Finish`.
-    pub node_tx: mpmc::Sender<Event>,
-}
-
-impl EventSenders {
-    pub(crate) fn send(&self, event: Event) -> Result<(), mpmc::SendError<Event>> {
-        if event.is_node_event() {
-            self.node_tx.send(event)
-        } else {
-            self.client_tx.send(event)
-        }
-    }
-}
+pub type EventSender = mpsc::Sender<Event>;
 
 /// Main QuicP2p instance to communicate with QuicP2p
 pub struct QuicP2p {
-    event_tx: EventSenders,
+    event_tx: EventSender,
     cfg: Config,
     us: Option<SocketAddr>,
     el: EventLoop,
@@ -128,7 +113,7 @@ pub struct QuicP2p {
 
 impl QuicP2p {
     /// Construct `QuicP2p` with the default config.
-    pub fn new(event_tx: EventSenders) -> R<QuicP2p> {
+    pub fn new(event_tx: EventSender) -> R<QuicP2p> {
         Self::with_config(event_tx, None, Default::default(), false)
     }
 
@@ -140,7 +125,7 @@ impl QuicP2p {
     /// Either use these exclusively or in addition to the ones read from bootstrap cache file if
     /// such a file exists
     pub fn with_config(
-        event_tx: EventSenders,
+        event_tx: EventSender,
         cfg: Option<Config>,
         bootstrap_nodes: VecDeque<SocketAddr>,
         use_bootstrap_nodes_exclusively: bool,
@@ -162,26 +147,26 @@ impl QuicP2p {
             cfg
         };
 
-        let mut qp2p = Self {
+        let qp2p = Self {
             event_tx,
             cfg,
             us: None,
             el,
         };
 
-        QuicP2p::activate(&qp2p.event_tx, &mut qp2p.el, &qp2p.cfg)?;
+        QuicP2p::activate(&qp2p.event_tx, &qp2p.cfg)?;
 
-        qp2p.el.post(move || {
-            ctx_mut(|c| {
-                if use_bootstrap_nodes_exclusively {
-                    let _ = mem::replace(c.bootstrap_cache.peers_mut(), bootstrap_nodes);
-                } else {
-                    c.bootstrap_cache
-                        .peers_mut()
-                        .extend(bootstrap_nodes.into_iter());
-                }
-            })
+        //qp2p.el.post(move || {
+        ctx_mut(|c| {
+            if use_bootstrap_nodes_exclusively {
+                let _ = mem::replace(c.bootstrap_cache.peers_mut(), bootstrap_nodes);
+            } else {
+                c.bootstrap_cache
+                    .peers_mut()
+                    .extend(bootstrap_nodes.into_iter());
+            }
         });
+        //});
 
         Ok(qp2p)
     }
@@ -359,12 +344,12 @@ impl QuicP2p {
     // FIXME calling this mutliple times concurrently just now could have it hanging as only one tx
     // is registered and that replaces any previous tx registered. Fix by using a vec of txs
     #[cfg(not(feature = "upnp"))]
-    pub fn our_connection_info(&mut self) -> R<SocketAddr> {
+    pub async fn our_connection_info(&mut self) -> R<SocketAddr> {
         if let Some(us) = self.us {
             return Ok(us);
         }
 
-        let our_addr = match self.query_ip_echo_service() {
+        let our_addr = match self.query_ip_echo_service().await {
             Ok(addr) => addr,
             Err(e @ QuicP2pError::NoEndpointEchoServerFound) => {
                 let addr = self
@@ -408,7 +393,7 @@ impl QuicP2p {
     }
 
     /// Must be called only once. There can only be one context per `QuicP2p` instance.
-    fn activate(event_tx: &EventSenders, el: &mut EventLoop, cfg: &Config) -> R<()> {
+    fn activate(event_tx: &EventSender, cfg: &Config) -> R<()> {
         let (port, is_user_supplied) = cfg
             .port
             .map(|p| (p, true))
@@ -437,65 +422,65 @@ impl QuicP2p {
             .map(|custom_dir| Dirs::Overide(OverRide::new(&custom_dir)));
         let bootstrap_cache = BootstrapCache::new(hard_coded_contacts, custom_dirs.as_ref())?;
 
-        el.post(move || {
-            let our_cfg = unwrap!(peer_config::new_our_cfg(
-                idle_timeout_msec,
-                keep_alive_interval_msec,
-                cert,
-                key
-            ));
+        //el.post(move || {
+        let our_cfg = unwrap!(peer_config::new_our_cfg(
+            idle_timeout_msec,
+            keep_alive_interval_msec,
+            cert,
+            key
+        ));
 
-            let mut ep_builder = quinn::Endpoint::builder();
-            let _ = ep_builder.listen(our_cfg);
-            let (ep, incoming_connections) = {
-                match UdpSocket::bind(&(ip, port)) {
-                    Ok(udp) => unwrap!(ep_builder.with_socket(udp)),
-                    Err(e) => {
-                        if is_user_supplied {
-                            panic!(
-                                "Could not bind to the user supplied port: {}! Error: {:?}- {}",
-                                port, e, e
-                            );
-                        }
-                        info!(
-                            "Failed to bind to port: {} - Error: {:?} - {}. Trying random port.",
-                            DEFAULT_PORT_TO_TRY, e, e
+        let mut ep_builder = quinn::Endpoint::builder();
+        let _ = ep_builder.listen(our_cfg);
+        let (ep, incoming_connections) = {
+            match UdpSocket::bind(&(ip, port)) {
+                Ok(udp) => unwrap!(ep_builder.with_socket(udp)),
+                Err(e) => {
+                    if is_user_supplied {
+                        panic!(
+                            "Could not bind to the user supplied port: {}! Error: {:?}- {}",
+                            port, e, e
                         );
-                        let bind_addr = SocketAddr::new(ip, 0);
-                        unwrap!(ep_builder.bind(&bind_addr))
                     }
+                    info!(
+                        "Failed to bind to port: {} - Error: {:?} - {}. Trying random port.",
+                        DEFAULT_PORT_TO_TRY, e, e
+                    );
+                    let bind_addr = SocketAddr::new(ip, 0);
+                    unwrap!(ep_builder.bind(&bind_addr))
                 }
-            };
-
-            let client_cfg =
-                peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec).unwrap();
-
-            let ctx = Context::new(
-                tx,
-                max_msg_size_allowed,
-                our_type,
-                bootstrap_cache,
-                ep,
-                client_cfg,
-            );
-            initialise_ctx(ctx);
-
-            if our_type != OurType::Client {
-                listener::listen(incoming_connections);
             }
-        });
+        };
+
+        let client_cfg =
+            peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec).unwrap();
+
+        let ctx = Context::new(
+            tx,
+            max_msg_size_allowed,
+            our_type,
+            bootstrap_cache,
+            ep,
+            client_cfg,
+        );
+        initialise_ctx(ctx);
+
+        if our_type != OurType::Client {
+            listener::listen(incoming_connections);
+        }
+        //});
 
         Ok(())
     }
 
-    fn query_ip_echo_service(&mut self) -> R<SocketAddr> {
+    async fn query_ip_echo_service(&mut self) -> R<SocketAddr> {
         // Bail out early if we don't have any contacts.
         if self.cfg.hard_coded_contacts.is_empty() {
             return Err(QuicP2pError::NoEndpointEchoServerFound);
         }
 
         // Create a separate event stream for the IP echo request.
-        let (echo_resp_tx, echo_resp_rx) = mpsc::channel();
+        let (echo_resp_tx, echo_resp_rx) = mpsc::channel(QUEUED_EVENTS_BUFFER);
 
         let idle_timeout_msec = Duration::from_millis(
             self.cfg
@@ -503,11 +488,11 @@ impl QuicP2p {
                 .unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC),
         );
 
-        self.el.post(move || {
-            ctx_mut(|ctx| {
-                ctx.our_ext_addr_tx = Some(echo_resp_tx);
-            });
+        //self.el.post(move || {
+        ctx_mut(|ctx| {
+            ctx.our_ext_addr_tx = Some(echo_resp_tx);
         });
+        //});
 
         debug!(
             "Querying IP echo service to find our public IP address (contact list: {:?})",
@@ -519,44 +504,50 @@ impl QuicP2p {
                 return Err(QuicP2pError::NoEndpointEchoServerFound);
             }
 
-            let (notify_tx, notify_rx) = utils::new_unbounded_channels();
+            let (notify_tx, notify_rx) = mpsc::channel(QUEUED_EVENTS_BUFFER);
 
-            self.el.post(move || {
-                let _ = bootstrap::echo_request(notify_tx);
-            });
+            //self.el.post(move || {
+            let _ = bootstrap::echo_request(notify_tx);
+            //});
 
-            match notify_rx.recv_timeout(idle_timeout_msec) {
-                Ok(Event::BootstrapFailure { .. }) => {
+            break Err(QuicP2pError::NoEndpointEchoServerFound);
+
+            // TODO: do we need to handle a timeout here??
+            /*match notify_rx.recv().await {
+                Some(Event::BootstrapFailure { .. }) => {
                     debug!("BootstrapFailure");
                     break Err(QuicP2pError::NoEndpointEchoServerFound);
                 }
-                Ok(Event::BootstrappedTo { node }) => {
+                Some(Event::BootstrappedTo { node }) => {
                     debug!("BootstrappedTo {{ node: {:?} }}", node);
-                    match echo_resp_rx.recv_timeout(idle_timeout_msec) {
-                        Ok(res) => {
+
+                    // TODO: do we need to handle a timeout here??
+                    match echo_resp_rx.recv(idle_timeout_msec).await {
+                        Some(res) => {
                             debug!("Found our address: {:?}", res);
                             break Ok(res);
                         }
-                        Err(_e) => {
+                        None => {
                             // This node hasn't replied in a timely manner, so remove it from our bootstrap list and try again.
+                            // TODO: this was due all senders being dropped, do we still remove contanct??
                             let _ = self.cfg.hard_coded_contacts.remove(&node);
                             info!(
-				"Node {} is unresponsive, removing it from bootstrap contacts; {} contacts left",
+                "Node {} is unresponsive, removing it from bootstrap contacts; {} contacts left",
                                 node,
                                 self.cfg.hard_coded_contacts.len()
                             );
                         }
                     }
                 }
-                Ok(ev) => {
+                Some(ev) => {
                     debug!("Unexpected event: {:?}", ev);
                     break Err(QuicP2pError::NoEndpointEchoServerFound);
                 }
-                Err(err) => {
-                    debug!("Unexpected error: {:?}", err);
+                None => {
+                    debug!("No endpoint echo server found");
                     break Err(QuicP2pError::NoEndpointEchoServerFound);
                 }
-            }
+            }*/
         }
     }
 

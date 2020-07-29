@@ -42,7 +42,7 @@ impl std::error::Error for QuicP2pError {}
 
 /// Senders for node and client events
 #[derive(Clone)]
-pub struct EventSenders {
+pub struct EventSender {
     /// The event sender for events comming from clients.
     pub client_tx: Sender<Event>,
     /// The event sender for events comming from nodes.
@@ -51,7 +51,7 @@ pub struct EventSenders {
     pub node_tx: Sender<Event>,
 }
 
-impl EventSenders {
+impl EventSender {
     pub(crate) fn send(&self, event: Event) -> Result<(), crossbeam_channel::SendError<Event>> {
         if event.is_node_event() {
             self.node_tx.send(event)
@@ -118,7 +118,7 @@ impl QuicP2p {
         self.inner.borrow().config().clone()
     }
 
-    pub fn new(event_tx: EventSenders) -> Result<QuicP2p, QuicP2pError> {
+    pub fn new(event_tx: EventSender) -> Result<QuicP2p, QuicP2pError> {
         Ok(Self {
             inner: Node::new(event_tx, Config::default()),
         })
@@ -127,7 +127,7 @@ impl QuicP2p {
     /// Construct `QuicP2p` with supplied parameters, ready to be used.
     /// If config is not specified it'll call `Config::read_or_construct_default()`
     pub fn with_config(
-        event_tx: EventSenders,
+        event_tx: EventSender,
         cfg: Option<Config>,
         _bootstrap_nodes: VecDeque<SocketAddr>,
         _use_bootstrap_nodes_exclusively: bool,

@@ -10,11 +10,11 @@
 use crate::bootstrap_cache::BootstrapCache;
 use crate::config::OurType;
 use crate::connection::Connection;
-use crate::EventSenders;
+use crate::EventSender;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::mpsc;
+use tokio::sync::mpsc;
 
 thread_local! {
     pub static CTX: RefCell<Option<Context>> = RefCell::new(None);
@@ -77,7 +77,7 @@ where
 /// The context to the event loop. This holds all the states that are necessary to be persistant
 /// between calls to poll the event loop for the next event.
 pub struct Context {
-    pub event_tx: EventSenders,
+    pub event_tx: EventSender,
     pub connections: HashMap<SocketAddr, Connection>,
     pub our_ext_addr_tx: Option<mpsc::Sender<SocketAddr>>,
     pub max_msg_size_allowed: usize,
@@ -90,7 +90,7 @@ pub struct Context {
 impl Context {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        event_tx: EventSenders,
+        event_tx: EventSender,
         max_msg_size_allowed: usize,
         our_type: OurType,
         bootstrap_cache: BootstrapCache,

@@ -17,14 +17,14 @@
 use crate::context::ctx_mut;
 use crate::event::Event;
 use crate::utils::ConnectTerminator;
-use crate::EventSenders;
-use crossbeam_channel as mpmc;
+use crate::EventSender;
 use log::info;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::mem;
 use std::net::SocketAddr;
 use std::rc::Rc;
+use tokio::sync::mpsc;
 
 /// Creator of a `BootstrapGroup`. Use this to obtain the reference to the undelying group.
 ///
@@ -36,7 +36,7 @@ pub struct BootstrapGroupMaker {
 
 impl BootstrapGroupMaker {
     /// Create a handle that refers to a newly created underlying group.
-    pub fn new(event_tx: EventSenders) -> Self {
+    pub fn new(event_tx: EventSender) -> Self {
         Self {
             group: Rc::new(RefCell::new(BootstrapGroup {
                 is_bootstrap_successful_yet: false,
@@ -69,7 +69,7 @@ impl BootstrapGroupMaker {
     }
 
     /// Notify this group that it's already been boostrapped.
-    pub fn set_already_bootstrapped(&mut self, peer_addr: SocketAddr) {
+    pub async fn set_already_bootstrapped(&mut self, peer_addr: SocketAddr) {
         // Drop connections for the rest of the group.
         let mut terminators = {
             let mut group = self.group.borrow_mut();
@@ -89,8 +89,8 @@ impl BootstrapGroupMaker {
             .group
             .borrow_mut()
             .event_tx
-            .node_tx
             .send(Event::BootstrappedTo { node: peer_addr })
+            .await
         {
             info!("Failed informing about bootstrap success: {:?}", e);
         }
@@ -138,8 +138,8 @@ impl BootstrapGroupRef {
         self.group.borrow().is_bootstrap_successful_yet
     }
 
-    pub fn send(&mut self, event: Event) -> Result<(), mpmc::SendError<Event>> {
-        self.group.borrow_mut().event_tx.node_tx.send(event)
+    pub async fn send(&mut self, event: Event) -> Result<(), mpsc::error::SendError<Event>> {
+        self.group.borrow_mut().event_tx.send(event).await
     }
 }
 
@@ -152,15 +152,19 @@ impl Drop for BootstrapGroupRef {
 struct BootstrapGroup {
     is_bootstrap_successful_yet: bool,
     terminators: HashMap<SocketAddr, ConnectTerminator>,
-    event_tx: EventSenders,
+    event_tx: EventSender,
 }
 
 impl Drop for BootstrapGroup {
     fn drop(&mut self) {
         if !self.is_bootstrap_successful_yet {
-            if let Err(e) = self.event_tx.node_tx.send(Event::BootstrapFailure) {
+            // TODO: this function cannot be async so we need to either block
+            // the call to send() or handle this in a different way
+            /*
+            if let Err(e) = self.event_tx.send(Event::BootstrapFailure).await {
                 info!("Failed informing about bootstrap failure: {:?}", e);
             }
+            */
         }
     }
 }

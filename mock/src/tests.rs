@@ -8,7 +8,7 @@
 
 #![allow(clippy::mutable_key_type)]
 
-use super::{Config, Event, EventSenders, Network, OurType, Peer, QuicP2p};
+use super::{Config, Event, EventSender, Network, OurType, Peer, QuicP2p};
 use bytes::Bytes;
 use crossbeam_channel::{self as mpmc, Receiver, TryRecvError};
 use fxhash::FxHashSet;
@@ -30,12 +30,12 @@ macro_rules! assert_match {
     };
 }
 
-struct EventReceivers {
+struct EventReceiver {
     pub node_rx: Receiver<Event>,
     pub client_rx: Receiver<Event>,
 }
 
-impl EventReceivers {
+impl EventReceiver {
     pub fn try_recv(&self) -> Result<Event, mpmc::TryRecvError> {
         self.node_rx
             .try_recv()
@@ -43,12 +43,12 @@ impl EventReceivers {
     }
 }
 
-fn new_unbounded_channels() -> (EventSenders, EventReceivers) {
+fn new_unbounded_channels() -> (EventSender, EventReceiver) {
     let (client_tx, client_rx) = mpmc::unbounded();
     let (node_tx, node_rx) = mpmc::unbounded();
     (
-        EventSenders { node_tx, client_tx },
-        EventReceivers { node_rx, client_rx },
+        EventSender { node_tx, client_tx },
+        EventReceiver { node_rx, client_rx },
     )
 }
 
@@ -426,7 +426,7 @@ fn drop_disconnects() {
 
 struct Agent {
     inner: QuicP2p,
-    rx: EventReceivers,
+    rx: EventReceiver,
 }
 
 impl Agent {
