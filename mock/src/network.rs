@@ -159,7 +159,7 @@ impl Inner {
         }
 
         self.connections
-            .entry(Connection::new(src, dst))
+            .entry(Connection::new(src, dst, self.connections))
             .or_insert_with(Queue::new)
             .push(packet)
     }
@@ -272,7 +272,7 @@ struct Connection {
 }
 
 impl Connection {
-    fn new(src: SocketAddr, dst: SocketAddr) -> Self {
+    fn new(src: SocketAddr, dst: SocketAddr, connections: HashMap<SocketAddr, Connection>) -> Self {
         Self { src, dst }
     }
 }

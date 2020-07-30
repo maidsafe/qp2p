@@ -14,9 +14,9 @@
 //! currently being made by the members of the group and thus an eventual destruction of all such
 //! members to not continue to use resources as we no longer require them.
 
-use crate::context::ctx_mut;
 use crate::event::Event;
 use crate::utils::ConnectTerminator;
+use crate::Connection;
 use crate::EventSender;
 use log::info;
 use std::cell::RefCell;
@@ -69,7 +69,11 @@ impl BootstrapGroupMaker {
     }
 
     /// Notify this group that it's already been boostrapped.
-    pub async fn set_already_bootstrapped(&mut self, peer_addr: SocketAddr) {
+    pub async fn set_already_bootstrapped(
+        &mut self,
+        peer_addr: SocketAddr,
+        mut connections: HashMap<SocketAddr, Connection>,
+    ) {
         // Drop connections for the rest of the group.
         let mut terminators = {
             let mut group = self.group.borrow_mut();
@@ -77,12 +81,10 @@ impl BootstrapGroupMaker {
             mem::take(&mut group.terminators)
         };
 
-        ctx_mut(|c| {
-            for (peer_addr, mut terminator) in terminators.drain() {
-                let _ = terminator.try_send(());
-                let _conn = c.connections.remove(&peer_addr);
-            }
-        });
+        for (peer_addr, mut terminator) in terminators.drain() {
+            let _ = terminator.try_send(());
+            let _conn = connections.remove(&peer_addr);
+        }
 
         // Notify about successful bootstrap.
         if let Err(e) = self
@@ -111,7 +113,11 @@ impl BootstrapGroupRef {
     /// Prematurely terminate all members of the underlying `BootstrapGroup`. Also indicate if this
     /// is because the bootstrapping was successful (in which case no failure event will be
     /// auto-fired).
-    pub fn terminate_group(&self, is_due_to_success: bool) {
+    pub fn terminate_group(
+        &self,
+        is_due_to_success: bool,
+        mut connections: HashMap<SocketAddr, Connection>,
+    ) {
         let mut terminators = {
             let mut group = self.group.borrow_mut();
 
@@ -126,12 +132,10 @@ impl BootstrapGroupRef {
 
         let _ = terminators.remove(&self.peer_addr);
 
-        ctx_mut(|c| {
-            for (peer_addr, mut terminator) in terminators.drain() {
-                let _ = terminator.try_send(());
-                let _conn = c.connections.remove(&peer_addr);
-            }
-        });
+        for (peer_addr, mut terminator) in terminators.drain() {
+            let _ = terminator.try_send(());
+            let _conn = connections.remove(&peer_addr);
+        }
     }
 
     pub fn is_bootstrap_successful_yet(&self) -> bool {

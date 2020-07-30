@@ -11,10 +11,10 @@ pub use self::bootstrap_group::{BootstrapGroupMaker, BootstrapGroupRef};
 pub use self::from_peer::FromPeer;
 pub use self::q_conn::QConn;
 pub use self::to_peer::ToPeer;
-
-use crate::{context::ctx_mut, error::QuicP2pError, event::Event, peer::Peer, EventSender};
+use crate::{error::QuicP2pError, event::Event, peer::Peer, EventSender};
 use futures::future::FutureExt;
 use log::trace;
+use std::collections::HashMap;
 use std::{collections::hash_map::Entry, fmt, net::SocketAddr, time::Duration};
 
 mod bootstrap_group;
@@ -50,8 +50,9 @@ impl Connection {
         peer_addr: SocketAddr,
         event_tx: EventSender,
         bootstrap_group_ref: Option<BootstrapGroupRef>,
+        connections: HashMap<SocketAddr, Connection>,
     ) -> Self {
-        spawn_incomplete_conn_killer(peer_addr);
+        spawn_incomplete_conn_killer(peer_addr, connections);
 
         Self {
             to_peer: Default::default(),
@@ -95,28 +96,28 @@ impl fmt::Debug for Connection {
     }
 }
 
-fn spawn_incomplete_conn_killer(peer_addr: SocketAddr) {
+fn spawn_incomplete_conn_killer(
+    peer_addr: SocketAddr,
+    connections: HashMap<SocketAddr, Connection>,
+) {
     let leaf =
         tokio::time::delay_for(Duration::from_secs(KILL_INCOMPLETE_CONN_SEC)).map(move |()| {
-            ctx_mut(|c| {
-                let conn = if let Entry::Occupied(oe) = c.connections.entry(peer_addr) {
-                    oe
-                } else {
-                    return;
-                };
+            let conn = if let Entry::Occupied(oe) = connections.entry(peer_addr) {
+                oe
+            } else {
+                return;
+            };
 
-                if (!conn.get().to_peer.is_established() && !conn.get().to_peer.is_not_needed())
-                    || (!conn.get().from_peer.is_established()
-                        && !conn.get().from_peer.is_not_needed())
-                    || (conn.get().to_peer.is_not_needed() && conn.get().from_peer.is_not_needed())
-                {
-                    trace!(
-                        "Killing a non-completing connection for peer: {}",
-                        peer_addr
-                    );
-                    let _ = conn.remove();
-                }
-            });
+            if (!conn.get().to_peer.is_established() && !conn.get().to_peer.is_not_needed())
+                || (!conn.get().from_peer.is_established() && !conn.get().from_peer.is_not_needed())
+                || (conn.get().to_peer.is_not_needed() && conn.get().from_peer.is_not_needed())
+            {
+                trace!(
+                    "Killing a non-completing connection for peer: {}",
+                    peer_addr
+                );
+                let _ = conn.remove();
+            }
         });
 
     // TODO find a way to cancel this timer if we know the connection is done. Otherwise it

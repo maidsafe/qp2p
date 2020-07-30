@@ -7,58 +7,56 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{
-    connect, connection::BootstrapGroupMaker, context::ctx, EventSender, QuicP2pError, WireMsg,
-};
+use crate::QuicP2p;
+use crate::{connection::BootstrapGroupMaker, EventSender, QuicP2pError, WireMsg};
 use log::trace;
 use std::net::SocketAddr;
 
-pub fn start() {
-    let bootstrap_nodes = bootstrap_nodes();
-    let event_tx = ctx(|c| c.event_tx.clone());
+impl QuicP2p {
+    pub fn start_bootsrapping(&self, event_tx: EventSender) {
+        let bootstrap_nodes = self.bootstrap_nodes();
 
-    let maker = BootstrapGroupMaker::new(event_tx);
-    trace!("Bootstrapping to {:?}", bootstrap_nodes);
+        let maker = BootstrapGroupMaker::new(event_tx);
+        trace!("Bootstrapping to {:?}", bootstrap_nodes);
 
-    for bootstrap_node in bootstrap_nodes {
-        let _ = connect::connect_to(bootstrap_node, None, Some(&maker));
-    }
-}
-
-/// Send a request to an echo service. By default uses the list of hardcoded contacts and the bootstrap cache.
-/// Returns `true` if we have been bootstrapped to someone already (in this case just an echo request will be sent).
-pub(crate) fn echo_request(notify: EventSender) -> bool {
-    let bootstrap_nodes = bootstrap_nodes();
-
-    let mut maker = BootstrapGroupMaker::new(notify);
-    let send_after_connect = Some((WireMsg::EndpointEchoReq, 0));
-    trace!("Sending echo requests to nodes {:?}", bootstrap_nodes);
-
-    for bootstrap_node in bootstrap_nodes {
-        let res = connect::connect_to(bootstrap_node, send_after_connect.clone(), Some(&maker));
-        if let Err(QuicP2pError::DuplicateConnectionToPeer { peer_addr }) = res {
-            // We are already bootstrapped
-            maker.set_already_bootstrapped(peer_addr);
-            return true;
+        for bootstrap_node in bootstrap_nodes {
+            let _ = self.connect_to_node(bootstrap_node, None, Some(&maker));
         }
     }
 
-    false
-}
+    /// Send a request to an echo service. By default uses the list of hardcoded contacts and the bootstrap cache.
+    /// Returns `true` if we have been bootstrapped to someone already (in this case just an echo request will be sent).
+    pub(crate) fn echo_request(&self, notify: EventSender) -> bool {
+        let bootstrap_nodes = self.bootstrap_nodes();
 
-// Return a list of all hardcoded contacts along with the bootstrap cache.
-fn bootstrap_nodes() -> Vec<SocketAddr> {
-    ctx(|c| {
-        c.bootstrap_cache
+        let mut maker = BootstrapGroupMaker::new(notify);
+        let send_after_connect = Some((WireMsg::EndpointEchoReq, 0));
+        trace!("Sending echo requests to nodes {:?}", bootstrap_nodes);
+
+        for bootstrap_node in bootstrap_nodes {
+            let res =
+                self.connect_to_node(bootstrap_node, send_after_connect.clone(), Some(&maker));
+            if let Err(QuicP2pError::DuplicateConnectionToPeer { peer_addr }) = res {
+                // We are already bootstrapped
+                maker.set_already_bootstrapped(peer_addr, self.connections);
+                return true;
+            }
+        }
+
+        false
+    }
+
+    // Return a list of all hardcoded contacts along with the bootstrap cache.
+    fn bootstrap_nodes(&self) -> Vec<SocketAddr> {
+        self.bootstrap_cache
             .peers()
             .iter()
             .rev()
-            .chain(c.bootstrap_cache.hard_coded_contacts().iter())
+            .chain(self.bootstrap_cache.hard_coded_contacts().iter())
             .cloned()
             .collect()
-    })
+    }
 }
-
 #[cfg(test)]
 mod tests {
     use crate::{test_utils::new_random_qp2p, Config, Event, OurType, QuicP2p};

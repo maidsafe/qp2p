@@ -7,7 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{ctx_mut, dirs::Dirs, error::QuicP2pError, event::Event, peer::Peer};
+use crate::QuicP2p;
+use crate::{dirs::Dirs, error::QuicP2pError, event::Event, peer::Peer};
 use log::debug;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -16,7 +17,6 @@ use std::io::{BufReader, BufWriter};
 use std::net::SocketAddr;
 use std::path::Path;
 use tokio::sync::mpsc;
-
 /// Result used by `QuicP2p`.
 pub type R<T> = Result<T, QuicP2pError>;
 /// Token accepted during sends and returned back to the user to help identify the context.
@@ -81,38 +81,38 @@ pub fn bin_data_format(data: &[u8]) -> String {
     )
 }
 
-/// Handle error in communication.
-#[inline]
-pub fn handle_communication_err(
-    peer_addr: SocketAddr,
-    e: &QuicP2pError,
-    details: &str,
-    unsent_user_msg: Option<(Peer, bytes::Bytes, Token)>,
-) {
-    debug!(
-        "ERROR in communication with peer {}: {:?} - {}. Details: {}",
-        peer_addr, e, e, details
-    );
-    ctx_mut(|c| {
-        let _ = c.connections.remove(&peer_addr);
+impl QuicP2p {
+    /// Handle error in communication.
+    #[inline]
+    pub fn handle_communication_err(
+        &self,
+        peer_addr: SocketAddr,
+        e: &QuicP2pError,
+        details: &str,
+        unsent_user_msg: Option<(Peer, bytes::Bytes, Token)>,
+    ) {
+        debug!(
+            "ERROR in communication with peer {}: {:?} - {}. Details: {}",
+            peer_addr, e, e, details
+        );
+        let _ = self.connections.remove(&peer_addr);
         if let Some((peer, msg, token)) = unsent_user_msg {
-            let _ = c
+            let _ = self
                 .event_tx
                 .send(Event::UnsentUserMessage { peer, msg, token });
         }
-    });
-}
+    }
 
-/// Handle successful sends. Currently a NoOp for non-user-messages (i.e., internal messages).
-#[inline]
-pub fn handle_send_success(sent_user_msg: Option<(Peer, bytes::Bytes, Token)>) {
-    ctx_mut(|c| {
+    /// Handle successful sends. Currently a NoOp for non-user-messages (i.e., internal messages).
+    #[inline]
+    pub fn handle_send_success(&self, sent_user_msg: Option<(Peer, bytes::Bytes, Token)>) {
         if let Some((peer, msg, token)) = sent_user_msg {
-            let _ = c.event_tx.send(Event::SentUserMessage { peer, msg, token });
+            let _ = self
+                .event_tx
+                .send(Event::SentUserMessage { peer, msg, token });
         }
-    });
+    }
 }
-
 /// Try reading from the disk into the given structure.
 pub fn read_from_disk<D>(file_path: &Path) -> R<D>
 where
