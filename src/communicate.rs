@@ -469,6 +469,7 @@ fn handle_echo_resp(our_ext_addr: SocketAddr, inform_tx: Option<mpsc::Sender<Soc
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::test_utils::{new_random_qp2p, rand_node_addr, test_dirs, write_to_bi_stream};

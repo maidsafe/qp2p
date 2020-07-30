@@ -123,6 +123,7 @@ impl BootstrapCache {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::test_utils::{make_node_addr, rand_node_addr, test_dirs};

@@ -60,6 +60,7 @@ fn bootstrap_nodes() -> Vec<SocketAddr> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use crate::{
         test_utils::new_random_qp2p,

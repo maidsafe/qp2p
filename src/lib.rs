@@ -468,7 +468,7 @@ impl QuicP2p {
             };
 
             let client_cfg =
-                peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec).unwrap();
+                peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
 
             let ctx = Context::new(
                 tx,
@@ -571,6 +571,7 @@ impl QuicP2p {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::utils::new_unbounded_channels;
