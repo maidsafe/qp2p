@@ -36,7 +36,7 @@
     while_true,
     clippy::unicode_not_nfc,
     clippy::wrong_pub_self_convention,
-    clippy::option_unwrap_used
+    clippy::unwrap_used
 )]
 #![warn(
     trivial_casts,
