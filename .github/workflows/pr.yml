@@ -94,6 +94,24 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           parallel-finished: true
 
+  cargo-udeps:
+    name: Unused dependency check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      # Install Rust and required components
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      # Install and run cargo udeps to find unused cargo dependencies
+      - name: cargo-udeps duplicate dependency check
+        run: |
+          cargo install cargo-udeps --locked
+          cargo +nightly udeps --all-targets
+
   test:
     name: Test
     runs-on: ${{ matrix.os }}
