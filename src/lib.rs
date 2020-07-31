@@ -50,6 +50,7 @@
 
 #[cfg(feature = "upnp")]
 pub use crate::igd::{DEFAULT_UPNP_LEASE_DURATION_SEC, UPNP_RESPONSE_TIMEOUT_MSEC};
+pub use api::{Connection, QuicP2p as QuicP2pAsync};
 pub use config::{Config, OurType};
 pub use dirs::{Dirs, OverRide};
 pub use error::QuicP2pError;
@@ -70,6 +71,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::{collections::VecDeque, mem, sync::mpsc, time::Duration};
 use unwrap::unwrap;
 
+mod api;
 mod bootstrap;
 mod bootstrap_cache;
 mod communicate;
