@@ -15,6 +15,8 @@ use std::{io, sync::mpsc};
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
 pub enum QuicP2pError {
+    #[error(display = "Network bootstrap failed")]
+    BootstrapFailure,
     #[error(display = "I/O Error")]
     Io(#[source] io::Error),
     #[error(display = "quinn read")]
