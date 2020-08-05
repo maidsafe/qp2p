@@ -59,7 +59,7 @@ pub enum QuicP2pError {
     InvalidWireMsgFlag,
     #[error(display = "Stream write error")]
     WriteError(#[source] quinn::WriteError),
-    #[error(display = "Read to end error")]
+    #[error(display = "Read to end error: {}", 0)]
     ReadToEndError(#[source] quinn::ReadToEndError),
     #[error(display = "Could not add certificate")]
     AddCertificateError(#[source] quinn::ParseError),
@@ -75,4 +75,8 @@ pub enum QuicP2pError {
     #[cfg(feature = "upnp")]
     #[error(display = "IGD is not supported")]
     IgdNotSupported,
+    #[error(display = "Response from peer not received")]
+    ResponseNotReceived,
+    #[error(display = "Type of the message received was not the expected one")]
+    UnexpectedMessageType,
 }

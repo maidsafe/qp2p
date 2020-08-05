@@ -14,13 +14,13 @@ use super::{
     config::{Config, OurType, SerialisableCertificate},
     dirs::{Dirs, OverRide},
     error::QuicP2pError,
-    listener,
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
     utils::R,
-    wire_msg::WireMsg,
+    wire_msg::{Handshake, WireMsg},
 };
 use bytes::Bytes;
-use log::{error, info, trace};
+use futures::stream::StreamExt;
+use log::{error, info, trace, warn};
 use std::{
     collections::VecDeque,
     mem,
@@ -43,10 +43,11 @@ const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 pub struct QuicP2p {
     //public_addr: Option<SocketAddr>
     max_msg_size_allowed: usize,
-    //our_type: OurType,
     bootstrap_cache: BootstrapCache,
     quic_endpoint: quinn::Endpoint,
     quic_client_cfg: quinn::ClientConfig,
+    our_type: OurType,
+    //incoming_connections: quinn::Incoming,
 }
 
 impl QuicP2p {
@@ -69,6 +70,8 @@ impl QuicP2p {
     ) -> R<Self> {
         let cfg = unwrap_config_or_default(cfg)?;
 
+        let our_type = cfg.our_type;
+
         let (port, is_user_supplied) = cfg
             .port
             .map(|p| (p, true))
@@ -86,8 +89,6 @@ impl QuicP2p {
         let keep_alive_interval_msec = cfg
             .keep_alive_interval_msec
             .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
-
-        let our_type = cfg.our_type;
 
         let hard_coded_contacts = cfg.hard_coded_contacts.clone();
 
@@ -110,13 +111,13 @@ impl QuicP2p {
             let _ = mem::replace(bootstrap_cache.peers_mut(), bootstrap_nodes);
         }
 
-        let quinn_config =
+        let _quinn_config =
             peer_config::new_our_cfg(idle_timeout_msec, keep_alive_interval_msec, cert, key)
                 .unwrap();
 
-        let mut ep_builder = quinn::Endpoint::builder();
-        let _ = ep_builder.listen(quinn_config);
-        let (quic_endpoint, incoming_connections) = {
+        let ep_builder = quinn::Endpoint::builder();
+        //let _ = ep_builder.listen(quinn_config);
+        let (quic_endpoint, _incoming_connections) = {
             match UdpSocket::bind(&(ip, port)) {
                 Ok(udp) => ep_builder.with_socket(udp).unwrap(),
                 Err(e) => {
@@ -137,19 +138,16 @@ impl QuicP2p {
         };
 
         let quic_client_cfg =
-            peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec).unwrap();
+            peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
 
         let quic_p2p = Self {
             max_msg_size_allowed,
-            //our_type,
             bootstrap_cache,
             quic_endpoint,
             quic_client_cfg,
+            our_type,
+            //incoming_connections
         };
-
-        if our_type != OurType::Client {
-            listener::listen(incoming_connections);
-        }
 
         Ok(quic_p2p)
     }
@@ -185,6 +183,7 @@ impl QuicP2p {
     /// Connect to the given peer and return a `Connection` object if it succeeds,
     /// which can then be used to send messages to the connected peer.
     pub async fn connect_to(&mut self, node_addr: SocketAddr) -> R<Connection> {
+        trace!("Attempting to connect to peer: {}", node_addr);
         let quinn_connecting = self.quic_endpoint.connect_with(
             self.quic_client_cfg.clone(),
             &node_addr,
@@ -193,55 +192,135 @@ impl QuicP2p {
 
         let quinn::NewConnection {
             connection: quic_conn,
+            uni_streams,
             ..
         } = quinn_connecting.await?;
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        Ok(Connection {
+        Connection::new(
             quic_conn,
-            max_msg_size_allowed: self.max_msg_size_allowed,
-        })
+            uni_streams,
+            self.max_msg_size_allowed,
+            self.our_type,
+        )
+        .await
+    }
+
+    /// Starts listening for incoming connections
+    pub fn listen() /*-> IncomingConnection*/
+    {
+        //listener::listen(incoming_connections)
     }
 }
 
 /// Connection instance to a node which can be used to send messages to it
 pub struct Connection {
     quic_conn: quinn::Connection,
+    uni_streams: quinn::IncomingUniStreams,
     max_msg_size_allowed: usize,
 }
 
+impl Drop for Connection {
+    fn drop(&mut self) {
+        self.quic_conn.close(0u32.into(), b"");
+    }
+}
+
 impl Connection {
-    /// Send message to peer.
-    ///
-    /// If the peer is not connected, it will attempt to connect to it first
-    /// and then send the message. This can be called multiple times while the peer is still being
-    /// connected to - all the sends will be buffered until the peer is connected to.
-    pub async fn send(&self, msg: Bytes) -> R<Bytes> {
-        // TODO: review if we try to reconnect or simply fail if it lost connection
+    pub(crate) async fn new(
+        quic_conn: quinn::Connection,
+        uni_streams: quinn::IncomingUniStreams,
+        max_msg_size_allowed: usize,
+        our_type: OurType,
+    ) -> R<Self> {
+        let conn = Self {
+            quic_conn,
+            uni_streams,
+            max_msg_size_allowed,
+        };
+        conn.send_handshake(our_type).await?;
+
+        Ok(conn)
+    }
+
+    /// Send message to peer and await for a reponse.
+    pub async fn send(&mut self, msg: Bytes) -> R<Bytes> {
+        let send_stream = self.quic_conn.open_uni().await?;
+        let wire_msg = WireMsg::UserMsg(msg);
+        self.send_wire_msg(send_stream, wire_msg).await?;
+
+        trace!(
+            "Awaiting for response from remote peer: {}",
+            self.quic_conn.remote_address()
+        );
+
+        // Let's read the response (we expect one single message)
+        match self.uni_streams.next().await {
+            None => Err(QuicP2pError::ResponseNotReceived),
+            Some(Err(e)) => Err(QuicP2pError::Connection(e)),
+            Some(Ok(recv_stream)) => {
+                let received_bytes = recv_stream.read_to_end(self.max_msg_size_allowed).await?;
+                trace!(
+                    "Num of bytes received from remote peer: {}",
+                    received_bytes.len()
+                );
+
+                match WireMsg::from_raw(received_bytes.clone())? {
+                    WireMsg::UserMsg(msg_bytes) => Ok(Bytes::copy_from_slice(&msg_bytes)),
+                    msg => {
+                        warn!("Unexpected message type received: {:?}", msg);
+                        Err(QuicP2pError::UnexpectedMessageType)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Send message to peer without awaiting for a reponse.
+    pub async fn send_only(&self, msg: Bytes) -> R<()> {
+        let send_stream = self.quic_conn.open_uni().await?;
+        let wire_msg = WireMsg::UserMsg(msg);
+        self.send_wire_msg(send_stream, wire_msg).await
+    }
+
+    pub(crate) async fn send_handshake(&self, our_type: OurType) -> R<()> {
+        // TODO: try to either have a single client/node type, or remove the need of such info
+        let wire_msg = match our_type {
+            OurType::Client => WireMsg::Handshake(Handshake::Client),
+            OurType::Node => WireMsg::Handshake(Handshake::Node),
+        };
+        let send_stream = self.quic_conn.open_uni().await?;
+        self.send_wire_msg(send_stream, wire_msg).await
+    }
+
+    // Private helper to send bytes to peer using the provided stream.
+    async fn send_wire_msg(&self, mut send_stream: quinn::SendStream, wire_msg: WireMsg) -> R<()> {
         // TODO: review if we need to use the WireMsg struct at all
 
-        // Let's generate the request bytes
-        let (msg_bytes, msg_flag) = WireMsg::UserMsg(msg).into();
+        // Let's generate the message bytes
+        let (msg_bytes, msg_flag) = wire_msg.into();
 
-        let (mut send, recv) = self.quic_conn.open_bi().await?;
+        trace!(
+            "Sending message to remote peer ({} bytes): {}",
+            msg_bytes.len(),
+            self.quic_conn.remote_address()
+        );
 
-        // Send request bytes over QUIC
-        send.write_all(&msg_bytes[..]).await?;
+        // Send message bytes over QUIC
+        send_stream.write_all(&msg_bytes[..]).await?;
 
-        // Then send request flaag over QUIC
-        send.write_all(&[msg_flag]).await?;
+        // Then send message flag over QUIC
+        send_stream.write_all(&[msg_flag]).await?;
 
-        send.finish().await?;
+        send_stream.finish().await?;
 
-        trace!("Request was sent to remote peer");
+        trace!(
+            "Message was sent to remote peer: {}",
+            self.quic_conn.remote_address(),
+        );
 
-        // Let's await to read the response
-        let received_bytes = recv.read_to_end(self.max_msg_size_allowed).await?;
-
-        self.quic_conn.close(0u32.into(), b"");
-
-        Ok(Bytes::copy_from_slice(&received_bytes))
+        Ok(())
     }
 }
 
