@@ -40,8 +40,8 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
 const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
+#[derive(Clone)]
 pub struct QuicP2p {
-    //public_addr: Option<SocketAddr>
     max_msg_size_allowed: usize,
     bootstrap_cache: BootstrapCache,
     quic_endpoint: quinn::Endpoint,
@@ -169,38 +169,42 @@ impl QuicP2p {
             .cloned()
             .collect();
 
-        trace!("Bootstrapping to {:?}", bootstrap_nodes);
-
+        trace!("Bootstrapping with nodes {:?}", bootstrap_nodes);
+        // Attempt to connect to all nodes and return the first one to succeed
+        let mut tasks = Vec::default();
         for node_addr in bootstrap_nodes {
-            // TODO: attempt to connect to all and return the first one to succeed
-            return self.connect_to(node_addr).await;
+            let quic_endpoint = self.quic_endpoint.clone();
+            let quic_client_cfg = self.quic_client_cfg.clone();
+            let max_msg_size_allowed = self.max_msg_size_allowed;
+            let our_type = self.our_type;
+            let task_handle = tokio::spawn(async move {
+                new_connection_to(
+                    node_addr,
+                    quic_endpoint,
+                    quic_client_cfg,
+                    max_msg_size_allowed,
+                    our_type,
+                )
+                .await
+            });
+            tasks.push(task_handle);
         }
 
-        error!("Failed to botstrap to the network");
-        Err(QuicP2pError::BootstrapFailure)
+        let (connection, _) = futures::future::select_ok(tasks).await.map_err(|err| {
+            error!("Failed to botstrap to the network: {}", err);
+            QuicP2pError::BootstrapFailure
+        })?;
+
+        connection
     }
 
     /// Connect to the given peer and return a `Connection` object if it succeeds,
     /// which can then be used to send messages to the connected peer.
     pub async fn connect_to(&mut self, node_addr: SocketAddr) -> R<Connection> {
-        trace!("Attempting to connect to peer: {}", node_addr);
-        let quinn_connecting = self.quic_endpoint.connect_with(
+        new_connection_to(
+            node_addr,
+            self.quic_endpoint.clone(),
             self.quic_client_cfg.clone(),
-            &node_addr,
-            CERT_SERVER_NAME,
-        )?;
-
-        let quinn::NewConnection {
-            connection: quic_conn,
-            uni_streams,
-            ..
-        } = quinn_connecting.await?;
-
-        trace!("Successfully connected to peer: {}", node_addr);
-
-        Connection::new(
-            quic_conn,
-            uni_streams,
             self.max_msg_size_allowed,
             self.our_type,
         )
@@ -212,6 +216,29 @@ impl QuicP2p {
     {
         //listener::listen(incoming_connections)
     }
+}
+
+// Creates a new Connection
+async fn new_connection_to(
+    node_addr: SocketAddr,
+    quic_endpoint: quinn::Endpoint,
+    quic_client_cfg: quinn::ClientConfig,
+    max_msg_size_allowed: usize,
+    our_type: OurType,
+) -> R<Connection> {
+    trace!("Attempting to connect to peer: {}", node_addr);
+    let quinn_connecting =
+        quic_endpoint.connect_with(quic_client_cfg, &node_addr, CERT_SERVER_NAME)?;
+
+    let quinn::NewConnection {
+        connection: quic_conn,
+        uni_streams,
+        ..
+    } = quinn_connecting.await?;
+
+    trace!("Successfully connected to peer: {}", node_addr);
+
+    Connection::new(quic_conn, uni_streams, max_msg_size_allowed, our_type).await
 }
 
 /// Connection instance to a node which can be used to send messages to it
