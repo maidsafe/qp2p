@@ -19,6 +19,7 @@ use super::{
     wire_msg::{Handshake, WireMsg},
 };
 use bytes::Bytes;
+use futures::future::select_ok;
 use futures::stream::StreamExt;
 use log::{error, info, trace, warn};
 use std::{
@@ -42,12 +43,13 @@ const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
 #[derive(Clone)]
 pub struct QuicP2p {
-    max_msg_size_allowed: usize,
+    local_addr: SocketAddr,
+    allow_random_port: bool,
+    max_msg_size: usize,
     bootstrap_cache: BootstrapCache,
-    quic_endpoint: quinn::Endpoint,
-    quic_client_cfg: quinn::ClientConfig,
+    endpoint_cfg: quinn::ServerConfig,
+    client_cfg: quinn::ClientConfig,
     our_type: OurType,
-    //incoming_connections: quinn::Incoming,
 }
 
 impl QuicP2p {
@@ -72,14 +74,14 @@ impl QuicP2p {
 
         let our_type = cfg.our_type;
 
-        let (port, is_user_supplied) = cfg
+        let (port, allow_random_port) = cfg
             .port
-            .map(|p| (p, true))
-            .unwrap_or((DEFAULT_PORT_TO_TRY, false));
+            .map(|p| (p, false))
+            .unwrap_or((DEFAULT_PORT_TO_TRY, true));
 
         let ip = cfg.ip.unwrap_or_else(|| IpAddr::V4(Ipv4Addr::UNSPECIFIED));
 
-        let max_msg_size_allowed = cfg
+        let max_msg_size = cfg
             .max_msg_size_allowed
             .map(|size| size as usize)
             .unwrap_or(DEFAULT_MAX_ALLOWED_MSG_SIZE);
@@ -89,8 +91,6 @@ impl QuicP2p {
         let keep_alive_interval_msec = cfg
             .keep_alive_interval_msec
             .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
-
-        let hard_coded_contacts = cfg.hard_coded_contacts.clone();
 
         let (key, cert) = {
             let our_complete_cert: SerialisableCertificate = Default::default();
@@ -102,7 +102,8 @@ impl QuicP2p {
             .clone()
             .map(|custom_dir| Dirs::Overide(OverRide::new(&custom_dir)));
 
-        let mut bootstrap_cache = BootstrapCache::new(hard_coded_contacts, custom_dirs.as_ref())?;
+        let mut bootstrap_cache =
+            BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref())?;
         if use_bootstrap_cache {
             bootstrap_cache
                 .peers_mut()
@@ -111,42 +112,19 @@ impl QuicP2p {
             let _ = mem::replace(bootstrap_cache.peers_mut(), bootstrap_nodes);
         }
 
-        let _quinn_config =
-            peer_config::new_our_cfg(idle_timeout_msec, keep_alive_interval_msec, cert, key)
-                .unwrap();
+        let endpoint_cfg =
+            peer_config::new_our_cfg(idle_timeout_msec, keep_alive_interval_msec, cert, key)?;
 
-        let ep_builder = quinn::Endpoint::builder();
-        //let _ = ep_builder.listen(quinn_config);
-        let (quic_endpoint, _incoming_connections) = {
-            match UdpSocket::bind(&(ip, port)) {
-                Ok(udp) => ep_builder.with_socket(udp).unwrap(),
-                Err(e) => {
-                    if is_user_supplied {
-                        panic!(
-                            "Could not bind to the user supplied port: {}! Error: {:?}- {}",
-                            port, e, e
-                        );
-                    }
-                    info!(
-                        "Failed to bind to port: {} - Error: {:?} - {}. Trying random port.",
-                        DEFAULT_PORT_TO_TRY, e, e
-                    );
-                    let bind_addr = SocketAddr::new(ip, 0);
-                    ep_builder.bind(&bind_addr).unwrap()
-                }
-            }
-        };
-
-        let quic_client_cfg =
-            peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
+        let client_cfg = peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
 
         let quic_p2p = Self {
-            max_msg_size_allowed,
+            local_addr: SocketAddr::new(ip, port),
+            allow_random_port,
+            max_msg_size,
             bootstrap_cache,
-            quic_endpoint,
-            quic_client_cfg,
+            endpoint_cfg,
+            client_cfg,
             our_type,
-            //incoming_connections
         };
 
         Ok(quic_p2p)
@@ -160,6 +138,7 @@ impl QuicP2p {
     /// Once a connection with a peer succeeds, a `Connection` for such peer will be returned
     /// and all other connections will be dropped.
     pub async fn bootstrap(&mut self) -> R<Connection> {
+        // TODO: refactor bootstrap_cache so we can simply get the list of nodes
         let bootstrap_nodes: Vec<SocketAddr> = self
             .bootstrap_cache
             .peers()
@@ -173,24 +152,28 @@ impl QuicP2p {
         // Attempt to connect to all nodes and return the first one to succeed
         let mut tasks = Vec::default();
         for node_addr in bootstrap_nodes {
-            let quic_endpoint = self.quic_endpoint.clone();
-            let quic_client_cfg = self.quic_client_cfg.clone();
-            let max_msg_size_allowed = self.max_msg_size_allowed;
+            let endpoint_cfg = self.endpoint_cfg.clone();
+            let client_cfg = self.client_cfg.clone();
+            let max_msg_size = self.max_msg_size;
             let our_type = self.our_type;
+            let local_addr = self.local_addr;
+            let allow_random_port = self.allow_random_port;
             let task_handle = tokio::spawn(async move {
                 new_connection_to(
                     node_addr,
-                    quic_endpoint,
-                    quic_client_cfg,
-                    max_msg_size_allowed,
+                    endpoint_cfg,
+                    client_cfg,
+                    max_msg_size,
                     our_type,
+                    local_addr,
+                    allow_random_port,
                 )
                 .await
             });
             tasks.push(task_handle);
         }
 
-        let (connection, _) = futures::future::select_ok(tasks).await.map_err(|err| {
+        let (connection, _) = select_ok(tasks).await.map_err(|err| {
             error!("Failed to botstrap to the network: {}", err);
             QuicP2pError::BootstrapFailure
         })?;
@@ -203,32 +186,41 @@ impl QuicP2p {
     pub async fn connect_to(&mut self, node_addr: SocketAddr) -> R<Connection> {
         new_connection_to(
             node_addr,
-            self.quic_endpoint.clone(),
-            self.quic_client_cfg.clone(),
-            self.max_msg_size_allowed,
+            self.endpoint_cfg.clone(),
+            self.client_cfg.clone(),
+            self.max_msg_size,
             self.our_type,
+            self.local_addr,
+            self.allow_random_port,
         )
         .await
     }
 
-    /// Starts listening for incoming connections
-    pub fn listen() /*-> IncomingConnection*/
-    {
-        //listener::listen(incoming_connections)
+    /// Obtain stream of incoming QUIC connections
+    pub fn listen(&self) -> R<IncomingConnections> {
+        IncomingConnections::new(
+            self.endpoint_cfg.clone(),
+            self.local_addr,
+            self.allow_random_port,
+            self.max_msg_size,
+        )
     }
 }
 
 // Creates a new Connection
 async fn new_connection_to(
     node_addr: SocketAddr,
-    quic_endpoint: quinn::Endpoint,
-    quic_client_cfg: quinn::ClientConfig,
-    max_msg_size_allowed: usize,
+    endpoint_cfg: quinn::ServerConfig,
+    client_cfg: quinn::ClientConfig,
+    max_msg_size: usize,
     our_type: OurType,
+    local_addr: SocketAddr,
+    allow_random_port: bool,
 ) -> R<Connection> {
     trace!("Attempting to connect to peer: {}", node_addr);
-    let quinn_connecting =
-        quic_endpoint.connect_with(quic_client_cfg, &node_addr, CERT_SERVER_NAME)?;
+    let (quinn_endpoint, _) = bind(endpoint_cfg, local_addr, allow_random_port)?;
+
+    let quinn_connecting = quinn_endpoint.connect_with(client_cfg, &node_addr, CERT_SERVER_NAME)?;
 
     let quinn::NewConnection {
         connection: quic_conn,
@@ -238,14 +230,47 @@ async fn new_connection_to(
 
     trace!("Successfully connected to peer: {}", node_addr);
 
-    Connection::new(quic_conn, uni_streams, max_msg_size_allowed, our_type).await
+    Connection::new(quic_conn, uni_streams, max_msg_size, our_type).await
+}
+
+// Bind a new socket with a local address
+fn bind(
+    endpoint_cfg: quinn::ServerConfig,
+    local_addr: SocketAddr,
+    allow_random_port: bool,
+) -> R<(quinn::Endpoint, quinn::Incoming)> {
+    let mut endpoint_builder = quinn::Endpoint::builder();
+    let _ = endpoint_builder.listen(endpoint_cfg);
+
+    match UdpSocket::bind(&local_addr) {
+        Ok(udp) => endpoint_builder
+            .with_socket(udp)
+            .map_err(QuicP2pError::Endpoint),
+        Err(err) if allow_random_port => {
+            info!(
+                "Failed to bind to port: {} - Error: {}. Trying random port instead.",
+                DEFAULT_PORT_TO_TRY, err
+            );
+            let bind_addr = SocketAddr::new(local_addr.ip(), 0);
+            endpoint_builder
+                .bind(&bind_addr)
+                .map_err(QuicP2pError::Endpoint)
+        }
+        Err(err) => Err(QuicP2pError::Configuration {
+            e: format!(
+                "Could not bind to the user supplied port: {}! Error: {}",
+                local_addr.port(),
+                err
+            ),
+        }),
+    }
 }
 
 /// Connection instance to a node which can be used to send messages to it
 pub struct Connection {
     quic_conn: quinn::Connection,
     uni_streams: quinn::IncomingUniStreams,
-    max_msg_size_allowed: usize,
+    max_msg_size: usize,
 }
 
 impl Drop for Connection {
@@ -258,13 +283,13 @@ impl Connection {
     pub(crate) async fn new(
         quic_conn: quinn::Connection,
         uni_streams: quinn::IncomingUniStreams,
-        max_msg_size_allowed: usize,
+        max_msg_size: usize,
         our_type: OurType,
     ) -> R<Self> {
         let conn = Self {
             quic_conn,
             uni_streams,
-            max_msg_size_allowed,
+            max_msg_size,
         };
         conn.send_handshake(our_type).await?;
 
@@ -287,13 +312,14 @@ impl Connection {
             None => Err(QuicP2pError::ResponseNotReceived),
             Some(Err(e)) => Err(QuicP2pError::Connection(e)),
             Some(Ok(recv_stream)) => {
-                let received_bytes = recv_stream.read_to_end(self.max_msg_size_allowed).await?;
+                let received_bytes = recv_stream.read_to_end(self.max_msg_size).await?;
                 trace!(
-                    "Num of bytes received from remote peer: {}",
-                    received_bytes.len()
+                    "Received {} bytes from remote peer: {}",
+                    received_bytes.len(),
+                    self.quic_conn.remote_address()
                 );
 
-                match WireMsg::from_raw(received_bytes.clone())? {
+                match WireMsg::from_raw(received_bytes)? {
                     WireMsg::UserMsg(msg_bytes) => Ok(Bytes::copy_from_slice(&msg_bytes)),
                     msg => {
                         warn!("Unexpected message type received: {:?}", msg);
@@ -348,6 +374,99 @@ impl Connection {
         );
 
         Ok(())
+    }
+}
+
+/// Stream of incoming QUIC connections
+pub struct IncomingConnections {
+    quinn_incoming: quinn::Incoming,
+    max_msg_size: usize,
+}
+
+impl IncomingConnections {
+    pub(crate) fn new(
+        endpoint_cfg: quinn::ServerConfig,
+        local_addr: SocketAddr,
+        allow_random_port: bool,
+        max_msg_size: usize,
+    ) -> R<Self> {
+        let (_, quinn_incoming) = bind(endpoint_cfg, local_addr, allow_random_port)?;
+
+        Ok(Self {
+            quinn_incoming,
+            max_msg_size,
+        })
+    }
+
+    // Returns next QUIC connection established by a peer
+    pub async fn next(&mut self) -> Option<IncomingMessages> {
+        match self.quinn_incoming.next().await {
+            Some(quinn_conn) => match quinn_conn.await {
+                Ok(quinn::NewConnection { bi_streams, .. }) => {
+                    Some(IncomingMessages::new(bi_streams, self.max_msg_size))
+                }
+                Err(_err) => None,
+            },
+            None => None,
+        }
+    }
+}
+
+/// Stream of incoming QUIC messages
+pub struct IncomingMessages {
+    bi_streams: quinn::IncomingBiStreams,
+    max_msg_size: usize,
+}
+
+impl IncomingMessages {
+    pub(crate) fn new(bi_streams: quinn::IncomingBiStreams, max_msg_size: usize) -> Self {
+        Self {
+            bi_streams,
+            max_msg_size,
+        }
+    }
+
+    // Returns next message sent by the peer on current QUIC connection
+    pub async fn next(&mut self) -> Option<Bytes> {
+        // Each stream initiated by the remote peer constitutes a new message
+        match self.bi_streams.next().await {
+            None => None,
+            Some(stream) => {
+                let (_send, recv): (quinn::SendStream, quinn::RecvStream) = match stream {
+                    Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
+                        trace!("Connection terminated by peer.");
+                        return None;
+                    }
+                    Err(err) => {
+                        warn!("Failed to read incoming message: {}", err);
+                        return None;
+                    }
+                    Ok(bi_stream) => bi_stream,
+                };
+
+                // Read the message's bytes which size is capped
+                match recv.read_to_end(self.max_msg_size).await {
+                    Ok(req_bytes) => {
+                        trace!("Got new message with {} bytes.", req_bytes.len());
+                        /*match parse_jsonrpc_request(req_bytes) {
+                            Ok(jsonrpc_req) => {
+                                debug!("Request parsed successfully");
+                                Some((jsonrpc_req, JsonRpcResponseStream::new(send)))
+                            }
+                            Err(err) => {
+                                warn!("Failed to parse request as JSON-RPC: {}", err);
+                                None
+                            }
+                        }*/
+                        None
+                    }
+                    Err(err) => {
+                        warn!("Failed reading message's bytes: {}", err);
+                        None
+                    }
+                }
+            }
+        }
     }
 }
 
