@@ -50,7 +50,7 @@
 
 #[cfg(feature = "upnp")]
 pub use crate::igd::{DEFAULT_UPNP_LEASE_DURATION_SEC, UPNP_RESPONSE_TIMEOUT_MSEC};
-pub use api::{Connection, QuicP2p as QuicP2pAsync};
+pub use api::{Connection, IncomingConnections, IncomingMessages, Message, QuicP2p};
 pub use config::{Config, OurType};
 pub use dirs::{Dirs, OverRide};
 pub use error::QuicP2pError;
@@ -121,16 +121,16 @@ impl EventSenders {
 }
 
 /// Main QuicP2p instance to communicate with QuicP2p
-pub struct QuicP2p {
+pub struct QuicP2pOld {
     event_tx: EventSenders,
     cfg: Config,
     us: Option<SocketAddr>,
     el: EventLoop,
 }
 
-impl QuicP2p {
+impl QuicP2pOld {
     /// Construct `QuicP2p` with the default config.
-    pub fn new(event_tx: EventSenders) -> R<QuicP2p> {
+    pub fn new(event_tx: EventSenders) -> R<Self> {
         Self::with_config(event_tx, None, Default::default(), false)
     }
 
@@ -146,7 +146,7 @@ impl QuicP2p {
         cfg: Option<Config>,
         bootstrap_nodes: VecDeque<SocketAddr>,
         use_bootstrap_nodes_exclusively: bool,
-    ) -> R<QuicP2p> {
+    ) -> R<Self> {
         let el = EventLoop::spawn();
 
         #[allow(unused_mut)] // Needs to be mutable when `upnp` is enabled
@@ -171,7 +171,7 @@ impl QuicP2p {
             el,
         };
 
-        QuicP2p::activate(&qp2p.event_tx, &mut qp2p.el, &qp2p.cfg)?;
+        QuicP2pOld::activate(&qp2p.event_tx, &mut qp2p.el, &qp2p.cfg)?;
 
         qp2p.el.post(move || {
             ctx_mut(|c| {
