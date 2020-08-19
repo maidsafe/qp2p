@@ -325,6 +325,11 @@ impl Connection {
         Ok(conn)
     }
 
+    /// Remote address
+    pub fn remote_address(&self) -> SocketAddr {
+        self.quic_conn.remote_address()
+    }
+
     /// Send message to peer and await for a reponse.
     pub async fn send(&mut self, msg: Bytes) -> R<Bytes> {
         let (send_stream, recv_stream) = self.quic_conn.open_bi().await?;
