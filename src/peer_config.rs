@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{QuicP2pError, Result};
+use crate::{Error, Result};
 use std::{sync::Arc, time::Duration};
 
 /// Default interval within which if we hear nothing from the peer we declare it offline to us.
@@ -69,7 +69,7 @@ fn new_transport_cfg(
     let mut transport_config = quinn::TransportConfig::default();
     let _ = transport_config
         .max_idle_timeout(Some(Duration::from_millis(idle_timeout_msec)))
-        .map_err(|e| QuicP2pError::Configuration { e: e.to_string() })
+        .map_err(|e| Error::Configuration { e: e.to_string() })
         .unwrap_or(&mut Default::default());
     let _ = transport_config
         .keep_alive_interval(Some(Duration::from_millis(keep_alive_interval_msec.into())));

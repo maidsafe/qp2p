@@ -9,7 +9,7 @@
 
 use crate::{
     dirs::Dirs,
-    error::{QuicP2pError, Result},
+    error::{Error, Result},
     utils,
 };
 use bytes::Bytes;
@@ -79,7 +79,7 @@ impl Config {
             let config_dir = config_path
                 .parent()
                 .ok_or_else(|| io::ErrorKind::NotFound.into())
-                .map_err(QuicP2pError::Io)?;
+                .map_err(Error::Io)?;
             fs::create_dir_all(&config_dir)?;
 
             let cfg = Config::default();
@@ -109,9 +109,9 @@ impl SerialisableCertificate {
     pub fn obtain_priv_key_and_cert(&self) -> Result<(quinn::PrivateKey, quinn::Certificate)> {
         Ok((
             quinn::PrivateKey::from_der(&self.key_der)
-                .map_err(|_| QuicP2pError::CertificateParseError)?,
+                .map_err(|_| Error::CertificateParseError)?,
             quinn::Certificate::from_der(&self.cert_der)
-                .map_err(|_| QuicP2pError::CertificateParseError)?,
+                .map_err(|_| Error::CertificateParseError)?,
         ))
     }
 }
@@ -130,7 +130,7 @@ impl Default for SerialisableCertificate {
 }
 
 impl FromStr for SerialisableCertificate {
-    type Err = QuicP2pError;
+    type Err = Error;
 
     /// Decode `SerialisableCertificate` from a base64-encoded string.
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
@@ -165,7 +165,7 @@ fn config_path(user_override: Option<&Dirs>) -> Result<PathBuf> {
     };
 
     let cfg_path = user_override.map_or_else(
-        || Ok::<_, QuicP2pError>(path(&utils::project_dir()?)),
+        || Ok::<_, Error>(path(&utils::project_dir()?)),
         |d| Ok(path(d)),
     )?;
 

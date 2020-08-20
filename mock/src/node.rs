@@ -8,7 +8,7 @@
 
 use super::{
     network::{Inner, Message, Packet, NETWORK},
-    Config, Event, EventSenders, OurType, Peer, QuicP2pError,
+    Config, Event, EventSenders, OurType, Peer, Error,
 };
 use bytes::Bytes;
 // Note: using `FxHashMap` / `FxHashSet` because they don't use random state and thus guarantee
@@ -210,7 +210,7 @@ impl Node {
                 if let Some((_, peer_type)) = self.peers.remove(&src) {
                     self.fire_event(Event::ConnectionFailure {
                         peer: Peer::new(peer_type, src),
-                        err: QuicP2pError,
+                        err: Error,
                     })
                 }
             }
@@ -219,9 +219,9 @@ impl Node {
         None
     }
 
-    pub fn our_connection_info(&self) -> Result<SocketAddr, QuicP2pError> {
+    pub fn our_connection_info(&self) -> Result<SocketAddr, Error> {
         match self.config.our_type {
-            OurType::Client => Err(QuicP2pError),
+            OurType::Client => Err(Error),
             OurType::Node => Ok(self.addr),
         }
     }

@@ -12,20 +12,19 @@ use super::igd;
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
+    connections::{Connection, IncomingConnections, SendStream},
     dirs::{Dirs, OverRide},
-    error::{QuicP2pError, Result},
+    error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
-    wire_msg::WireMsg,
 };
 use bytes::Bytes;
-use futures::{future::select_ok, stream::StreamExt};
-use log::{error, info, trace, warn};
+use futures::future::select_ok;
+use log::{error, info, trace};
 use std::{
     collections::VecDeque,
     mem,
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
 };
-use tokio::select;
 
 /// Default maximum allowed message size. We'll error out on any bigger messages and probably
 /// shutdown the connection. This value can be overridden via the `Config` option.
@@ -188,7 +187,7 @@ impl QuicP2p {
 
         let (connection, _) = select_ok(tasks).await.map_err(|err| {
             error!("Failed to botstrap to the network: {}", err);
-            QuicP2pError::BootstrapFailure
+            Error::BootstrapFailure
         })?;
 
         connection
@@ -210,12 +209,12 @@ impl QuicP2p {
 
     /// Obtain stream of incoming QUIC connections
     pub fn listen(&self) -> Result<IncomingConnections> {
-        IncomingConnections::new(
+        let (_, quinn_incoming) = bind(
             self.endpoint_cfg.clone(),
             self.local_addr,
             self.allow_random_port,
-            self.max_msg_size,
-        )
+        )?;
+        IncomingConnections::new(quinn_incoming, self.max_msg_size)
     }
 
     /// Get our connection adddress to give to others for them to connect to us.
@@ -268,7 +267,7 @@ fn bind(
     match UdpSocket::bind(&local_addr) {
         Ok(udp) => endpoint_builder
             .with_socket(udp)
-            .map_err(QuicP2pError::Endpoint),
+            .map_err(Error::Endpoint),
         Err(err) if allow_random_port => {
             info!(
                 "Failed to bind to port: {} - Error: {}. Trying random port instead.",
@@ -277,299 +276,15 @@ fn bind(
             let bind_addr = SocketAddr::new(local_addr.ip(), 0);
             endpoint_builder
                 .bind(&bind_addr)
-                .map_err(QuicP2pError::Endpoint)
+                .map_err(Error::Endpoint)
         }
-        Err(err) => Err(QuicP2pError::Configuration {
+        Err(err) => Err(Error::Configuration {
             e: format!(
                 "Could not bind to the user supplied port: {}! Error: {}",
                 local_addr.port(),
                 err
             ),
         }),
-    }
-}
-
-/// Connection instance to a node which can be used to send messages to it
-pub struct Connection {
-    quic_conn: quinn::Connection,
-    max_msg_size: usize,
-}
-
-impl Drop for Connection {
-    fn drop(&mut self) {
-        self.quic_conn.close(0u32.into(), b"");
-    }
-}
-
-impl Connection {
-    pub(crate) async fn new(quic_conn: quinn::Connection, max_msg_size: usize) -> Result<Self> {
-        let conn = Self {
-            quic_conn,
-            max_msg_size,
-        };
-
-        Ok(conn)
-    }
-
-    /// Remote address
-    pub fn remote_address(&self) -> SocketAddr {
-        self.quic_conn.remote_address()
-    }
-
-    /// Send message to peer and await for a reponse.
-    pub async fn send(&mut self, msg: Bytes) -> Result<Bytes> {
-        let (send_stream, recv_stream) = self.quic_conn.open_bi().await?;
-        let wire_msg = WireMsg::UserMsg(msg);
-        self.send_wire_msg(send_stream, wire_msg).await?;
-
-        trace!(
-            "Awaiting for response from remote peer: {}",
-            self.quic_conn.remote_address()
-        );
-
-        // Let's read the response (we expect one single message)
-        let received_bytes = recv_stream.read_to_end(self.max_msg_size).await?;
-        trace!(
-            "Received {} bytes from remote peer: {}",
-            received_bytes.len(),
-            self.quic_conn.remote_address()
-        );
-
-        match WireMsg::from_raw(received_bytes)? {
-            WireMsg::UserMsg(msg_bytes) => Ok(Bytes::copy_from_slice(&msg_bytes)),
-            msg => {
-                warn!("Unexpected message type received: {:?}", msg);
-                Err(QuicP2pError::UnexpectedMessageType)
-            }
-        }
-    }
-
-    /// Send message to peer using a bi-directional stream without awaiting for a reponse.
-    pub async fn send_only(&self, msg: Bytes) -> Result<()> {
-        let (send_stream, _) = self.quic_conn.open_bi().await?;
-        let wire_msg = WireMsg::UserMsg(msg);
-        self.send_wire_msg(send_stream, wire_msg).await
-    }
-
-    /// Send message to peer using a uni-directional stream without awaiting for a reponse.
-    pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
-        let send_stream = self.quic_conn.open_uni().await?;
-        let wire_msg = WireMsg::UserMsg(msg);
-        self.send_wire_msg(send_stream, wire_msg).await
-    }
-
-    // Private helper to send bytes to peer using the provided stream.
-    async fn send_wire_msg(
-        &self,
-        mut send_stream: quinn::SendStream,
-        wire_msg: WireMsg,
-    ) -> Result<()> {
-        // Let's generate the message bytes
-        let (msg_bytes, msg_flag) = wire_msg.into();
-
-        trace!(
-            "Sending message to remote peer ({} bytes): {}",
-            msg_bytes.len(),
-            self.quic_conn.remote_address()
-        );
-
-        // Send message bytes over QUIC
-        send_stream.write_all(&msg_bytes[..]).await?;
-
-        // Then send message flag over QUIC
-        send_stream.write_all(&[msg_flag]).await?;
-
-        send_stream.finish().await?;
-
-        trace!(
-            "Message was sent to remote peer: {}",
-            self.quic_conn.remote_address(),
-        );
-
-        Ok(())
-    }
-}
-
-/// Stream of incoming QUIC connections
-pub struct IncomingConnections {
-    quinn_incoming: quinn::Incoming,
-    max_msg_size: usize,
-}
-
-impl IncomingConnections {
-    pub(crate) fn new(
-        endpoint_cfg: quinn::ServerConfig,
-        local_addr: SocketAddr,
-        allow_random_port: bool,
-        max_msg_size: usize,
-    ) -> Result<Self> {
-        let (_, quinn_incoming) = bind(endpoint_cfg, local_addr, allow_random_port)?;
-
-        Ok(Self {
-            quinn_incoming,
-            max_msg_size,
-        })
-    }
-
-    /// Returns next QUIC connection established by a peer
-    pub async fn next(&mut self) -> Option<IncomingMessages> {
-        match self.quinn_incoming.next().await {
-            Some(quinn_conn) => match quinn_conn.await {
-                Ok(quinn::NewConnection {
-                    connection,
-                    uni_streams,
-                    bi_streams,
-                    ..
-                }) => Some(IncomingMessages::new(
-                    connection.remote_address(),
-                    uni_streams,
-                    bi_streams,
-                    self.max_msg_size,
-                )),
-                Err(_err) => None,
-            },
-            None => None,
-        }
-    }
-}
-
-/// Stream of incoming QUIC messages
-pub struct IncomingMessages {
-    peer_addr: SocketAddr,
-    uni_streams: quinn::IncomingUniStreams,
-    bi_streams: quinn::IncomingBiStreams,
-    max_msg_size: usize,
-}
-
-impl IncomingMessages {
-    pub(crate) fn new(
-        peer_addr: SocketAddr,
-        uni_streams: quinn::IncomingUniStreams,
-        bi_streams: quinn::IncomingBiStreams,
-        max_msg_size: usize,
-    ) -> Self {
-        Self {
-            peer_addr,
-            uni_streams,
-            bi_streams,
-            max_msg_size,
-        }
-    }
-
-    /// Returns the address of the peer who initiated the connection
-    pub fn remote_addr(&self) -> SocketAddr {
-        self.peer_addr
-    }
-
-    /// Returns next message sent by the peer on current QUIC connection,
-    /// either received through a bi-directional or uni-directional stream.
-    pub async fn next(&mut self) -> Option<Message> {
-        // Each stream initiated by the remote peer constitutes a new message.
-        // Read the next message available in any of the two type of streams.
-        let src = self.peer_addr;
-        select! {
-            next_uni = Self::next_on_uni_streams(&mut self.uni_streams, self.max_msg_size) =>
-                next_uni.map(|bytes| Message::UniStream {
-                    bytes,
-                    src
-                }),
-            next_bi = Self::next_on_bi_streams(&mut self.bi_streams, self.max_msg_size) =>
-                next_bi.map(|(bytes, send)| Message::BiStream {
-                    bytes,
-                    src,
-                    send: SendStream::new(send)
-                }),
-        }
-    }
-
-    // Returns next message sent by peer in an unidirectional stream.
-    async fn next_on_uni_streams(
-        uni_streams: &mut quinn::IncomingUniStreams,
-        max_msg_size: usize,
-    ) -> Option<Bytes> {
-        match uni_streams.next().await {
-            None => None,
-            Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
-                trace!("Connection terminated by peer.");
-                None
-            }
-            Some(Err(err)) => {
-                warn!("Failed to read incoming message on uni-stream: {}", err);
-                None
-            }
-            Some(Ok(recv)) => Self::read_bytes(recv, max_msg_size)
-                .await
-                .map(|bytes| bytes),
-        }
-    }
-
-    // Returns next message sent by peer in a bidirectional stream.
-    async fn next_on_bi_streams(
-        bi_streams: &mut quinn::IncomingBiStreams,
-        max_msg_size: usize,
-    ) -> Option<(Bytes, quinn::SendStream)> {
-        match bi_streams.next().await {
-            None => None,
-            Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
-                trace!("Connection terminated by peer.");
-                None
-            }
-            Some(Err(err)) => {
-                warn!("Failed to read incoming message on bi-stream: {}", err);
-                None
-            }
-            Some(Ok((send, recv))) => Self::read_bytes(recv, max_msg_size)
-                .await
-                .map(|bytes| (bytes, send)),
-        }
-    }
-
-    // Read the message's bytes which size is capped
-    async fn read_bytes(recv: quinn::RecvStream, max_msg_size: usize) -> Option<Bytes> {
-        match recv.read_to_end(max_msg_size).await {
-            Ok(wire_bytes) => {
-                trace!("Got new message with {} bytes.", wire_bytes.len());
-                match WireMsg::from_raw(wire_bytes) {
-                    Ok(WireMsg::UserMsg(msg_bytes)) => Some(Bytes::copy_from_slice(&msg_bytes)),
-                    Ok(WireMsg::EndpointEchoReq) | Ok(WireMsg::EndpointEchoResp(_)) => {
-                        // TODO: handle the echo request/response message
-                        warn!("UNIMPLEMENTED: echo message type not supported yet");
-                        None
-                    }
-                    Err(err) => {
-                        warn!("Failed to parse received message bytes: {}", err);
-                        None
-                    }
-                }
-            }
-            Err(err) => {
-                warn!("Failed reading message's bytes: {}", err);
-                None
-            }
-        }
-    }
-}
-
-/// Stream of outgoing messages
-pub struct SendStream {
-    quinn_send_stream: quinn::SendStream,
-}
-
-impl SendStream {
-    pub(crate) fn new(quinn_send_stream: quinn::SendStream) -> Self {
-        Self { quinn_send_stream }
-    }
-
-    /// Send a message using the bi-direction stream created by the initiator
-    pub async fn respond(&mut self, msg: &Bytes) -> Result<()> {
-        self.quinn_send_stream.write_all(msg).await?;
-        Ok(())
-    }
-
-    /// Gracefully finish current stream
-    pub async fn finish(&mut self) -> Result<()> {
-        self.quinn_send_stream.finish().await?;
-        Ok(())
     }
 }
 

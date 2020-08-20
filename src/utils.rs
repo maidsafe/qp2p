@@ -9,7 +9,7 @@
 
 use crate::{
     dirs::Dirs,
-    error::{QuicP2pError, Result},
+    error::{Error, Result},
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -28,7 +28,7 @@ use std::path::Path;
 #[inline]
 pub fn project_dir() -> Result<Dirs> {
     let dirs = directories::ProjectDirs::from("net", "MaidSafe", "quic-p2p")
-        .ok_or_else(|| QuicP2pError::Io(::std::io::ErrorKind::NotFound.into()))?;
+        .ok_or_else(|| Error::Io(::std::io::ErrorKind::NotFound.into()))?;
     Ok(Dirs::Desktop(dirs))
 }
 
@@ -42,7 +42,7 @@ pub fn project_dir() -> Result<Dirs> {
 )))]
 #[inline]
 pub fn project_dir() -> Result<Dirs> {
-    Err(QuicP2pError::Configuration {
+    Err(Error::Configuration {
         e: "No default project dir on non-desktop platforms. User must provide an override path."
             .to_string(),
     })

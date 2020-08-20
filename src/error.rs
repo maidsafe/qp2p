@@ -12,11 +12,11 @@ use std::net::SocketAddr;
 use std::{io, sync::mpsc};
 
 /// Result used by `QuicP2p`.
-pub type Result<T> = std::result::Result<T, QuicP2pError>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
-pub enum QuicP2pError {
+pub enum Error {
     #[error(display = "Network bootstrap failed")]
     BootstrapFailure,
     #[error(display = "I/O Error")]
@@ -77,8 +77,8 @@ pub enum QuicP2pError {
     #[cfg(feature = "upnp")]
     #[error(display = "IGD is not supported")]
     IgdNotSupported,
-    #[error(display = "Response from peer not received")]
-    ResponseNotReceived,
+    #[error(display = "Empty response message received from peer")]
+    EmptyResponse,
     #[error(display = "Type of the message received was not the expected one")]
     UnexpectedMessageType,
 }

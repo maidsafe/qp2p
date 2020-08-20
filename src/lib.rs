@@ -51,6 +51,7 @@
 mod api;
 mod bootstrap_cache;
 mod config;
+mod connections;
 mod dirs;
 mod error;
 #[cfg(feature = "upnp")]
@@ -63,8 +64,9 @@ mod wire_msg;
 
 #[cfg(feature = "upnp")]
 pub use crate::igd::{DEFAULT_UPNP_LEASE_DURATION_SEC, UPNP_RESPONSE_TIMEOUT_MSEC};
-pub use api::{Connection, IncomingConnections, IncomingMessages, Message, QuicP2p};
+pub use api::{Message, QuicP2p};
 pub use config::Config;
+pub use connections::{Connection, IncomingConnections, IncomingMessages, SendStream};
 pub use dirs::{Dirs, OverRide};
-pub use error::{QuicP2pError, Result};
+pub use error::{Error, Result};
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
