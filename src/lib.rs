@@ -64,7 +64,7 @@ mod wire_msg;
 #[cfg(feature = "upnp")]
 pub use crate::igd::{DEFAULT_UPNP_LEASE_DURATION_SEC, UPNP_RESPONSE_TIMEOUT_MSEC};
 pub use api::{Connection, IncomingConnections, IncomingMessages, Message, QuicP2p};
-pub use config::{Config, OurType};
+pub use config::Config;
 pub use dirs::{Dirs, OverRide};
 pub use error::{QuicP2pError, Result};
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
