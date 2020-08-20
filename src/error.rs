@@ -8,9 +8,11 @@
 // Software.
 
 use err_derive::Error;
-
 use std::net::SocketAddr;
 use std::{io, sync::mpsc};
+
+/// Result used by `QuicP2p`.
+pub type Result<T> = std::result::Result<T, QuicP2pError>;
 
 #[derive(Debug, Error)]
 #[allow(missing_docs)]

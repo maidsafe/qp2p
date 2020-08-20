@@ -7,10 +7,11 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::dirs::Dirs;
-use crate::error::QuicP2pError;
-use crate::utils;
-use crate::R;
+use crate::{
+    dirs::Dirs,
+    error::{QuicP2pError, Result},
+    utils,
+};
 use bytes::Bytes;
 use log::{trace, warn};
 use serde::{Deserialize, Serialize};
@@ -71,7 +72,7 @@ impl Config {
     /// Try and read the config off the disk first. If such a file-path doesn't exist it'll create
     /// a default one with random certificate and write that to the disk, eventually returning that
     /// config to the caller.
-    pub fn read_or_construct_default(user_override: Option<&Dirs>) -> R<Config> {
+    pub fn read_or_construct_default(user_override: Option<&Dirs>) -> Result<Config> {
         let config_path = config_path(user_override)?;
 
         if config_path.exists() {
@@ -108,7 +109,7 @@ impl SerialisableCertificate {
     /// # Errors
     /// Returns [CertificateParseError](enum.Error.html#variant.CertificateParseError) if the inputs
     /// cannot be parsed
-    pub fn obtain_priv_key_and_cert(&self) -> R<(quinn::PrivateKey, quinn::Certificate)> {
+    pub fn obtain_priv_key_and_cert(&self) -> Result<(quinn::PrivateKey, quinn::Certificate)> {
         Ok((
             quinn::PrivateKey::from_der(&self.key_der)
                 .map_err(|_| QuicP2pError::CertificateParseError)?,
@@ -135,7 +136,7 @@ impl FromStr for SerialisableCertificate {
     type Err = QuicP2pError;
 
     /// Decode `SerialisableCertificate` from a base64-encoded string.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let cert = base64::decode(s)?;
         let (cert_der, key_der) = bincode::deserialize(&cert)?;
         Ok(Self { cert_der, key_der })
@@ -172,7 +173,7 @@ pub enum OurType {
 impl FromStr for OurType {
     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "client" => Ok(OurType::Client),
             "node" => Ok(OurType::Node),
@@ -191,7 +192,7 @@ impl Default for OurType {
     }
 }
 
-fn config_path(user_override: Option<&Dirs>) -> R<PathBuf> {
+fn config_path(user_override: Option<&Dirs>) -> Result<PathBuf> {
     let path = |dir: &Dirs| {
         let path = dir.config_dir();
         path.join("config")

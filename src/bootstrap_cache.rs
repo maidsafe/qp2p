@@ -9,7 +9,7 @@
 
 use crate::dirs::Dirs;
 use crate::utils;
-use crate::{QuicP2pError, R};
+use crate::{QuicP2pError, Result};
 use log::info;
 use std::{
     collections::{HashSet, VecDeque},
@@ -41,7 +41,7 @@ impl BootstrapCache {
     pub fn new(
         hard_coded_contacts: HashSet<SocketAddr>,
         user_override: Option<&Dirs>,
-    ) -> R<BootstrapCache> {
+    ) -> Result<BootstrapCache> {
         let path = |dir: &Dirs| {
             let path = dir.cache_dir();
             path.join("bootstrap_cache")
