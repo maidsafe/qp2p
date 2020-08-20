@@ -119,7 +119,7 @@ impl QuicP2p {
     }
 
     /// Get a list of attempted connections.
-    pub(crate) fn attempted_connections(&mut self) -> R<Vec<SocketAddr>> {
+    pub(crate) fn attempted_connections(&mut self) -> Result<Vec<SocketAddr>> {
         let (tx, rx) = mpsc::channel();
         self.el.post(move || {
             let res = test_ctx(|ctx| ctx.attempted_connections.clone());
@@ -136,7 +136,10 @@ impl QuicP2p {
     }
 
     /// Returns a list of connections of this peer.
-    pub(crate) fn connections<F: Send + 'static, Res: Send + 'static>(&mut self, f: F) -> R<Res>
+    pub(crate) fn connections<F: Send + 'static, Res: Send + 'static>(
+        &mut self,
+        f: F,
+    ) -> Result<Res>
     where
         F: FnOnce(&HashMap<SocketAddr, Connection>) -> Res,
     {

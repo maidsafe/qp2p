@@ -11,12 +11,11 @@
 use super::igd;
 use super::{
     bootstrap_cache::BootstrapCache,
-    config::{Config, OurType, SerialisableCertificate},
+    config::{Config, SerialisableCertificate},
     dirs::{Dirs, OverRide},
-    error::QuicP2pError,
+    error::{QuicP2pError, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
-    utils::R,
-    wire_msg::{Handshake, WireMsg},
+    wire_msg::WireMsg,
 };
 use bytes::Bytes;
 use futures::{future::select_ok, stream::StreamExt};
@@ -69,12 +68,11 @@ pub struct QuicP2p {
     bootstrap_cache: BootstrapCache,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
-    our_type: OurType,
 }
 
 impl QuicP2p {
     /// Construct `QuicP2p` with the default config and bootstrap cache enabled
-    pub fn new() -> R<Self> {
+    pub fn new() -> Result<Self> {
         Self::with_config(None, Default::default(), true)
     }
 
@@ -89,10 +87,8 @@ impl QuicP2p {
         cfg: Option<Config>,
         bootstrap_nodes: VecDeque<SocketAddr>,
         use_bootstrap_cache: bool,
-    ) -> R<Self> {
+    ) -> Result<Self> {
         let cfg = unwrap_config_or_default(cfg)?;
-
-        let our_type = cfg.our_type;
 
         let (port, allow_random_port) = cfg
             .port
@@ -144,7 +140,6 @@ impl QuicP2p {
             bootstrap_cache,
             endpoint_cfg,
             client_cfg,
-            our_type,
         };
 
         Ok(quic_p2p)
@@ -157,7 +152,7 @@ impl QuicP2p {
     /// previously cached.
     /// Once a connection with a peer succeeds, a `Connection` for such peer will be returned
     /// and all other connections will be dropped.
-    pub async fn bootstrap(&mut self) -> R<Connection> {
+    pub async fn bootstrap(&mut self) -> Result<Connection> {
         // TODO: refactor bootstrap_cache so we can simply get the list of nodes
         let bootstrap_nodes: Vec<SocketAddr> = self
             .bootstrap_cache
@@ -175,7 +170,6 @@ impl QuicP2p {
             let endpoint_cfg = self.endpoint_cfg.clone();
             let client_cfg = self.client_cfg.clone();
             let max_msg_size = self.max_msg_size;
-            let our_type = self.our_type;
             let local_addr = self.local_addr;
             let allow_random_port = self.allow_random_port;
             let task_handle = tokio::spawn(async move {
@@ -184,7 +178,6 @@ impl QuicP2p {
                     endpoint_cfg,
                     client_cfg,
                     max_msg_size,
-                    our_type,
                     local_addr,
                     allow_random_port,
                 )
@@ -203,13 +196,12 @@ impl QuicP2p {
 
     /// Connect to the given peer and return a `Connection` object if it succeeds,
     /// which can then be used to send messages to the connected peer.
-    pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> R<Connection> {
+    pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<Connection> {
         new_connection_to(
             node_addr,
             self.endpoint_cfg.clone(),
             self.client_cfg.clone(),
             self.max_msg_size,
-            self.our_type,
             self.local_addr,
             self.allow_random_port,
         )
@@ -217,7 +209,7 @@ impl QuicP2p {
     }
 
     /// Obtain stream of incoming QUIC connections
-    pub fn listen(&self) -> R<IncomingConnections> {
+    pub fn listen(&self) -> Result<IncomingConnections> {
         IncomingConnections::new(
             self.endpoint_cfg.clone(),
             self.local_addr,
@@ -234,7 +226,7 @@ impl QuicP2p {
     /// Note that if such an obtained address is of unspecified category we will ignore that as
     /// such an address cannot be reached and hence not useful.
     #[cfg(feature = "upnp")]
-    pub fn our_endpoint(&mut self) -> R<SocketAddr> {
+    pub fn our_endpoint(&mut self) -> Result<SocketAddr> {
         // TODO: make use of IGD and echo services
         Ok(self.local_addr)
     }
@@ -246,10 +238,9 @@ async fn new_connection_to(
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
     max_msg_size: usize,
-    our_type: OurType,
     local_addr: SocketAddr,
     allow_random_port: bool,
-) -> R<Connection> {
+) -> Result<Connection> {
     trace!("Attempting to connect to peer: {}", node_addr);
     let (quinn_endpoint, _) = bind(endpoint_cfg, local_addr, allow_random_port)?;
 
@@ -262,7 +253,7 @@ async fn new_connection_to(
 
     trace!("Successfully connected to peer: {}", node_addr);
 
-    Connection::new(quic_conn, max_msg_size, our_type).await
+    Connection::new(quic_conn, max_msg_size).await
 }
 
 // Bind a new socket with a local address
@@ -270,7 +261,7 @@ fn bind(
     endpoint_cfg: quinn::ServerConfig,
     local_addr: SocketAddr,
     allow_random_port: bool,
-) -> R<(quinn::Endpoint, quinn::Incoming)> {
+) -> Result<(quinn::Endpoint, quinn::Incoming)> {
     let mut endpoint_builder = quinn::Endpoint::builder();
     let _ = endpoint_builder.listen(endpoint_cfg);
 
@@ -311,16 +302,11 @@ impl Drop for Connection {
 }
 
 impl Connection {
-    pub(crate) async fn new(
-        quic_conn: quinn::Connection,
-        max_msg_size: usize,
-        our_type: OurType,
-    ) -> R<Self> {
+    pub(crate) async fn new(quic_conn: quinn::Connection, max_msg_size: usize) -> Result<Self> {
         let conn = Self {
             quic_conn,
             max_msg_size,
         };
-        conn.send_handshake(our_type).await?;
 
         Ok(conn)
     }
@@ -331,7 +317,7 @@ impl Connection {
     }
 
     /// Send message to peer and await for a reponse.
-    pub async fn send(&mut self, msg: Bytes) -> R<Bytes> {
+    pub async fn send(&mut self, msg: Bytes) -> Result<Bytes> {
         let (send_stream, recv_stream) = self.quic_conn.open_bi().await?;
         let wire_msg = WireMsg::UserMsg(msg);
         self.send_wire_msg(send_stream, wire_msg).await?;
@@ -358,27 +344,26 @@ impl Connection {
         }
     }
 
-    /// Send message to peer without awaiting for a reponse.
-    pub async fn send_only(&self, msg: Bytes) -> R<()> {
+    /// Send message to peer using a bi-directional stream without awaiting for a reponse.
+    pub async fn send_only(&self, msg: Bytes) -> Result<()> {
+        let (send_stream, _) = self.quic_conn.open_bi().await?;
+        let wire_msg = WireMsg::UserMsg(msg);
+        self.send_wire_msg(send_stream, wire_msg).await
+    }
+
+    /// Send message to peer using a uni-directional stream without awaiting for a reponse.
+    pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
         let send_stream = self.quic_conn.open_uni().await?;
         let wire_msg = WireMsg::UserMsg(msg);
         self.send_wire_msg(send_stream, wire_msg).await
     }
 
-    pub(crate) async fn send_handshake(&self, our_type: OurType) -> R<()> {
-        // TODO: try to either have a single client/node type, or remove the need of such info
-        let wire_msg = match our_type {
-            OurType::Client => WireMsg::Handshake(Handshake::Client),
-            OurType::Node => WireMsg::Handshake(Handshake::Node),
-        };
-        let send_stream = self.quic_conn.open_uni().await?;
-        self.send_wire_msg(send_stream, wire_msg).await
-    }
-
     // Private helper to send bytes to peer using the provided stream.
-    async fn send_wire_msg(&self, mut send_stream: quinn::SendStream, wire_msg: WireMsg) -> R<()> {
-        // TODO: review if we need to use the WireMsg struct at all
-
+    async fn send_wire_msg(
+        &self,
+        mut send_stream: quinn::SendStream,
+        wire_msg: WireMsg,
+    ) -> Result<()> {
         // Let's generate the message bytes
         let (msg_bytes, msg_flag) = wire_msg.into();
 
@@ -417,7 +402,7 @@ impl IncomingConnections {
         local_addr: SocketAddr,
         allow_random_port: bool,
         max_msg_size: usize,
-    ) -> R<Self> {
+    ) -> Result<Self> {
         let (_, quinn_incoming) = bind(endpoint_cfg, local_addr, allow_random_port)?;
 
         Ok(Self {
@@ -542,9 +527,20 @@ impl IncomingMessages {
     // Read the message's bytes which size is capped
     async fn read_bytes(recv: quinn::RecvStream, max_msg_size: usize) -> Option<Bytes> {
         match recv.read_to_end(max_msg_size).await {
-            Ok(req_bytes) => {
-                trace!("Got new message with {} bytes.", req_bytes.len());
-                Some(Bytes::copy_from_slice(req_bytes.as_slice()))
+            Ok(wire_bytes) => {
+                trace!("Got new message with {} bytes.", wire_bytes.len());
+                match WireMsg::from_raw(wire_bytes) {
+                    Ok(WireMsg::UserMsg(msg_bytes)) => Some(Bytes::copy_from_slice(&msg_bytes)),
+                    Ok(WireMsg::EndpointEchoReq) | Ok(WireMsg::EndpointEchoResp(_)) => {
+                        // TODO: handle the echo request/response message
+                        warn!("UNIMPLEMENTED: echo message type not supported yet");
+                        None
+                    }
+                    Err(err) => {
+                        warn!("Failed to parse received message bytes: {}", err);
+                        None
+                    }
+                }
             }
             Err(err) => {
                 warn!("Failed reading message's bytes: {}", err);
@@ -565,13 +561,13 @@ impl SendStream {
     }
 
     /// Send a message using the bi-direction stream created by the initiator
-    pub async fn respond(&mut self, msg: &Bytes) -> R<()> {
+    pub async fn respond(&mut self, msg: &Bytes) -> Result<()> {
         self.quinn_send_stream.write_all(msg).await?;
         Ok(())
     }
 
     /// Gracefully finish current stream
-    pub async fn finish(&mut self) -> R<()> {
+    pub async fn finish(&mut self) -> Result<()> {
         self.quinn_send_stream.finish().await?;
         Ok(())
     }
@@ -581,12 +577,12 @@ impl SendStream {
 
 // Unwrap the conffig if provided by the user, otherwise construct the default one
 #[cfg(not(feature = "upnp"))]
-fn unwrap_config_or_default(cfg: Option<Config>) -> R<Config> {
+fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
     cfg.map_or(Config::read_or_construct_default(None), |cfg| Ok(cfg))
 }
 
 #[cfg(feature = "upnp")]
-fn unwrap_config_or_default(cfg: Option<Config>) -> R<Config> {
+fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
     let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
     if cfg.ip.is_none() {
         cfg.ip = igd::get_local_ip().ok();

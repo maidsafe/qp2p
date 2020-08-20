@@ -7,7 +7,10 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{error::QuicP2pError, utils, R};
+use crate::{
+    error::{QuicP2pError, Result},
+    utils,
+};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::{fmt, net::SocketAddr};
@@ -16,7 +19,6 @@ use unwrap::unwrap;
 /// Final type serialised and sent on the wire by QuicP2p
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WireMsg {
-    Handshake(Handshake),
     EndpointEchoReq,
     EndpointEchoResp(SocketAddr),
     UserMsg(Bytes),
@@ -37,7 +39,7 @@ impl Into<(Bytes, u8)> for WireMsg {
 }
 
 impl WireMsg {
-    pub fn from_raw(mut raw: Vec<u8>) -> R<Self> {
+    pub fn from_raw(mut raw: Vec<u8>) -> Result<Self> {
         let msg_flag = raw.pop();
 
         match msg_flag {
@@ -56,33 +58,6 @@ impl fmt::Display for WireMsg {
             }
             WireMsg::EndpointEchoReq => write!(f, "WireMsg::EndpointEchoReq"),
             WireMsg::EndpointEchoResp(ref sa) => write!(f, "WireMsg::EndpointEchoResp({})", sa),
-            WireMsg::Handshake(ref hs) => write!(f, "WireMsg::Handshake({})", hs),
-        }
-    }
-}
-
-/// Type of Handshake.
-///
-/// If the peer is a client then we allow a single connection between us. This can have multiple
-/// uni-directional streams from either side to the other. For Node-Node however we will have 2
-/// connections with each allowing multiple uni-directional streams but only in one direction - the
-/// active connection to a peer will allow only outgoing uni-directional streams from it and a
-/// passive connection from a peer will allow only incoming uni-directional streams from it.
-///
-/// Depending on the handshake we will categorise the peer and give this information to the user.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-pub enum Handshake {
-    /// The connecting peer is a node.
-    Node,
-    /// The connecting peer is a client. No need for a reverse connection.
-    Client,
-}
-
-impl fmt::Display for Handshake {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Handshake::Node => write!(f, "Handshake::Node",),
-            Handshake::Client => write!(f, "Handshake::Client"),
         }
     }
 }

@@ -7,10 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::QuicP2pError;
-use crate::R;
-use std::sync::Arc;
-use std::time::Duration;
+use crate::{QuicP2pError, Result};
+use std::{sync::Arc, time::Duration};
 
 /// Default interval within which if we hear nothing from the peer we declare it offline to us.
 ///
@@ -47,7 +45,7 @@ pub fn new_our_cfg(
     keep_alive_interval_msec: u32,
     our_cert: quinn::Certificate,
     our_key: quinn::PrivateKey,
-) -> R<quinn::ServerConfig> {
+) -> Result<quinn::ServerConfig> {
     let mut our_cfg_builder = {
         let mut our_cfg = quinn::ServerConfig::default();
         our_cfg.transport = Arc::new(new_transport_cfg(
@@ -94,7 +92,7 @@ impl rustls::ServerCertVerifier for SkipServerVerification {
         _presented_certs: &[rustls::Certificate],
         _dns_name: webpki::DNSNameRef,
         _ocsp_response: &[u8],
-    ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
+    ) -> std::result::Result<rustls::ServerCertVerified, rustls::TLSError> {
         Ok(rustls::ServerCertVerified::assertion())
     }
 }
