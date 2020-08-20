@@ -13,7 +13,7 @@ use crate::{
     utils,
 };
 use bytes::Bytes;
-use log::{trace, warn};
+use log::trace;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet, fmt, fs, io, net::IpAddr, net::SocketAddr, path::PathBuf, str::FromStr,
@@ -63,9 +63,6 @@ pub struct Config {
     /// Duration of a UPnP port mapping.
     #[structopt(long)]
     pub upnp_lease_duration: Option<u32>,
-    /// Specify if we are a client or a node
-    #[structopt(short = "t", long, default_value = "node")]
-    pub our_type: OurType,
 }
 
 impl Config {
@@ -158,37 +155,6 @@ impl fmt::Debug for SerialisableCertificate {
             "SerialisableCertificate {{ cert_der: {}, key_der: <HIDDEN> }}",
             utils::bin_data_format(&self.cert_der)
         )
-    }
-}
-
-/// Whether we are a client or a node.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq)]
-pub enum OurType {
-    /// We are a client. Clients do not expect a reverse connection from a peer.
-    Client,
-    /// We are a node. Nodes require a reverse connection from a peer.
-    Node,
-}
-
-impl FromStr for OurType {
-    type Err = String;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "client" => Ok(OurType::Client),
-            "node" => Ok(OurType::Node),
-            x => {
-                let err = format!("Unknown client type: {}", x);
-                warn!("{}", err);
-                Err(err)
-            }
-        }
-    }
-}
-
-impl Default for OurType {
-    fn default() -> Self {
-        OurType::Node
     }
 }
 
