@@ -8,7 +8,7 @@
 // Software.
 
 use crate::{
-    error::{QuicP2pError, Result},
+    error::{Error, Result},
     utils,
 };
 use bytes::Bytes;
@@ -40,12 +40,15 @@ impl Into<(Bytes, u8)> for WireMsg {
 
 impl WireMsg {
     pub fn from_raw(mut raw: Vec<u8>) -> Result<Self> {
-        let msg_flag = raw.pop();
-
-        match msg_flag {
-            Some(flag) if flag == USER_MSG_FLAG => Ok(WireMsg::UserMsg(From::from(raw))),
-            Some(flag) if flag == !USER_MSG_FLAG => Ok(bincode::deserialize(&raw)?),
-            _x => Err(QuicP2pError::InvalidWireMsgFlag),
+        if raw.is_empty() {
+            Err(Error::EmptyResponse)
+        } else {
+            let msg_flag = raw.pop();
+            match msg_flag {
+                Some(flag) if flag == USER_MSG_FLAG => Ok(WireMsg::UserMsg(From::from(raw))),
+                Some(flag) if flag == !USER_MSG_FLAG => Ok(bincode::deserialize(&raw)?),
+                _x => Err(Error::InvalidWireMsgFlag),
+            }
         }
     }
 }

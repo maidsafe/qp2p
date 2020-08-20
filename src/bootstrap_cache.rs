@@ -9,7 +9,7 @@
 
 use crate::dirs::Dirs;
 use crate::utils;
-use crate::{QuicP2pError, Result};
+use crate::{Error, Result};
 use log::info;
 use std::{
     collections::{HashSet, VecDeque},
@@ -48,7 +48,7 @@ impl BootstrapCache {
         };
 
         let cache_path = user_override.map_or_else(
-            || Ok::<_, QuicP2pError>(path(&utils::project_dir()?)),
+            || Ok::<_, Error>(path(&utils::project_dir()?)),
             |d| Ok(path(d)),
         )?;
 
@@ -58,7 +58,7 @@ impl BootstrapCache {
             let cache_dir = cache_path
                 .parent()
                 .ok_or_else(|| io::ErrorKind::NotFound.into())
-                .map_err(QuicP2pError::Io)?;
+                .map_err(Error::Io)?;
             fs::create_dir_all(&cache_dir)?;
             Default::default()
         };

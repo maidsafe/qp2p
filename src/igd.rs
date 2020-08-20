@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::error::{QuicP2pError, Result};
+use crate::error::{Error, Result};
 use log::{debug, info, warn};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4};
 use std::time::Duration;
@@ -75,7 +75,7 @@ pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> Res
         Ok(ext_addr)
     } else {
         info!("IPv6 for IGD is not supported");
-        Err(QuicP2pError::IgdNotSupported)
+        Err(Error::IgdNotSupported)
     }
 }
 
@@ -97,14 +97,14 @@ pub(crate) async fn renew_port(
                 "MaidSafe.net",
             )
             .await
-            .map_err(QuicP2pError::IgdRenewPort)?;
+            .map_err(Error::IgdRenewPort)?;
 
         debug!("Successfully renewed the port mapping");
 
         Ok(())
     } else {
         info!("IPv6 for IGD is not supported");
-        Err(QuicP2pError::IgdNotSupported)
+        Err(Error::IgdNotSupported)
     }
 }
 
