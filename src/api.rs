@@ -88,6 +88,7 @@ impl QuicP2p {
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
         let cfg = unwrap_config_or_default(cfg)?;
+        info!("Config passed in to QP2P: {:?}", cfg);
 
         let (port, allow_random_port) = cfg
             .port
@@ -185,18 +186,21 @@ impl QuicP2p {
             tasks.push(task_handle);
         }
 
-        let (connection, _) = select_ok(tasks).await.map_err(|err| {
+        let (conn_info, _) = select_ok(tasks).await.map_err(|err| {
             error!("Failed to botstrap to the network: {}", err);
             Error::BootstrapFailure
         })?;
 
-        connection
+        let (connection, addr) = conn_info?;
+        self.local_addr = addr;
+
+        Ok(connection)
     }
 
     /// Connect to the given peer and return a `Connection` object if it succeeds,
     /// which can then be used to send messages to the connected peer.
     pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<Connection> {
-        new_connection_to(
+        let (connection, addr) = new_connection_to(
             node_addr,
             self.endpoint_cfg.clone(),
             self.client_cfg.clone(),
@@ -204,7 +208,9 @@ impl QuicP2p {
             self.local_addr,
             self.allow_random_port,
         )
-        .await
+        .await?;
+
+        Ok(connection)
     }
 
     /// Obtain stream of incoming QUIC connections
@@ -239,7 +245,7 @@ async fn new_connection_to(
     max_msg_size: usize,
     local_addr: SocketAddr,
     allow_random_port: bool,
-) -> Result<Connection> {
+) -> Result<(Connection, SocketAddr)> {
     trace!("Attempting to connect to peer: {}", node_addr);
     let (quinn_endpoint, _) = bind(endpoint_cfg, local_addr, allow_random_port)?;
 
@@ -252,7 +258,10 @@ async fn new_connection_to(
 
     trace!("Successfully connected to peer: {}", node_addr);
 
-    Connection::new(quic_conn, max_msg_size).await
+    Ok((
+        Connection::new(quic_conn, max_msg_size).await?,
+        quinn_endpoint.local_addr()?,
+    ))
 }
 
 // Bind a new socket with a local address
@@ -272,7 +281,11 @@ fn bind(
                 DEFAULT_PORT_TO_TRY, err
             );
             let bind_addr = SocketAddr::new(local_addr.ip(), 0);
-            endpoint_builder.bind(&bind_addr).map_err(Error::Endpoint)
+
+            endpoint_builder.bind(&bind_addr).map_err(|e| {
+                error!("Failed to bind to random port {:?}", e);
+                Error::Endpoint(e)
+            })
         }
         Err(err) => Err(Error::Configuration {
             e: format!(
