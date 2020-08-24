@@ -46,8 +46,7 @@ impl Connection {
     /// Send message to peer and await for a reponse.
     pub async fn send(&mut self, msg: Bytes) -> Result<Bytes> {
         let (send_stream, recv_stream) = self.quic_conn.open_bi().await?;
-        let wire_msg = WireMsg::UserMsg(msg);
-        self.send_wire_msg(send_stream, wire_msg).await?;
+        self.send_msg(send_stream, msg).await?;
 
         trace!(
             "Awaiting for response from remote peer: {}",
@@ -74,24 +73,19 @@ impl Connection {
     /// Send message to peer using a bi-directional stream without awaiting for a reponse.
     pub async fn send_only(&self, msg: Bytes) -> Result<()> {
         let (send_stream, _) = self.quic_conn.open_bi().await?;
-        let wire_msg = WireMsg::UserMsg(msg);
-        self.send_wire_msg(send_stream, wire_msg).await
+        self.send_msg(send_stream, msg).await
     }
 
     /// Send message to peer using a uni-directional stream without awaiting for a reponse.
     pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
         let send_stream = self.quic_conn.open_uni().await?;
-        let wire_msg = WireMsg::UserMsg(msg);
-        self.send_wire_msg(send_stream, wire_msg).await
+        self.send_msg(send_stream, msg).await
     }
 
     // Private helper to send bytes to peer using the provided stream.
-    async fn send_wire_msg(
-        &self,
-        mut send_stream: quinn::SendStream,
-        wire_msg: WireMsg,
-    ) -> Result<()> {
+    async fn send_msg(&self, mut send_stream: quinn::SendStream, msg: Bytes) -> Result<()> {
         // Let's generate the message bytes
+        let wire_msg = WireMsg::UserMsg(msg);
         let (msg_bytes, msg_flag) = wire_msg.into();
 
         trace!(

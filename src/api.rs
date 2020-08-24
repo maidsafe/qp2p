@@ -225,7 +225,7 @@ impl QuicP2p {
     /// Note that if such an obtained address is of unspecified category we will ignore that as
     /// such an address cannot be reached and hence not useful.
     #[cfg(feature = "upnp")]
-    pub fn our_endpoint(&mut self) -> Result<SocketAddr> {
+    pub fn our_endpoint(&self) -> Result<SocketAddr> {
         // TODO: make use of IGD and echo services
         Ok(self.local_addr)
     }
@@ -265,18 +265,14 @@ fn bind(
     let _ = endpoint_builder.listen(endpoint_cfg);
 
     match UdpSocket::bind(&local_addr) {
-        Ok(udp) => endpoint_builder
-            .with_socket(udp)
-            .map_err(Error::Endpoint),
+        Ok(udp) => endpoint_builder.with_socket(udp).map_err(Error::Endpoint),
         Err(err) if allow_random_port => {
             info!(
                 "Failed to bind to port: {} - Error: {}. Trying random port instead.",
                 DEFAULT_PORT_TO_TRY, err
             );
             let bind_addr = SocketAddr::new(local_addr.ip(), 0);
-            endpoint_builder
-                .bind(&bind_addr)
-                .map_err(Error::Endpoint)
+            endpoint_builder.bind(&bind_addr).map_err(Error::Endpoint)
         }
         Err(err) => Err(Error::Configuration {
             e: format!(
