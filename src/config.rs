@@ -108,8 +108,7 @@ impl SerialisableCertificate {
     /// cannot be parsed
     pub fn obtain_priv_key_and_cert(&self) -> Result<(quinn::PrivateKey, quinn::Certificate)> {
         Ok((
-            quinn::PrivateKey::from_der(&self.key_der)
-                .map_err(|_| Error::CertificateParseError)?,
+            quinn::PrivateKey::from_der(&self.key_der).map_err(|_| Error::CertificateParseError)?,
             quinn::Certificate::from_der(&self.cert_der)
                 .map_err(|_| Error::CertificateParseError)?,
         ))

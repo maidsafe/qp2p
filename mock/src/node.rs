@@ -8,7 +8,7 @@
 
 use super::{
     network::{Inner, Message, Packet, NETWORK},
-    Config, Event, EventSenders, OurType, Peer, Error,
+    Config, Error, Event, EventSenders, OurType, Peer,
 };
 use bytes::Bytes;
 // Note: using `FxHashMap` / `FxHashSet` because they don't use random state and thus guarantee
