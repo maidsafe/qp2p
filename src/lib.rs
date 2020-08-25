@@ -53,6 +53,7 @@ mod bootstrap_cache;
 mod config;
 mod connections;
 mod dirs;
+mod endpoint;
 mod error;
 #[cfg(feature = "upnp")]
 mod igd;
@@ -68,5 +69,6 @@ pub use api::{Message, QuicP2p};
 pub use config::Config;
 pub use connections::{Connection, IncomingConnections, IncomingMessages, SendStream};
 pub use dirs::{Dirs, OverRide};
+pub use endpoint::Endpoint;
 pub use error::{Error, Result};
 pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};

@@ -13,9 +13,9 @@ use super::{
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
-use futures::stream::StreamExt;
+use futures::{lock::Mutex, stream::StreamExt};
 use log::{trace, warn};
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::select;
 
 /// Connection instance to a node which can be used to send messages to it
@@ -26,7 +26,7 @@ pub struct Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        self.quic_conn.close(0u32.into(), b"===");
+        self.close();
     }
 }
 
@@ -109,16 +109,24 @@ impl Connection {
 
         Ok(())
     }
+
+    /// Gracefully close connection immediatelly
+    pub fn close(&self) {
+        self.quic_conn.close(0u32.into(), b"");
+    }
 }
 
 /// Stream of incoming QUIC connections
 pub struct IncomingConnections {
-    quinn_incoming: quinn::Incoming,
+    quinn_incoming: Arc<Mutex<quinn::Incoming>>,
     max_msg_size: usize,
 }
 
 impl IncomingConnections {
-    pub(crate) fn new(quinn_incoming: quinn::Incoming, max_msg_size: usize) -> Result<Self> {
+    pub(crate) fn new(
+        quinn_incoming: Arc<Mutex<quinn::Incoming>>,
+        max_msg_size: usize,
+    ) -> Result<Self> {
         Ok(Self {
             quinn_incoming,
             max_msg_size,
@@ -127,7 +135,7 @@ impl IncomingConnections {
 
     /// Returns next QUIC connection established by a peer
     pub async fn next(&mut self) -> Option<IncomingMessages> {
-        match self.quinn_incoming.next().await {
+        match self.quinn_incoming.lock().await.next().await {
             Some(quinn_conn) => match quinn_conn.await {
                 Ok(quinn::NewConnection {
                     connection,

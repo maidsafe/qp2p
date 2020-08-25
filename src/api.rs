@@ -12,14 +12,15 @@ use super::igd;
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
-    connections::{Connection, IncomingConnections, SendStream},
+    connections::{Connection, SendStream},
     dirs::{Dirs, OverRide},
+    endpoint::Endpoint,
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
 use bytes::Bytes;
 use futures::future::select_ok;
-use log::{error, info, trace};
+use log::{debug, error, info, trace};
 use std::{
     collections::VecDeque,
     mem,
@@ -54,10 +55,6 @@ pub enum Message {
     },
 }
 
-/// Host name of the Quic communication certificate used by peers
-// TODO: make it configurable
-const CERT_SERVER_NAME: &str = "MaidSAFE.net";
-
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
 #[derive(Clone)]
 pub struct QuicP2p {
@@ -88,7 +85,7 @@ impl QuicP2p {
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
         let cfg = unwrap_config_or_default(cfg)?;
-        info!("Config passed in to QP2P: {:?}", cfg);
+        debug!("Config passed in to quic-p2p: {:?}", cfg);
 
         let (port, allow_random_port) = cfg
             .port
@@ -152,7 +149,7 @@ impl QuicP2p {
     /// previously cached.
     /// Once a connection with a peer succeeds, a `Connection` for such peer will be returned
     /// and all other connections will be dropped.
-    pub async fn bootstrap(&mut self) -> Result<Connection> {
+    pub async fn bootstrap(&mut self) -> Result<(Endpoint, Connection)> {
         // TODO: refactor bootstrap_cache so we can simply get the list of nodes
         let bootstrap_nodes: Vec<SocketAddr> = self
             .bootstrap_cache
@@ -186,21 +183,19 @@ impl QuicP2p {
             tasks.push(task_handle);
         }
 
-        let (conn_info, _) = select_ok(tasks).await.map_err(|err| {
+        let (result, _) = select_ok(tasks).await.map_err(|err| {
             error!("Failed to botstrap to the network: {}", err);
             Error::BootstrapFailure
         })?;
 
-        let (connection, addr) = conn_info?;
-        self.local_addr = addr;
-
-        Ok(connection)
+        let (endpoint, connection) = result?;
+        Ok((endpoint, connection))
     }
 
-    /// Connect to the given peer and return a `Connection` object if it succeeds,
-    /// which can then be used to send messages to the connected peer.
-    pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<Connection> {
-        let (connection, addr) = new_connection_to(
+    /// Connect to the given peer and return the `Endpoint` created along with the `Connection`
+    /// object if it succeeds, which can then be used to send messages to the connected peer.
+    pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
+        new_connection_to(
             node_addr,
             self.endpoint_cfg.clone(),
             self.client_cfg.clone(),
@@ -208,32 +203,32 @@ impl QuicP2p {
             self.local_addr,
             self.allow_random_port,
         )
-        .await?;
-
-        Ok(connection)
+        .await
     }
 
-    /// Obtain stream of incoming QUIC connections
-    pub fn listen(&self) -> Result<IncomingConnections> {
-        let (_, quinn_incoming) = bind(
+    /// Create a new `Endpoint`  which can be used to connect to peers and send
+    /// messages to them, as well as listen to messages incoming from other peers.
+    pub fn new_endpoint(&self) -> Result<Endpoint> {
+        trace!("Creating a new enpoint");
+        let (quinn_endpoint, quinn_incoming) = bind(
             self.endpoint_cfg.clone(),
             self.local_addr,
             self.allow_random_port,
         )?;
-        IncomingConnections::new(quinn_incoming, self.max_msg_size)
-    }
 
-    /// Get our connection adddress to give to others for them to connect to us.
-    ///
-    /// Attempts to use UPnP to automatically find the public endpoint and forward a port.
-    /// Will use hard coded contacts to ask for our endpoint. If no contact is given then we'll
-    /// simply build our connection info by querying the underlying bound socket for our address.
-    /// Note that if such an obtained address is of unspecified category we will ignore that as
-    /// such an address cannot be reached and hence not useful.
-    #[cfg(feature = "upnp")]
-    pub fn our_endpoint(&self) -> Result<SocketAddr> {
-        // TODO: make use of IGD and echo services
-        Ok(self.local_addr)
+        trace!(
+            "Bound endpoint to local address: {}",
+            quinn_endpoint.local_addr()?
+        );
+
+        let endpoint = Endpoint::new(
+            quinn_endpoint,
+            quinn_incoming,
+            self.client_cfg.clone(),
+            self.max_msg_size,
+        )?;
+
+        Ok(endpoint)
     }
 }
 
@@ -245,23 +240,20 @@ async fn new_connection_to(
     max_msg_size: usize,
     local_addr: SocketAddr,
     allow_random_port: bool,
-) -> Result<(Connection, SocketAddr)> {
+) -> Result<(Endpoint, Connection)> {
     trace!("Attempting to connect to peer: {}", node_addr);
-    let (quinn_endpoint, _) = bind(endpoint_cfg, local_addr, allow_random_port)?;
 
-    let quinn_connecting = quinn_endpoint.connect_with(client_cfg, &node_addr, CERT_SERVER_NAME)?;
+    let (quinn_endpoint, quinn_incoming) = bind(endpoint_cfg, local_addr, allow_random_port)?;
 
-    let quinn::NewConnection {
-        connection: quic_conn,
-        ..
-    } = quinn_connecting.await?;
+    trace!(
+        "Bound connection to local address: {}",
+        quinn_endpoint.local_addr()?
+    );
 
-    trace!("Successfully connected to peer: {}", node_addr);
+    let endpoint = Endpoint::new(quinn_endpoint, quinn_incoming, client_cfg, max_msg_size)?;
+    let connection = endpoint.connect_to(node_addr).await?;
 
-    Ok((
-        Connection::new(quic_conn, max_msg_size).await?,
-        quinn_endpoint.local_addr()?,
-    ))
+    Ok((endpoint, connection))
 }
 
 // Bind a new socket with a local address
@@ -271,19 +263,20 @@ fn bind(
     allow_random_port: bool,
 ) -> Result<(quinn::Endpoint, quinn::Incoming)> {
     let mut endpoint_builder = quinn::Endpoint::builder();
+    // TODO: allow to optionally accept incoming conns, needed for clients
     let _ = endpoint_builder.listen(endpoint_cfg);
 
     match UdpSocket::bind(&local_addr) {
         Ok(udp) => endpoint_builder.with_socket(udp).map_err(Error::Endpoint),
         Err(err) if allow_random_port => {
             info!(
-                "Failed to bind to port: {} - Error: {}. Trying random port instead.",
-                DEFAULT_PORT_TO_TRY, err
+                "Failed to bind to local address: {} - Error: {}. Trying random port instead.",
+                local_addr, err
             );
             let bind_addr = SocketAddr::new(local_addr.ip(), 0);
 
             endpoint_builder.bind(&bind_addr).map_err(|e| {
-                error!("Failed to bind to random port {:?}", e);
+                error!("Failed to bind to random port too: {}", e);
                 Error::Endpoint(e)
             })
         }
