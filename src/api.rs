@@ -12,7 +12,7 @@ use super::igd;
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
-    connections::{Connection, SendStream},
+    connections::{Connection, IncomingConnections, SendStream},
     dirs::{Dirs, OverRide},
     endpoint::Endpoint,
     error::{Error, Result},
@@ -154,6 +154,11 @@ impl QuicP2p {
         Ok(quic_p2p)
     }
 
+    /// Returns our connection info
+    pub fn our_connection_info(&self) -> SocketAddr {
+        self.endpoint.local_address()
+    }
+
     /// Bootstrap to the network.
     ///
     /// Bootstrap concept is different from "connect" in several ways: `bootstrap()` will try to
@@ -161,7 +166,7 @@ impl QuicP2p {
     /// previously cached.
     /// Once a connection with a peer succeeds, a `Connection` for such peer will be returned
     /// and all other connections will be dropped.
-    pub async fn bootstrap(&'static mut self) -> Result<Connection> {
+    pub async fn bootstrap(&mut self) -> Result<Connection> {
         // TODO: refactor bootstrap_cache so we can simply get the list of nodes
         let bootstrap_nodes: Vec<SocketAddr> = self
             .bootstrap_cache
@@ -176,7 +181,7 @@ impl QuicP2p {
         // Attempt to connect to all nodes and return the first one to succeed
         let mut tasks = Vec::default();
         for node_addr in bootstrap_nodes {
-            let endpoint = &self.endpoint;
+            let endpoint = self.endpoint.clone();
             let task_handle = tokio::spawn(async move { endpoint.connect_to(&node_addr).await });
             tasks.push(task_handle);
         }
@@ -219,6 +224,11 @@ impl QuicP2p {
         )?;
 
         Ok(endpoint)
+    }
+
+    /// Listen for incoming connections at our endpoint
+    pub fn listen(&self) -> Result<IncomingConnections> {
+        self.endpoint.listen()
     }
 }
 
