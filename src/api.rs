@@ -64,6 +64,7 @@ pub struct QuicP2p {
     bootstrap_cache: BootstrapCache,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
+    endpoint: Endpoint,
 }
 
 impl QuicP2p {
@@ -129,14 +130,25 @@ impl QuicP2p {
             peer_config::new_our_cfg(idle_timeout_msec, keep_alive_interval_msec, cert, key)?;
 
         let client_cfg = peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
+        let local_addr = SocketAddr::new(ip, port);
+
+        let (quic_endpoint, quic_incoming) =
+            bind(endpoint_cfg.clone(), local_addr, allow_random_port)?;
+        let endpoint = Endpoint::new(
+            quic_endpoint,
+            quic_incoming,
+            client_cfg.clone(),
+            max_msg_size,
+        )?;
 
         let quic_p2p = Self {
-            local_addr: SocketAddr::new(ip, port),
+            local_addr,
             allow_random_port,
             max_msg_size,
             bootstrap_cache,
             endpoint_cfg,
             client_cfg,
+            endpoint,
         };
 
         Ok(quic_p2p)
@@ -149,7 +161,7 @@ impl QuicP2p {
     /// previously cached.
     /// Once a connection with a peer succeeds, a `Connection` for such peer will be returned
     /// and all other connections will be dropped.
-    pub async fn bootstrap(&mut self) -> Result<(Endpoint, Connection)> {
+    pub async fn bootstrap(&'static mut self) -> Result<Connection> {
         // TODO: refactor bootstrap_cache so we can simply get the list of nodes
         let bootstrap_nodes: Vec<SocketAddr> = self
             .bootstrap_cache
@@ -164,22 +176,8 @@ impl QuicP2p {
         // Attempt to connect to all nodes and return the first one to succeed
         let mut tasks = Vec::default();
         for node_addr in bootstrap_nodes {
-            let endpoint_cfg = self.endpoint_cfg.clone();
-            let client_cfg = self.client_cfg.clone();
-            let max_msg_size = self.max_msg_size;
-            let local_addr = self.local_addr;
-            let allow_random_port = self.allow_random_port;
-            let task_handle = tokio::spawn(async move {
-                new_connection_to(
-                    &node_addr,
-                    endpoint_cfg,
-                    client_cfg,
-                    max_msg_size,
-                    local_addr,
-                    allow_random_port,
-                )
-                .await
-            });
+            let endpoint = &self.endpoint;
+            let task_handle = tokio::spawn(async move { endpoint.connect_to(&node_addr).await });
             tasks.push(task_handle);
         }
 
@@ -188,22 +186,14 @@ impl QuicP2p {
             Error::BootstrapFailure
         })?;
 
-        let (endpoint, connection) = result?;
-        Ok((endpoint, connection))
+        let connection = result?;
+        Ok(connection)
     }
 
     /// Connect to the given peer and return the `Endpoint` created along with the `Connection`
     /// object if it succeeds, which can then be used to send messages to the connected peer.
-    pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
-        new_connection_to(
-            node_addr,
-            self.endpoint_cfg.clone(),
-            self.client_cfg.clone(),
-            self.max_msg_size,
-            self.local_addr,
-            self.allow_random_port,
-        )
-        .await
+    pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<Connection> {
+        self.endpoint.connect_to(node_addr).await
     }
 
     /// Create a new `Endpoint`  which can be used to connect to peers and send
@@ -230,30 +220,6 @@ impl QuicP2p {
 
         Ok(endpoint)
     }
-}
-
-// Creates a new Connection
-async fn new_connection_to(
-    node_addr: &SocketAddr,
-    endpoint_cfg: quinn::ServerConfig,
-    client_cfg: quinn::ClientConfig,
-    max_msg_size: usize,
-    local_addr: SocketAddr,
-    allow_random_port: bool,
-) -> Result<(Endpoint, Connection)> {
-    trace!("Attempting to connect to peer: {}", node_addr);
-
-    let (quinn_endpoint, quinn_incoming) = bind(endpoint_cfg, local_addr, allow_random_port)?;
-
-    trace!(
-        "Bound connection to local address: {}",
-        quinn_endpoint.local_addr()?
-    );
-
-    let endpoint = Endpoint::new(quinn_endpoint, quinn_incoming, client_cfg, max_msg_size)?;
-    let connection = endpoint.connect_to(node_addr).await?;
-
-    Ok((endpoint, connection))
 }
 
 // Bind a new socket with a local address
