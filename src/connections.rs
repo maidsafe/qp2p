@@ -9,7 +9,7 @@
 
 use super::{
     api::Message,
-    error::{Error, Result},
+    error::Result,
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
@@ -21,7 +21,7 @@ use tokio::select;
 /// Connection instance to a node which can be used to send messages to it
 pub struct Connection {
     quic_conn: quinn::Connection,
-    max_msg_size: usize,
+    _max_msg_size: usize,
 }
 
 impl Drop for Connection {
@@ -34,7 +34,7 @@ impl Connection {
     pub(crate) async fn new(quic_conn: quinn::Connection, max_msg_size: usize) -> Result<Self> {
         Ok(Self {
             quic_conn,
-            max_msg_size,
+            _max_msg_size: max_msg_size,
         })
     }
 
@@ -44,28 +44,15 @@ impl Connection {
     }
 
     /// Get connection streams for reading/writing
-    pub async fn create_connection_streams(&self) -> Result<ConnectionStreams> {
-        let (send_stream, recv_stream) = self.quic_conn.open_bi().await?;
-
-        Ok(ConnectionStreams::new(
-            self.remote_address(),
-            send_stream,
-            recv_stream,
-            self.max_msg_size,
-        ))
+    pub async fn open_bidirectional_stream(&self) -> Result<(quinn::SendStream, quinn::RecvStream)> {
+        Ok(self.quic_conn.open_bi().await?)
     }
 
     /// Send message to peer and await for a reponse.
-    pub async fn send(&self, msg: Bytes) -> Result<ConnectionStreams> {
-        let mut connection_streams = self.create_connection_streams().await?;
-        connection_streams.send(msg).await?;
-        Ok(connection_streams)
-    }
-
-    /// Send message to peer using a bi-directional stream without awaiting for a reponse.
-    pub async fn send_only(&self, msg: Bytes) -> Result<()> {
-        let (mut send_stream, _) = self.quic_conn.open_bi().await?;
-        send_msg(&self.remote_address(), &mut send_stream, msg).await
+    pub async fn send(&self, msg: Bytes) -> Result<(quinn::SendStream, quinn::RecvStream)> {
+        let (mut send_stream, recv_stream) = self.open_bidirectional_stream().await?;
+        send_msg(&self.remote_address(), &mut send_stream, msg).await?;
+        Ok((send_stream, recv_stream))
     }
 
     /// Send message to peer using a uni-directional stream without awaiting for a reponse.
@@ -77,37 +64,6 @@ impl Connection {
     /// Gracefully close connection immediatelly
     pub fn close(&self) {
         self.quic_conn.close(0u32.into(), b"");
-    }
-}
-
-pub struct ConnectionStreams {
-    peer_addr: SocketAddr,
-    send_stream: quinn::SendStream,
-    recv_stream: quinn::RecvStream,
-    max_msg_size: usize,
-}
-
-impl ConnectionStreams {
-    pub fn new(
-        peer_addr: SocketAddr,
-        send_stream: quinn::SendStream,
-        recv_stream: quinn::RecvStream,
-        max_msg_size: usize,
-    ) -> Self {
-        Self {
-            peer_addr,
-            send_stream,
-            recv_stream,
-            max_msg_size,
-        }
-    }
-
-    pub async fn send(&mut self, msg: Bytes) -> Result<()> {
-        send_msg(&self.peer_addr, &mut self.send_stream, msg).await
-    }
-
-    pub async fn next(self) -> Option<Bytes> {
-        read_bytes(self.recv_stream, self.max_msg_size).await
     }
 }
 
