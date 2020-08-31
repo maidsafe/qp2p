@@ -44,75 +44,64 @@ impl Connection {
     }
 
     /// Send message to peer and await for a reponse.
-    pub async fn send(&mut self, msg: Bytes) -> Result<Bytes> {
-        let (send_stream, recv_stream) = self.quic_conn.open_bi().await?;
-        self.send_msg(send_stream, msg).await?;
+    pub async fn send(&mut self, msg: Bytes) -> Result<ConnectionStreams> {
+        let (mut send_stream, recv_stream) = self.quic_conn.open_bi().await?;
+        send_msg(&self.remote_address(), &mut send_stream, msg).await?;
 
-        trace!(
-            "Awaiting for response from remote peer: {}",
-            self.quic_conn.remote_address()
-        );
-
-        // Let's read the response (we expect one single message)
-        let received_bytes = recv_stream.read_to_end(self.max_msg_size).await?;
-        trace!(
-            "Received {} bytes from remote peer: {}",
-            received_bytes.len(),
-            self.quic_conn.remote_address()
-        );
-
-        match WireMsg::from_raw(received_bytes)? {
-            WireMsg::UserMsg(msg_bytes) => Ok(Bytes::copy_from_slice(&msg_bytes)),
-            msg => {
-                warn!("Unexpected message type received: {:?}", msg);
-                Err(Error::UnexpectedMessageType)
-            }
-        }
+        Ok(ConnectionStreams::new(
+            self.remote_address(),
+            send_stream,
+            recv_stream,
+            self.max_msg_size,
+        ))
     }
 
     /// Send message to peer using a bi-directional stream without awaiting for a reponse.
     pub async fn send_only(&self, msg: Bytes) -> Result<()> {
-        let (send_stream, _) = self.quic_conn.open_bi().await?;
-        self.send_msg(send_stream, msg).await
+        let (mut send_stream, _) = self.quic_conn.open_bi().await?;
+        send_msg(&self.remote_address(), &mut send_stream, msg).await
     }
 
     /// Send message to peer using a uni-directional stream without awaiting for a reponse.
     pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
-        let send_stream = self.quic_conn.open_uni().await?;
-        self.send_msg(send_stream, msg).await
-    }
-
-    // Private helper to send bytes to peer using the provided stream.
-    async fn send_msg(&self, mut send_stream: quinn::SendStream, msg: Bytes) -> Result<()> {
-        // Let's generate the message bytes
-        let wire_msg = WireMsg::UserMsg(msg);
-        let (msg_bytes, msg_flag) = wire_msg.into();
-
-        trace!(
-            "Sending message to remote peer ({} bytes): {}",
-            msg_bytes.len(),
-            self.quic_conn.remote_address()
-        );
-
-        // Send message bytes over QUIC
-        send_stream.write_all(&msg_bytes[..]).await?;
-
-        // Then send message flag over QUIC
-        send_stream.write_all(&[msg_flag]).await?;
-
-        send_stream.finish().await?;
-
-        trace!(
-            "Message was sent to remote peer: {}",
-            self.quic_conn.remote_address(),
-        );
-
-        Ok(())
+        let mut send_stream = self.quic_conn.open_uni().await?;
+        send_msg(&self.remote_address(), &mut send_stream, msg).await
     }
 
     /// Gracefully close connection immediatelly
     pub fn close(&self) {
         self.quic_conn.close(0u32.into(), b"");
+    }
+}
+
+pub struct ConnectionStreams {
+    peer_addr: SocketAddr,
+    send_stream: quinn::SendStream,
+    recv_stream: quinn::RecvStream,
+    max_msg_size: usize,
+}
+
+impl ConnectionStreams {
+    pub fn new(
+        peer_addr: SocketAddr,
+        send_stream: quinn::SendStream,
+        recv_stream: quinn::RecvStream,
+        max_msg_size: usize,
+    ) -> Self {
+        Self {
+            peer_addr,
+            send_stream,
+            recv_stream,
+            max_msg_size,
+        }
+    }
+
+    pub async fn send(&mut self, msg: Bytes) -> Result<()> {
+        send_msg(&self.peer_addr, &mut self.send_stream, msg).await
+    }
+
+    pub async fn next(self) -> Option<Bytes> {
+        read_bytes(self.recv_stream, self.max_msg_size).await
     }
 }
 
@@ -219,9 +208,7 @@ impl IncomingMessages {
                 warn!("Failed to read incoming message on uni-stream: {}", err);
                 None
             }
-            Some(Ok(recv)) => Self::read_bytes(recv, max_msg_size)
-                .await
-                .map(|bytes| bytes),
+            Some(Ok(recv)) => read_bytes(recv, max_msg_size).await.map(|bytes| bytes),
         }
     }
 
@@ -240,36 +227,65 @@ impl IncomingMessages {
                 warn!("Failed to read incoming message on bi-stream: {}", err);
                 None
             }
-            Some(Ok((send, recv))) => Self::read_bytes(recv, max_msg_size)
+            Some(Ok((send, recv))) => read_bytes(recv, max_msg_size)
                 .await
                 .map(|bytes| (bytes, send)),
         }
     }
+}
 
-    // Read the message's bytes which size is capped
-    async fn read_bytes(recv: quinn::RecvStream, max_msg_size: usize) -> Option<Bytes> {
-        match recv.read_to_end(max_msg_size).await {
-            Ok(wire_bytes) => {
-                trace!("Got new message with {} bytes.", wire_bytes.len());
-                match WireMsg::from_raw(wire_bytes) {
-                    Ok(WireMsg::UserMsg(msg_bytes)) => Some(Bytes::copy_from_slice(&msg_bytes)),
-                    Ok(WireMsg::EndpointEchoReq) | Ok(WireMsg::EndpointEchoResp(_)) => {
-                        // TODO: handle the echo request/response message
-                        warn!("UNIMPLEMENTED: echo message type not supported yet");
-                        None
-                    }
-                    Err(err) => {
-                        warn!("Failed to parse received message bytes: {}", err);
-                        None
-                    }
+// Read the message's bytes which size is capped
+async fn read_bytes(recv: quinn::RecvStream, max_msg_size: usize) -> Option<Bytes> {
+    match recv.read_to_end(max_msg_size).await {
+        Ok(wire_bytes) => {
+            trace!("Got new message with {} bytes.", wire_bytes.len());
+            match WireMsg::from_raw(wire_bytes) {
+                Ok(WireMsg::UserMsg(msg_bytes)) => Some(Bytes::copy_from_slice(&msg_bytes)),
+                Ok(WireMsg::EndpointEchoReq) | Ok(WireMsg::EndpointEchoResp(_)) => {
+                    // TODO: handle the echo request/response message
+                    warn!("UNIMPLEMENTED: echo message type not supported yet");
+                    None
+                }
+                Err(err) => {
+                    warn!("Failed to parse received message bytes: {}", err);
+                    None
                 }
             }
-            Err(err) => {
-                warn!("Failed reading message's bytes: {}", err);
-                None
-            }
+        }
+        Err(err) => {
+            warn!("Failed reading message's bytes: {}", err);
+            None
         }
     }
+}
+
+// Private helper to send bytes to peer using the provided stream.
+async fn send_msg(
+    peer_addr: &SocketAddr,
+    send_stream: &mut quinn::SendStream,
+    msg: Bytes,
+) -> Result<()> {
+    // Let's generate the message bytes
+    let wire_msg = WireMsg::UserMsg(msg);
+    let (msg_bytes, msg_flag) = wire_msg.into();
+
+    trace!(
+        "Sending message to remote peer ({} bytes): {}",
+        msg_bytes.len(),
+        peer_addr
+    );
+
+    // Send message bytes over QUIC
+    send_stream.write_all(&msg_bytes[..]).await?;
+
+    // Then send message flag over QUIC
+    send_stream.write_all(&[msg_flag]).await?;
+
+    send_stream.finish().await?;
+
+    trace!("Message was sent to remote peer: {}", peer_addr,);
+
+    Ok(())
 }
 
 /// Stream of outgoing messages
