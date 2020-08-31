@@ -43,10 +43,9 @@ impl Connection {
         self.quic_conn.remote_address()
     }
 
-    /// Send message to peer and await for a reponse.
-    pub async fn send(&mut self, msg: Bytes) -> Result<ConnectionStreams> {
-        let (mut send_stream, recv_stream) = self.quic_conn.open_bi().await?;
-        send_msg(&self.remote_address(), &mut send_stream, msg).await?;
+    /// Get connection streams for reading/writing
+    pub async fn create_connection_streams(&self) -> Result<ConnectionStreams> {
+        let (send_stream, recv_stream) = self.quic_conn.open_bi().await?;
 
         Ok(ConnectionStreams::new(
             self.remote_address(),
@@ -54,6 +53,13 @@ impl Connection {
             recv_stream,
             self.max_msg_size,
         ))
+    }
+
+    /// Send message to peer and await for a reponse.
+    pub async fn send(&self, msg: Bytes) -> Result<ConnectionStreams> {
+        let mut connection_streams = self.create_connection_streams().await?;
+        connection_streams.send(msg).await?;
+        Ok(connection_streams)
     }
 
     /// Send message to peer using a bi-directional stream without awaiting for a reponse.
