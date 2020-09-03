@@ -12,7 +12,7 @@ use super::igd;
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
-    connections::{Connection, SendStream},
+    connections::{Connection, SendStream, RecvStream},
     dirs::{Dirs, OverRide},
     endpoint::Endpoint,
     error::{Error, Result},
@@ -36,6 +36,7 @@ pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
 pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
 
 /// Message received from a peer
+#[derive(Debug)]
 pub enum Message {
     /// A message sent by peer on a uni-directional stream
     UniStream {
@@ -52,7 +53,18 @@ pub enum Message {
         src: SocketAddr,
         /// Stream to send a message back to the initiator
         send: SendStream,
+        /// Stream to read more messages
+        recv: RecvStream
     },
+}
+
+impl Message {
+    /// Returns the data from the message
+    pub fn get_message_data(&self) -> Bytes {
+        match self {
+            Self::UniStream { bytes, .. } | Self::BiStream { bytes, .. } => bytes.clone()
+        }
+    }
 }
 
 /// Main QuicP2p instance to communicate with QuicP2p using an async API

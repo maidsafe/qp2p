@@ -147,10 +147,11 @@ impl IncomingMessages {
                     src
                 }),
             next_bi = Self::next_on_bi_streams(&mut self.bi_streams, self.max_msg_size) =>
-                next_bi.map(|(bytes, send)| Message::BiStream {
+                next_bi.map(|(bytes, send, recv)| Message::BiStream {
                     bytes,
                     src,
-                    send: SendStream::new(send)
+                    send: SendStream::new(send),
+                    recv: RecvStream { quinn_recv_stream: recv }
                 }),
         }
     }
@@ -170,7 +171,7 @@ impl IncomingMessages {
                 warn!("Failed to read incoming message on uni-stream: {}", err);
                 None
             }
-            Some(Ok(recv)) => read_bytes(recv, max_msg_size).await.map(|bytes| bytes),
+            Some(Ok(mut recv)) => read_bytes(&mut recv, max_msg_size).await.ok().map(|bytes| bytes),
         }
     }
 
@@ -178,7 +179,7 @@ impl IncomingMessages {
     async fn next_on_bi_streams(
         bi_streams: &mut quinn::IncomingBiStreams,
         max_msg_size: usize,
-    ) -> Option<(Bytes, quinn::SendStream)> {
+    ) -> Option<(Bytes, quinn::SendStream, quinn::RecvStream)> {
         match bi_streams.next().await {
             None => None,
             Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
@@ -189,40 +190,32 @@ impl IncomingMessages {
                 warn!("Failed to read incoming message on bi-stream: {}", err);
                 None
             }
-            Some(Ok((send, recv))) => read_bytes(recv, max_msg_size)
+            Some(Ok((send, mut recv))) => read_bytes(&mut recv, max_msg_size)
                 .await
-                .map(|bytes| (bytes, send)),
+                .ok()
+                .map(|bytes| (bytes, send, recv)),
         }
     }
 }
 
-// Read the message's bytes which size is capped
-async fn read_bytes(recv: quinn::RecvStream, max_msg_size: usize) -> Option<Bytes> {
-    match recv.read_to_end(max_msg_size).await {
-        Ok(wire_bytes) => {
-            trace!("Got new message with {} bytes.", wire_bytes.len());
-            match WireMsg::from_raw(wire_bytes) {
-                Ok(WireMsg::UserMsg(msg_bytes)) => Some(Bytes::copy_from_slice(&msg_bytes)),
-                Ok(WireMsg::EndpointEchoReq) | Ok(WireMsg::EndpointEchoResp(_)) => {
-                    // TODO: handle the echo request/response message
-                    warn!("UNIMPLEMENTED: echo message type not supported yet");
-                    None
-                }
-                Err(err) => {
-                    warn!("Failed to parse received message bytes: {}", err);
-                    None
-                }
-            }
-        }
-        Err(err) => {
-            warn!("Failed reading message's bytes: {}", err);
-            None
+/// Read the message's bytes which size is capped
+pub async fn read_bytes(recv: &mut quinn::RecvStream, _max_msg_size: usize) -> Result<Bytes> {
+    let mut data_len: [u8;1] = [0; 1];
+    recv.read_exact(&mut data_len).await?;
+    let mut data: Vec<u8> = vec![0; data_len[0] as usize];
+    recv.read_exact(&mut data).await?;
+    trace!("Got new message with {} bytes.", data.len());
+    match WireMsg::from_raw(data)? {
+        WireMsg::UserMsg(msg_bytes) => Ok(Bytes::copy_from_slice(&msg_bytes)),
+        WireMsg::EndpointEchoReq | WireMsg::EndpointEchoResp(_) => {
+            // TODO: handle the echo request/response message
+            unimplemented!("echo message type not supported yet");
         }
     }
 }
 
-// Private helper to send bytes to peer using the provided stream.
-async fn send_msg(
+/// Helper to send bytes to peer using the provided stream.
+pub async fn send_msg(
     peer_addr: &SocketAddr,
     send_stream: &mut quinn::SendStream,
     msg: Bytes,
@@ -237,17 +230,28 @@ async fn send_msg(
         peer_addr
     );
 
+    // Send the length of the message + 1 (for the flag)
+    send_stream.write_all(&[msg_bytes.len() as u8 + 1]).await?;
+
     // Send message bytes over QUIC
     send_stream.write_all(&msg_bytes[..]).await?;
 
     // Then send message flag over QUIC
     send_stream.write_all(&[msg_flag]).await?;
 
-    send_stream.finish().await?;
-
     trace!("Message was sent to remote peer: {}", peer_addr,);
 
     Ok(())
+}
+
+pub struct RecvStream {
+    pub quinn_recv_stream: quinn::RecvStream
+}
+
+impl std::fmt::Debug for RecvStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "RecvStream {{ .. }}")
+    }
 }
 
 /// Stream of outgoing messages
@@ -270,5 +274,11 @@ impl SendStream {
     pub async fn finish(&mut self) -> Result<()> {
         self.quinn_send_stream.finish().await?;
         Ok(())
+    }
+}
+
+impl std::fmt::Debug for SendStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "SendStream {{ .. }}")
     }
 }

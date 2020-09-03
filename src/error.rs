@@ -63,6 +63,8 @@ pub enum Error {
     WriteError(#[source] quinn::WriteError),
     #[error(display = "Read to end error: {}", 0)]
     ReadToEndError(#[source] quinn::ReadToEndError),
+    #[error(display = "Read exact error: {}", 0)]
+    ReadExactError(#[source] quinn::ReadExactError),
     #[error(display = "Could not add certificate")]
     AddCertificateError(#[source] quinn::ParseError),
     #[cfg(feature = "upnp")]
