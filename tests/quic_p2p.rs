@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use quic_p2p::{read_bytes, send_msg, Config, Message, QuicP2p};
+use quic_p2p::{Config, Message, QuicP2p};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -46,7 +46,7 @@ async fn successful_connection() {
 }
 
 #[tokio::test]
-async fn reusable_streams() {
+async fn reusable_bidirectional_streams() {
     let quic_p2p = new_quic_p2p();
     let peer1 = quic_p2p.new_endpoint().expect("Error creating endpoint 1");
     let peer1_addr = peer1.local_address();
@@ -58,27 +58,46 @@ async fn reusable_streams() {
         .expect("Error creating connection between peers");
 
     let msg = Bytes::from(vec![1, 2, 3, 4]);
-    let (mut send_stream, _recv_stream) = connection
+    // Peer 2 sends a message and gets the bi-directional streams
+    let (mut send_stream2, mut recv_stream2) = connection
         .send(msg.clone())
         .await
         .expect("Error sending message to peer");
+
+    // Peer 1 gets an incoming connection
     let mut incoming_conn = peer1.listen().unwrap();
     let mut incoming_messages = incoming_conn.next().await.expect("No incoming connection");
     let message = incoming_messages.next().await.expect("No incoming message");
     assert_eq!(msg, message.get_message_data());
-
-    let mut recv_stream = if let Message::BiStream { recv, .. } = message {
-        recv
+    // Peer 1 gets the bi-directional streams along with the message
+    let (mut recv_stream1, mut send_stream1) = if let Message::BiStream { recv, send, .. } = message
+    {
+        (recv, send)
     } else {
         panic!("Expected Bidirectional stream")
     };
 
+    // Peer 2 should be able to re-use the stream to send an additional message
     let msg = Bytes::from(vec![4, 3, 2, 1]);
-    send_msg(&peer1_addr, &mut send_stream, msg.clone())
+    send_stream2
+        .send(msg.clone())
         .await
         .expect("Unable to send message");
-    let recieved_message = read_bytes(&mut recv_stream.quinn_recv_stream, 0)
-        .await
-        .unwrap();
+
+    // Peer 1 should recieve the message in the stream recieved along with the
+    // previous message
+    let recieved_message = recv_stream1.next().await.unwrap();
     assert_eq!(msg, recieved_message);
+
+    // Peer 1 responds using the send stream
+    let response_msg = Bytes::from(vec![5, 4, 3, 3]);
+    send_stream1
+        .send(response_msg.clone())
+        .await
+        .expect("Unable to send reponse via the stream");
+    let received_response = recv_stream2
+        .next()
+        .await
+        .expect("Unable to read response from the stream");
+    assert_eq!(response_msg, received_response);
 }
