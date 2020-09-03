@@ -12,7 +12,7 @@ use super::igd;
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
-    connections::{Connection, SendStream, RecvStream},
+    connections::{Connection, RecvStream, SendStream},
     dirs::{Dirs, OverRide},
     endpoint::Endpoint,
     error::{Error, Result},
@@ -54,7 +54,7 @@ pub enum Message {
         /// Stream to send a message back to the initiator
         send: SendStream,
         /// Stream to read more messages
-        recv: RecvStream
+        recv: RecvStream,
     },
 }
 
@@ -62,7 +62,7 @@ impl Message {
     /// Returns the data from the message
     pub fn get_message_data(&self) -> Bytes {
         match self {
-            Self::UniStream { bytes, .. } | Self::BiStream { bytes, .. } => bytes.clone()
+            Self::UniStream { bytes, .. } | Self::BiStream { bytes, .. } => bytes.clone(),
         }
     }
 }

@@ -7,6 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+#![allow(unused)]
+
 use crate::error::{Error, Result};
 use log::{debug, info, warn};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4};
