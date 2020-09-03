@@ -7,6 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+#![allow(unused)]
+
 use crate::dirs::Dirs;
 use crate::utils;
 use crate::{Error, Result};
