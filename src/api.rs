@@ -27,10 +27,6 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
 };
 
-/// Default maximum allowed message size. We'll error out on any bigger messages and probably
-/// shutdown the connection. This value can be overridden via the `Config` option.
-pub const DEFAULT_MAX_ALLOWED_MSG_SIZE: usize = 500 * 1024 * 1024; // 500MiB
-
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.
 pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
@@ -44,6 +40,8 @@ pub enum Message {
         bytes: Bytes,
         /// Address the message was sent from
         src: SocketAddr,
+        /// Stream to read more messages
+        recv: RecvStream,
     },
     /// A message sent by peer on a bi-directional stream
     BiStream {
@@ -72,7 +70,6 @@ impl Message {
 pub struct QuicP2p {
     local_addr: SocketAddr,
     allow_random_port: bool,
-    max_msg_size: usize,
     bootstrap_cache: BootstrapCache,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
@@ -105,11 +102,6 @@ impl QuicP2p {
             .unwrap_or((DEFAULT_PORT_TO_TRY, true));
 
         let ip = cfg.ip.unwrap_or_else(|| IpAddr::V4(Ipv4Addr::UNSPECIFIED));
-
-        let max_msg_size = cfg
-            .max_msg_size_allowed
-            .map(|size| size as usize)
-            .unwrap_or(DEFAULT_MAX_ALLOWED_MSG_SIZE);
 
         let idle_timeout_msec = cfg.idle_timeout_msec.unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
 
@@ -145,7 +137,6 @@ impl QuicP2p {
         let quic_p2p = Self {
             local_addr: SocketAddr::new(ip, port),
             allow_random_port,
-            max_msg_size,
             bootstrap_cache,
             endpoint_cfg,
             client_cfg,
@@ -178,7 +169,6 @@ impl QuicP2p {
         for node_addr in bootstrap_nodes {
             let endpoint_cfg = self.endpoint_cfg.clone();
             let client_cfg = self.client_cfg.clone();
-            let max_msg_size = self.max_msg_size;
             let local_addr = self.local_addr;
             let allow_random_port = self.allow_random_port;
             let task_handle = tokio::spawn(async move {
@@ -186,7 +176,6 @@ impl QuicP2p {
                     &node_addr,
                     endpoint_cfg,
                     client_cfg,
-                    max_msg_size,
                     local_addr,
                     allow_random_port,
                 )
@@ -211,7 +200,6 @@ impl QuicP2p {
             node_addr,
             self.endpoint_cfg.clone(),
             self.client_cfg.clone(),
-            self.max_msg_size,
             self.local_addr,
             self.allow_random_port,
         )
@@ -233,12 +221,7 @@ impl QuicP2p {
             quinn_endpoint.local_addr()?
         );
 
-        let endpoint = Endpoint::new(
-            quinn_endpoint,
-            quinn_incoming,
-            self.client_cfg.clone(),
-            self.max_msg_size,
-        )?;
+        let endpoint = Endpoint::new(quinn_endpoint, quinn_incoming, self.client_cfg.clone())?;
 
         Ok(endpoint)
     }
@@ -249,7 +232,6 @@ async fn new_connection_to(
     node_addr: &SocketAddr,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
-    max_msg_size: usize,
     local_addr: SocketAddr,
     allow_random_port: bool,
 ) -> Result<(Endpoint, Connection)> {
@@ -262,7 +244,7 @@ async fn new_connection_to(
         quinn_endpoint.local_addr()?
     );
 
-    let endpoint = Endpoint::new(quinn_endpoint, quinn_incoming, client_cfg, max_msg_size)?;
+    let endpoint = Endpoint::new(quinn_endpoint, quinn_incoming, client_cfg)?;
     let connection = endpoint.connect_to(node_addr).await?;
 
     Ok((endpoint, connection))

@@ -67,9 +67,7 @@ mod wire_msg;
 pub use crate::igd::{DEFAULT_UPNP_LEASE_DURATION_SEC, UPNP_RESPONSE_TIMEOUT_MSEC};
 pub use api::{Message, QuicP2p};
 pub use config::Config;
-pub use connections::{
-    read_bytes, send_msg, Connection, IncomingConnections, IncomingMessages, SendStream,
-};
+pub use connections::{Connection, IncomingConnections, IncomingMessages, SendStream};
 pub use dirs::{Dirs, OverRide};
 pub use endpoint::Endpoint;
 pub use error::{Error, Result};
