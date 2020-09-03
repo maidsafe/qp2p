@@ -17,7 +17,6 @@ use tokio::select;
 /// Connection instance to a node which can be used to send messages to it
 pub struct Connection {
     quic_conn: quinn::Connection,
-    _max_msg_size: usize,
 }
 
 impl Drop for Connection {
@@ -27,11 +26,8 @@ impl Drop for Connection {
 }
 
 impl Connection {
-    pub(crate) async fn new(quic_conn: quinn::Connection, max_msg_size: usize) -> Result<Self> {
-        Ok(Self {
-            quic_conn,
-            _max_msg_size: max_msg_size,
-        })
+    pub(crate) async fn new(quic_conn: quinn::Connection) -> Result<Self> {
+        Ok(Self { quic_conn })
     }
 
     /// Remote address
@@ -47,16 +43,16 @@ impl Connection {
     }
 
     /// Send message to peer and await for a reponse.
-    pub async fn send(&self, msg: Bytes) -> Result<(quinn::SendStream, quinn::RecvStream)> {
+    pub async fn send(&self, msg: Bytes) -> Result<(SendStream, RecvStream)> {
         let (mut send_stream, recv_stream) = self.open_bidirectional_stream().await?;
-        send_msg(&self.remote_address(), &mut send_stream, msg).await?;
-        Ok((send_stream, recv_stream))
+        send_msg(&mut send_stream, msg).await?;
+        Ok((SendStream::new(send_stream), RecvStream::new(recv_stream)))
     }
 
     /// Send message to peer using a uni-directional stream without awaiting for a reponse.
     pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
         let mut send_stream = self.quic_conn.open_uni().await?;
-        send_msg(&self.remote_address(), &mut send_stream, msg).await
+        send_msg(&mut send_stream, msg).await
     }
 
     /// Gracefully close connection immediatelly
@@ -68,18 +64,11 @@ impl Connection {
 /// Stream of incoming QUIC connections
 pub struct IncomingConnections {
     quinn_incoming: Arc<Mutex<quinn::Incoming>>,
-    max_msg_size: usize,
 }
 
 impl IncomingConnections {
-    pub(crate) fn new(
-        quinn_incoming: Arc<Mutex<quinn::Incoming>>,
-        max_msg_size: usize,
-    ) -> Result<Self> {
-        Ok(Self {
-            quinn_incoming,
-            max_msg_size,
-        })
+    pub(crate) fn new(quinn_incoming: Arc<Mutex<quinn::Incoming>>) -> Result<Self> {
+        Ok(Self { quinn_incoming })
     }
 
     /// Returns next QUIC connection established by a peer
@@ -95,7 +84,6 @@ impl IncomingConnections {
                     connection.remote_address(),
                     uni_streams,
                     bi_streams,
-                    self.max_msg_size,
                 )),
                 Err(_err) => None,
             },
@@ -109,7 +97,6 @@ pub struct IncomingMessages {
     peer_addr: SocketAddr,
     uni_streams: quinn::IncomingUniStreams,
     bi_streams: quinn::IncomingBiStreams,
-    max_msg_size: usize,
 }
 
 impl IncomingMessages {
@@ -117,13 +104,11 @@ impl IncomingMessages {
         peer_addr: SocketAddr,
         uni_streams: quinn::IncomingUniStreams,
         bi_streams: quinn::IncomingBiStreams,
-        max_msg_size: usize,
     ) -> Self {
         Self {
             peer_addr,
             uni_streams,
             bi_streams,
-            max_msg_size,
         }
     }
 
@@ -139,17 +124,18 @@ impl IncomingMessages {
         // Read the next message available in any of the two type of streams.
         let src = self.peer_addr;
         select! {
-            next_uni = Self::next_on_uni_streams(&mut self.uni_streams, self.max_msg_size) =>
-                next_uni.map(|bytes| Message::UniStream {
+            next_uni = Self::next_on_uni_streams(&mut self.uni_streams) =>
+                next_uni.map(|(bytes, recv)| Message::UniStream {
                     bytes,
-                    src
+                    src,
+                    recv: RecvStream::new(recv)
                 }),
-            next_bi = Self::next_on_bi_streams(&mut self.bi_streams, self.max_msg_size) =>
+            next_bi = Self::next_on_bi_streams(&mut self.bi_streams) =>
                 next_bi.map(|(bytes, send, recv)| Message::BiStream {
                     bytes,
                     src,
                     send: SendStream::new(send),
-                    recv: RecvStream { quinn_recv_stream: recv }
+                    recv: RecvStream::new(recv)
                 }),
         }
     }
@@ -157,8 +143,7 @@ impl IncomingMessages {
     // Returns next message sent by peer in an unidirectional stream.
     async fn next_on_uni_streams(
         uni_streams: &mut quinn::IncomingUniStreams,
-        max_msg_size: usize,
-    ) -> Option<Bytes> {
+    ) -> Option<(Bytes, quinn::RecvStream)> {
         match uni_streams.next().await {
             None => None,
             Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
@@ -169,17 +154,13 @@ impl IncomingMessages {
                 warn!("Failed to read incoming message on uni-stream: {}", err);
                 None
             }
-            Some(Ok(mut recv)) => read_bytes(&mut recv, max_msg_size)
-                .await
-                .ok()
-                .map(|bytes| bytes),
+            Some(Ok(mut recv)) => read_bytes(&mut recv).await.ok().map(|bytes| (bytes, recv)),
         }
     }
 
     // Returns next message sent by peer in a bidirectional stream.
     async fn next_on_bi_streams(
         bi_streams: &mut quinn::IncomingBiStreams,
-        max_msg_size: usize,
     ) -> Option<(Bytes, quinn::SendStream, quinn::RecvStream)> {
         match bi_streams.next().await {
             None => None,
@@ -191,7 +172,7 @@ impl IncomingMessages {
                 warn!("Failed to read incoming message on bi-stream: {}", err);
                 None
             }
-            Some(Ok((send, mut recv))) => read_bytes(&mut recv, max_msg_size)
+            Some(Ok((send, mut recv))) => read_bytes(&mut recv)
                 .await
                 .ok()
                 .map(|bytes| (bytes, send, recv)),
@@ -199,8 +180,8 @@ impl IncomingMessages {
     }
 }
 
-/// Read the message's bytes which size is capped
-pub async fn read_bytes(recv: &mut quinn::RecvStream, _max_msg_size: usize) -> Result<Bytes> {
+// Read the message's bytes which size is capped
+async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<Bytes> {
     let mut data_len: [u8; 1] = [0; 1];
     recv.read_exact(&mut data_len).await?;
     let mut data: Vec<u8> = vec![0; data_len[0] as usize];
@@ -215,21 +196,13 @@ pub async fn read_bytes(recv: &mut quinn::RecvStream, _max_msg_size: usize) -> R
     }
 }
 
-/// Helper to send bytes to peer using the provided stream.
-pub async fn send_msg(
-    peer_addr: &SocketAddr,
-    send_stream: &mut quinn::SendStream,
-    msg: Bytes,
-) -> Result<()> {
+// Helper to send bytes to peer using the provided stream.
+async fn send_msg(send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()> {
     // Let's generate the message bytes
     let wire_msg = WireMsg::UserMsg(msg);
     let (msg_bytes, msg_flag) = wire_msg.into();
 
-    trace!(
-        "Sending message to remote peer ({} bytes): {}",
-        msg_bytes.len(),
-        peer_addr
-    );
+    trace!("Sending message to remote peer ({} bytes)", msg_bytes.len(),);
 
     // Send the length of the message + 1 (for the flag)
     send_stream.write_all(&[msg_bytes.len() as u8 + 1]).await?;
@@ -240,13 +213,23 @@ pub async fn send_msg(
     // Then send message flag over QUIC
     send_stream.write_all(&[msg_flag]).await?;
 
-    trace!("Message was sent to remote peer: {}", peer_addr,);
+    trace!("Message was sent to remote peer");
 
     Ok(())
 }
 
 pub struct RecvStream {
-    pub quinn_recv_stream: quinn::RecvStream,
+    quinn_recv_stream: quinn::RecvStream,
+}
+
+impl RecvStream {
+    pub(crate) fn new(quinn_recv_stream: quinn::RecvStream) -> Self {
+        Self { quinn_recv_stream }
+    }
+
+    pub async fn next(&mut self) -> Result<Bytes> {
+        read_bytes(&mut self.quinn_recv_stream).await
+    }
 }
 
 impl std::fmt::Debug for RecvStream {
@@ -266,13 +249,12 @@ impl SendStream {
     }
 
     /// Send a message using the bi-direction stream created by the initiator
-    pub async fn respond(&mut self, msg: &Bytes) -> Result<()> {
-        self.quinn_send_stream.write_all(msg).await?;
-        Ok(())
+    pub async fn send(&mut self, msg: Bytes) -> Result<()> {
+        send_msg(&mut self.quinn_send_stream, msg).await
     }
 
     /// Gracefully finish current stream
-    pub async fn finish(&mut self) -> Result<()> {
+    pub async fn finish(mut self) -> Result<()> {
         self.quinn_send_stream.finish().await?;
         Ok(())
     }

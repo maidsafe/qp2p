@@ -26,7 +26,6 @@ pub struct Endpoint {
     quic_endpoint: quinn::Endpoint,
     quic_incoming: Arc<Mutex<quinn::Incoming>>,
     client_cfg: quinn::ClientConfig,
-    max_msg_size: usize,
 }
 
 impl Endpoint {
@@ -34,7 +33,6 @@ impl Endpoint {
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,
         client_cfg: quinn::ClientConfig,
-        max_msg_size: usize,
     ) -> Result<Self> {
         let local_addr = quic_endpoint.local_addr()?;
 
@@ -43,7 +41,6 @@ impl Endpoint {
             quic_endpoint,
             quic_incoming: Arc::new(Mutex::new(quic_incoming)),
             client_cfg,
-            max_msg_size,
         })
     }
 
@@ -80,7 +77,7 @@ impl Endpoint {
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        Connection::new(quinn_conn, self.max_msg_size).await
+        Connection::new(quinn_conn).await
     }
 
     /// Obtain stream of incoming QUIC connections
@@ -89,6 +86,6 @@ impl Endpoint {
             "Incoming connections will be received at {}",
             self.quic_endpoint.local_addr()?
         );
-        IncomingConnections::new(Arc::clone(&self.quic_incoming), self.max_msg_size)
+        IncomingConnections::new(Arc::clone(&self.quic_incoming))
     }
 }
