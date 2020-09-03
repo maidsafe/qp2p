@@ -7,11 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use super::{
-    api::Message,
-    error::Result,
-    wire_msg::WireMsg,
-};
+use super::{api::Message, error::Result, wire_msg::WireMsg};
 use bytes::Bytes;
 use futures::{lock::Mutex, stream::StreamExt};
 use log::{trace, warn};
@@ -44,7 +40,9 @@ impl Connection {
     }
 
     /// Get connection streams for reading/writing
-    pub async fn open_bidirectional_stream(&self) -> Result<(quinn::SendStream, quinn::RecvStream)> {
+    pub async fn open_bidirectional_stream(
+        &self,
+    ) -> Result<(quinn::SendStream, quinn::RecvStream)> {
         Ok(self.quic_conn.open_bi().await?)
     }
 
@@ -171,7 +169,10 @@ impl IncomingMessages {
                 warn!("Failed to read incoming message on uni-stream: {}", err);
                 None
             }
-            Some(Ok(mut recv)) => read_bytes(&mut recv, max_msg_size).await.ok().map(|bytes| bytes),
+            Some(Ok(mut recv)) => read_bytes(&mut recv, max_msg_size)
+                .await
+                .ok()
+                .map(|bytes| bytes),
         }
     }
 
@@ -200,7 +201,7 @@ impl IncomingMessages {
 
 /// Read the message's bytes which size is capped
 pub async fn read_bytes(recv: &mut quinn::RecvStream, _max_msg_size: usize) -> Result<Bytes> {
-    let mut data_len: [u8;1] = [0; 1];
+    let mut data_len: [u8; 1] = [0; 1];
     recv.read_exact(&mut data_len).await?;
     let mut data: Vec<u8> = vec![0; data_len[0] as usize];
     recv.read_exact(&mut data).await?;
@@ -245,7 +246,7 @@ pub async fn send_msg(
 }
 
 pub struct RecvStream {
-    pub quinn_recv_stream: quinn::RecvStream
+    pub quinn_recv_stream: quinn::RecvStream,
 }
 
 impl std::fmt::Debug for RecvStream {
