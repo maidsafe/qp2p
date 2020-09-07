@@ -27,7 +27,6 @@ rustls = { version = "~0.17.0", features = ["dangerous_configuration"] }
 log = "~0.4.8"
 base64 = "~0.12.2"
 err-derive = "~0.2.4"
-derive_more = "~0.99.8"
 webpki = "~0.21.3"
 
 [dev-dependencies]
