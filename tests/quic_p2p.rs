@@ -25,6 +25,11 @@ fn new_quic_p2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> QuicP2p {
     .expect("Error creating QuicP2p object")
 }
 
+fn random_msg() -> Bytes {
+    let random_bytes: Vec<u8> = (0..1024).map(|_| rand::random::<u8>()).collect();
+    Bytes::from(random_bytes)
+}
+
 #[tokio::test]
 async fn successful_connection() -> Result<()> {
     let quic_p2p = new_quic_p2p();
@@ -54,7 +59,7 @@ async fn bi_directional_streams() -> Result<()> {
     let peer2 = quic_p2p.new_endpoint()?;
     let connection = peer2.connect_to(&peer1_addr).await?;
 
-    let msg = Bytes::from(vec![1, 2, 3, 4]);
+    let msg = random_msg();
     // Peer 2 sends a message and gets the bi-directional streams
     let (mut send_stream2, mut recv_stream2) = connection.send(msg.clone()).await?;
 
@@ -82,7 +87,7 @@ async fn bi_directional_streams() -> Result<()> {
     };
 
     // Peer 2 should be able to re-use the stream to send an additional message
-    let msg = Bytes::from(vec![4, 3, 2, 1]);
+    let msg = random_msg();
     send_stream2.send(msg.clone()).await?;
 
     // Peer 1 should recieve the message in the stream recieved along with the
@@ -91,7 +96,7 @@ async fn bi_directional_streams() -> Result<()> {
     assert_eq!(msg, recieved_message);
 
     // Peer 1 responds using the send stream
-    let response_msg = Bytes::from(vec![5, 4, 3, 3]);
+    let response_msg = random_msg();
     send_stream1.send(response_msg.clone()).await?;
 
     let received_response = recv_stream2.next().await?;
@@ -115,7 +120,7 @@ async fn uni_directional_streams() -> Result<()> {
     // Peer 2 sends a message
     let conn_to_peer1 = peer2.connect_to(&peer1_addr).await?;
 
-    let msg_from_peer2 = Bytes::from(vec![1, 2, 3, 4]);
+    let msg_from_peer2 = random_msg();
     conn_to_peer1.send_uni(msg_from_peer2.clone()).await?;
     drop(conn_to_peer1);
 
@@ -139,7 +144,7 @@ async fn uni_directional_streams() -> Result<()> {
     };
 
     // Peer 1 sends back a message to Peer 2 on a new uni-directional stream
-    let msg_from_peer1 = Bytes::from(vec![4, 3, 2, 1]);
+    let msg_from_peer1 = random_msg();
     let conn_to_peer2 = peer1.connect_to(&src).await?;
     conn_to_peer2.send_uni(msg_from_peer1.clone()).await?;
     drop(conn_to_peer2);
@@ -160,8 +165,8 @@ async fn uni_directional_streams() -> Result<()> {
         assert_eq!(src, peer1_addr);
         Ok(())
     } else {
-        return Err(Error::Unexpected(
+        Err(Error::Unexpected(
             "Expected a Unidirectional stream".to_string(),
-        ));
+        ))
     }
 }
