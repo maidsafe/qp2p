@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use quic_p2p::{Config, Message, QuicP2p};
+use quic_p2p::{Config, Error, Message, QuicP2p, Result};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -26,78 +26,142 @@ fn new_quic_p2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> QuicP2p {
 }
 
 #[tokio::test]
-async fn successful_connection() {
+async fn successful_connection() -> Result<()> {
     let quic_p2p = new_quic_p2p();
-    let peer1 = quic_p2p.new_endpoint().expect("Error creating endpoint 1");
+    let peer1 = quic_p2p.new_endpoint()?;
     let peer1_addr = peer1.local_address();
 
-    let peer2 = quic_p2p.new_endpoint().expect("Error creating endpoint 2");
-    let _connection = peer2
-        .connect_to(&peer1_addr)
-        .await
-        .expect("Error creating connection between peers");
+    let peer2 = quic_p2p.new_endpoint()?;
+    let _connection = peer2.connect_to(&peer1_addr).await?;
 
-    let mut incoming_conn = peer1.listen().unwrap();
+    let mut incoming_conn = peer1.listen()?;
     let incoming_messages = incoming_conn
         .next()
         .await
-        .expect("Expected incoming connection");
+        .ok_or_else(|| Error::Unexpected("No incoming connection".to_string()))?;
+
     assert_eq!(incoming_messages.remote_addr(), peer2.local_address());
+
+    Ok(())
 }
 
 #[tokio::test]
-async fn reusable_bidirectional_streams() {
+async fn bi_directional_streams() -> Result<()> {
     let quic_p2p = new_quic_p2p();
-    let peer1 = quic_p2p.new_endpoint().expect("Error creating endpoint 1");
+    let peer1 = quic_p2p.new_endpoint()?;
     let peer1_addr = peer1.local_address();
 
-    let peer2 = quic_p2p.new_endpoint().expect("Error creating endpoint 2");
-    let connection = peer2
-        .connect_to(&peer1_addr)
-        .await
-        .expect("Error creating connection between peers");
+    let peer2 = quic_p2p.new_endpoint()?;
+    let connection = peer2.connect_to(&peer1_addr).await?;
 
     let msg = Bytes::from(vec![1, 2, 3, 4]);
     // Peer 2 sends a message and gets the bi-directional streams
-    let (mut send_stream2, mut recv_stream2) = connection
-        .send(msg.clone())
-        .await
-        .expect("Error sending message to peer");
+    let (mut send_stream2, mut recv_stream2) = connection.send(msg.clone()).await?;
 
     // Peer 1 gets an incoming connection
-    let mut incoming_conn = peer1.listen().unwrap();
-    let mut incoming_messages = incoming_conn.next().await.expect("No incoming connection");
-    let message = incoming_messages.next().await.expect("No incoming message");
+    let mut incoming_conn = peer1.listen()?;
+    let mut incoming_messages = incoming_conn
+        .next()
+        .await
+        .ok_or_else(|| Error::Unexpected("No incoming connection".to_string()))?;
+
+    let message = incoming_messages
+        .next()
+        .await
+        .ok_or_else(|| Error::Unexpected("No incoming message".to_string()))?;
+
     assert_eq!(msg, message.get_message_data());
     // Peer 1 gets the bi-directional streams along with the message
     let (mut recv_stream1, mut send_stream1) = if let Message::BiStream { recv, send, .. } = message
     {
         (recv, send)
     } else {
-        panic!("Expected Bidirectional stream")
+        return Err(Error::Unexpected(
+            "Expected a Bidirectional stream".to_string(),
+        ));
     };
 
     // Peer 2 should be able to re-use the stream to send an additional message
     let msg = Bytes::from(vec![4, 3, 2, 1]);
-    send_stream2
-        .send(msg.clone())
-        .await
-        .expect("Unable to send message");
+    send_stream2.send(msg.clone()).await?;
 
     // Peer 1 should recieve the message in the stream recieved along with the
     // previous message
-    let recieved_message = recv_stream1.next().await.unwrap();
+    let recieved_message = recv_stream1.next().await?;
     assert_eq!(msg, recieved_message);
 
     // Peer 1 responds using the send stream
     let response_msg = Bytes::from(vec![5, 4, 3, 3]);
-    send_stream1
-        .send(response_msg.clone())
-        .await
-        .expect("Unable to send reponse via the stream");
-    let received_response = recv_stream2
+    send_stream1.send(response_msg.clone()).await?;
+
+    let received_response = recv_stream2.next().await?;
+
+    assert_eq!(response_msg, received_response);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn uni_directional_streams() -> Result<()> {
+    let quic_p2p = new_quic_p2p();
+    let peer1 = quic_p2p.new_endpoint()?;
+    let peer1_addr = peer1.local_address();
+    let mut incoming_conn_peer1 = peer1.listen()?;
+
+    let peer2 = quic_p2p.new_endpoint()?;
+    let peer2_addr = peer2.local_address();
+    let mut incoming_conn_peer2 = peer2.listen()?;
+
+    // Peer 2 sends a message
+    let conn_to_peer1 = peer2.connect_to(&peer1_addr).await?;
+
+    let msg_from_peer2 = Bytes::from(vec![1, 2, 3, 4]);
+    conn_to_peer1.send_uni(msg_from_peer2.clone()).await?;
+    drop(conn_to_peer1);
+
+    // Peer 1 gets an incoming connection
+    let mut incoming_messages = incoming_conn_peer1
         .next()
         .await
-        .expect("Unable to read response from the stream");
-    assert_eq!(response_msg, received_response);
+        .ok_or_else(|| Error::Unexpected("No incoming connection".to_string()))?;
+    let message = incoming_messages
+        .next()
+        .await
+        .ok_or_else(|| Error::Unexpected("No incoming message".to_string()))?;
+
+    // Peer 1 gets the uni-directional stream along with the message
+    let src = if let Message::UniStream { bytes, src, .. } = message {
+        assert_eq!(msg_from_peer2, bytes);
+        assert_eq!(src, peer2_addr);
+        src
+    } else {
+        return Err(Error::UnexpectedMessageType);
+    };
+
+    // Peer 1 sends back a message to Peer 2 on a new uni-directional stream
+    let msg_from_peer1 = Bytes::from(vec![4, 3, 2, 1]);
+    let conn_to_peer2 = peer1.connect_to(&src).await?;
+    conn_to_peer2.send_uni(msg_from_peer1.clone()).await?;
+    drop(conn_to_peer2);
+
+    // Peer 2 should recieve the message
+    let mut incoming_messages = incoming_conn_peer2
+        .next()
+        .await
+        .ok_or_else(|| Error::Unexpected("No incoming connection".to_string()))?;
+    let message = incoming_messages
+        .next()
+        .await
+        .ok_or_else(|| Error::Unexpected("No incoming message".to_string()))?;
+
+    // Peer 1 gets the uni-directional stream along with the message
+    if let Message::UniStream { bytes, src, .. } = message {
+        assert_eq!(msg_from_peer1, bytes);
+        assert_eq!(src, peer1_addr);
+        Ok(())
+    } else {
+        return Err(Error::Unexpected(
+            "Expected a Unidirectional stream".to_string(),
+        ));
+    }
 }

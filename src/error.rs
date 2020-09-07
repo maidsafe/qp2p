@@ -83,4 +83,6 @@ pub enum Error {
     EmptyResponse,
     #[error(display = "Type of the message received was not the expected one")]
     UnexpectedMessageType,
+    #[error(display = "Unexpected: {}", 0)]
+    Unexpected(String),
 }

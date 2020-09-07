@@ -14,7 +14,7 @@ use super::{
 };
 use bytes::Bytes;
 use futures::{lock::Mutex, stream::StreamExt};
-use log::{trace, warn};
+use log::{error, trace};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::select;
 
@@ -56,7 +56,8 @@ impl Connection {
     /// Send message to peer using a uni-directional stream.
     pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
         let mut send_stream = self.quic_conn.open_uni().await?;
-        send_msg(&mut send_stream, msg).await
+        send_msg(&mut send_stream, msg).await?;
+        send_stream.finish().await.map_err(Error::from)
     }
 
     /// Gracefully close connection immediatelly
@@ -155,7 +156,7 @@ impl IncomingMessages {
                 None
             }
             Some(Err(err)) => {
-                warn!("Failed to read incoming message on uni-stream: {}", err);
+                error!("Failed to read incoming message on uni-stream: {}", err);
                 None
             }
             Some(Ok(mut recv)) => read_bytes(&mut recv).await.ok().map(|bytes| (bytes, recv)),
@@ -173,7 +174,7 @@ impl IncomingMessages {
                 None
             }
             Some(Err(err)) => {
-                warn!("Failed to read incoming message on bi-stream: {}", err);
+                error!("Failed to read incoming message on bi-stream: {}", err);
                 None
             }
             Some(Ok((send, mut recv))) => read_bytes(&mut recv)
@@ -210,7 +211,7 @@ impl SendStream {
         Self { quinn_send_stream }
     }
 
-    /// Send a message using the bi-direction stream created by the initiator
+    /// Send a message using the bi-directional stream created by the initiator
     pub async fn send(&mut self, msg: Bytes) -> Result<()> {
         send_msg(&mut self.quinn_send_stream, msg).await
     }
