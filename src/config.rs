@@ -30,7 +30,7 @@ pub struct Config {
         short,
         long,
         default_value = "[]",
-        parse(try_from_str = "serde_json::from_str")
+        parse(try_from_str = serde_json::from_str)
     )]
     pub hard_coded_contacts: HashSet<SocketAddr>,
     /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
