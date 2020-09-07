@@ -1,129 +1,103 @@
-use crossbeam_channel as mpmc;
-use quic_p2p::{Config, Event, EventSenders, OurType, Peer, QuicP2p};
+use bytes::Bytes;
+use quic_p2p::{Config, Message, QuicP2p};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
-use unwrap::unwrap;
-
-/// Waits for `Event::ConnectedTo`.
-fn wait_till_connected(ev_rx: EventReceivers) -> Peer {
-    for event in ev_rx.iter() {
-        if let Event::ConnectedTo { peer } = event {
-            return peer;
-        }
-    }
-    panic!("Didn't receive the expected ConnectedTo event");
-}
-
-struct EventReceivers {
-    pub node_rx: mpmc::Receiver<Event>,
-    pub client_rx: mpmc::Receiver<Event>,
-}
-
-impl EventReceivers {
-    pub fn iter(&self) -> IterEvent {
-        IterEvent { event_rx: &self }
-    }
-}
-pub struct IterEvent<'a> {
-    event_rx: &'a EventReceivers,
-}
-
-impl<'a> Iterator for IterEvent<'a> {
-    type Item = Event;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut sel = mpmc::Select::new();
-        let client_idx = sel.recv(&self.event_rx.client_rx);
-        let node_idx = sel.recv(&self.event_rx.node_rx);
-        let selected_operation = sel.ready();
-
-        let event = if selected_operation == client_idx {
-            self.event_rx.client_rx.recv()
-        } else if selected_operation == node_idx {
-            self.event_rx.node_rx.recv()
-        } else {
-            return None;
-        };
-
-        event.ok()
-    }
-}
-
-fn new_unbounded_channels() -> (EventSenders, EventReceivers) {
-    let (client_tx, client_rx) = mpmc::unbounded();
-    let (node_tx, node_rx) = mpmc::unbounded();
-    (
-        EventSenders { node_tx, client_tx },
-        EventReceivers { node_rx, client_rx },
-    )
-}
 
 /// Constructs a `QuicP2p` node with some sane defaults for testing.
-fn test_node() -> (QuicP2p, EventReceivers) {
-    test_peer_with_hcc(Default::default(), OurType::Node)
+fn new_quic_p2p() -> QuicP2p {
+    new_quic_p2p_with_hcc(Default::default())
 }
 
-fn test_peer_with_hcc(
-    hard_coded_contacts: HashSet<SocketAddr>,
-    our_type: OurType,
-) -> (QuicP2p, EventReceivers) {
-    let (ev_tx, ev_rx) = new_unbounded_channels();
-    let qp2p = unwrap!(QuicP2p::with_config(
-        ev_tx,
+fn new_quic_p2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> QuicP2p {
+    QuicP2p::with_config(
         Some(Config {
             port: Some(0),
             ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             hard_coded_contacts,
-            our_type,
             ..Default::default()
         }),
         // Make sure we start with an empty cache. Otherwise, we might get into unexpected state.
         Default::default(),
         true,
-    ));
-    (qp2p, ev_rx)
+    )
+    .expect("Error creating QuicP2p object")
 }
 
-#[test]
-fn successfull_connection_stores_peer_in_bootstrap_cache() {
-    let (mut peer1, _) = test_node();
-    let peer1_addr = unwrap!(peer1.our_connection_info());
+#[tokio::test]
+async fn successful_connection() {
+    let quic_p2p = new_quic_p2p();
+    let peer1 = quic_p2p.new_endpoint().expect("Error creating endpoint 1");
+    let peer1_addr = peer1.local_address();
 
-    let (mut peer2, ev_rx) = test_node();
-    peer2.connect_to(peer1_addr);
+    let peer2 = quic_p2p.new_endpoint().expect("Error creating endpoint 2");
+    let _connection = peer2
+        .connect_to(&peer1_addr)
+        .await
+        .expect("Error creating connection between peers");
 
-    let connected_to = wait_till_connected(ev_rx);
-    assert_eq!(connected_to, Peer::Node(peer1_addr));
-
-    let cache = unwrap!(peer2.bootstrap_cache());
-    assert_eq!(cache, vec![peer1_addr]);
+    let mut incoming_conn = peer1.listen().unwrap();
+    let incoming_messages = incoming_conn
+        .next()
+        .await
+        .expect("Expected incoming connection");
+    assert_eq!(incoming_messages.remote_addr(), peer2.local_address());
 }
 
-#[test]
-fn incoming_connections_yield_connected_to_event() {
-    let (mut peer1, ev_rx) = test_node();
-    let peer1_addr = unwrap!(peer1.our_connection_info());
+#[tokio::test]
+async fn reusable_bidirectional_streams() {
+    let quic_p2p = new_quic_p2p();
+    let peer1 = quic_p2p.new_endpoint().expect("Error creating endpoint 1");
+    let peer1_addr = peer1.local_address();
 
-    let (mut peer2, _) = test_node();
-    peer2.connect_to(peer1_addr);
-    let peer2_addr = unwrap!(peer2.our_connection_info());
+    let peer2 = quic_p2p.new_endpoint().expect("Error creating endpoint 2");
+    let connection = peer2
+        .connect_to(&peer1_addr)
+        .await
+        .expect("Error creating connection between peers");
 
-    let peer = wait_till_connected(ev_rx);
-    assert_eq!(peer.peer_addr(), peer2_addr);
-}
+    let msg = Bytes::from(vec![1, 2, 3, 4]);
+    // Peer 2 sends a message and gets the bi-directional streams
+    let (mut send_stream2, mut recv_stream2) = connection
+        .send(msg.clone())
+        .await
+        .expect("Error sending message to peer");
 
-#[test]
-fn incoming_connections_are_not_put_into_bootstrap_cache_upon_connected_to_event() {
-    let (mut peer1, ev_rx) = test_node();
-    let peer1_conn_info = unwrap!(peer1.our_connection_info());
+    // Peer 1 gets an incoming connection
+    let mut incoming_conn = peer1.listen().unwrap();
+    let mut incoming_messages = incoming_conn.next().await.expect("No incoming connection");
+    let message = incoming_messages.next().await.expect("No incoming message");
+    assert_eq!(msg, message.get_message_data());
+    // Peer 1 gets the bi-directional streams along with the message
+    let (mut recv_stream1, mut send_stream1) = if let Message::BiStream { recv, send, .. } = message
+    {
+        (recv, send)
+    } else {
+        panic!("Expected Bidirectional stream")
+    };
 
-    let (mut peer2, _) = test_node();
-    peer2.connect_to(peer1_conn_info);
+    // Peer 2 should be able to re-use the stream to send an additional message
+    let msg = Bytes::from(vec![4, 3, 2, 1]);
+    send_stream2
+        .send(msg.clone())
+        .await
+        .expect("Unable to send message");
 
-    let _ = wait_till_connected(ev_rx);
+    // Peer 1 should recieve the message in the stream recieved along with the
+    // previous message
+    let recieved_message = recv_stream1.next().await.unwrap();
+    assert_eq!(msg, recieved_message);
 
-    let cache = unwrap!(peer1.bootstrap_cache());
-    assert!(cache.is_empty());
+    // Peer 1 responds using the send stream
+    let response_msg = Bytes::from(vec![5, 4, 3, 3]);
+    send_stream1
+        .send(response_msg.clone())
+        .await
+        .expect("Unable to send reponse via the stream");
+    let received_response = recv_stream2
+        .next()
+        .await
+        .expect("Unable to read response from the stream");
+    assert_eq!(response_msg, received_response);
 }

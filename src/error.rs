@@ -8,13 +8,17 @@
 // Software.
 
 use err_derive::Error;
-
 use std::net::SocketAddr;
 use std::{io, sync::mpsc};
 
+/// Result used by `QuicP2p`.
+pub type Result<T> = std::result::Result<T, Error>;
+
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
-pub enum QuicP2pError {
+pub enum Error {
+    #[error(display = "Network bootstrap failed")]
+    BootstrapFailure,
     #[error(display = "I/O Error")]
     Io(#[source] io::Error),
     #[error(display = "quinn read")]
@@ -57,8 +61,10 @@ pub enum QuicP2pError {
     InvalidWireMsgFlag,
     #[error(display = "Stream write error")]
     WriteError(#[source] quinn::WriteError),
-    #[error(display = "Read to end error")]
+    #[error(display = "Read to end error: {}", 0)]
     ReadToEndError(#[source] quinn::ReadToEndError),
+    #[error(display = "Read exact error: {}", 0)]
+    ReadExactError(#[source] quinn::ReadExactError),
     #[error(display = "Could not add certificate")]
     AddCertificateError(#[source] quinn::ParseError),
     #[cfg(feature = "upnp")]
@@ -73,4 +79,8 @@ pub enum QuicP2pError {
     #[cfg(feature = "upnp")]
     #[error(display = "IGD is not supported")]
     IgdNotSupported,
+    #[error(display = "Empty response message received from peer")]
+    EmptyResponse,
+    #[error(display = "Type of the message received was not the expected one")]
+    UnexpectedMessageType,
 }

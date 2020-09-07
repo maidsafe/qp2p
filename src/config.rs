@@ -7,12 +7,13 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::dirs::Dirs;
-use crate::error::QuicP2pError;
-use crate::utils;
-use crate::R;
+use crate::{
+    dirs::Dirs,
+    error::{Error, Result},
+    utils,
+};
 use bytes::Bytes;
-use log::{trace, warn};
+use log::trace;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet, fmt, fs, io, net::IpAddr, net::SocketAddr, path::PathBuf, str::FromStr,
@@ -62,16 +63,13 @@ pub struct Config {
     /// Duration of a UPnP port mapping.
     #[structopt(long)]
     pub upnp_lease_duration: Option<u32>,
-    /// Specify if we are a client or a node
-    #[structopt(short = "t", long, default_value = "node")]
-    pub our_type: OurType,
 }
 
 impl Config {
     /// Try and read the config off the disk first. If such a file-path doesn't exist it'll create
     /// a default one with random certificate and write that to the disk, eventually returning that
     /// config to the caller.
-    pub fn read_or_construct_default(user_override: Option<&Dirs>) -> R<Config> {
+    pub fn read_or_construct_default(user_override: Option<&Dirs>) -> Result<Config> {
         let config_path = config_path(user_override)?;
 
         if config_path.exists() {
@@ -81,7 +79,7 @@ impl Config {
             let config_dir = config_path
                 .parent()
                 .ok_or_else(|| io::ErrorKind::NotFound.into())
-                .map_err(QuicP2pError::Io)?;
+                .map_err(Error::Io)?;
             fs::create_dir_all(&config_dir)?;
 
             let cfg = Config::default();
@@ -108,12 +106,11 @@ impl SerialisableCertificate {
     /// # Errors
     /// Returns [CertificateParseError](enum.Error.html#variant.CertificateParseError) if the inputs
     /// cannot be parsed
-    pub fn obtain_priv_key_and_cert(&self) -> R<(quinn::PrivateKey, quinn::Certificate)> {
+    pub fn obtain_priv_key_and_cert(&self) -> Result<(quinn::PrivateKey, quinn::Certificate)> {
         Ok((
-            quinn::PrivateKey::from_der(&self.key_der)
-                .map_err(|_| QuicP2pError::CertificateParseError)?,
+            quinn::PrivateKey::from_der(&self.key_der).map_err(|_| Error::CertificateParseError)?,
             quinn::Certificate::from_der(&self.cert_der)
-                .map_err(|_| QuicP2pError::CertificateParseError)?,
+                .map_err(|_| Error::CertificateParseError)?,
         ))
     }
 }
@@ -132,10 +129,10 @@ impl Default for SerialisableCertificate {
 }
 
 impl FromStr for SerialisableCertificate {
-    type Err = QuicP2pError;
+    type Err = Error;
 
     /// Decode `SerialisableCertificate` from a base64-encoded string.
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let cert = base64::decode(s)?;
         let (cert_der, key_der) = bincode::deserialize(&cert)?;
         Ok(Self { cert_der, key_der })
@@ -160,45 +157,14 @@ impl fmt::Debug for SerialisableCertificate {
     }
 }
 
-/// Whether we are a client or a node.
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, Eq, PartialEq)]
-pub enum OurType {
-    /// We are a client. Clients do not expect a reverse connection from a peer.
-    Client,
-    /// We are a node. Nodes require a reverse connection from a peer.
-    Node,
-}
-
-impl FromStr for OurType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "client" => Ok(OurType::Client),
-            "node" => Ok(OurType::Node),
-            x => {
-                let err = format!("Unknown client type: {}", x);
-                warn!("{}", err);
-                Err(err)
-            }
-        }
-    }
-}
-
-impl Default for OurType {
-    fn default() -> Self {
-        OurType::Node
-    }
-}
-
-fn config_path(user_override: Option<&Dirs>) -> R<PathBuf> {
+fn config_path(user_override: Option<&Dirs>) -> Result<PathBuf> {
     let path = |dir: &Dirs| {
         let path = dir.config_dir();
         path.join("config")
     };
 
     let cfg_path = user_override.map_or_else(
-        || Ok::<_, QuicP2pError>(path(&utils::project_dir()?)),
+        || Ok::<_, Error>(path(&utils::project_dir()?)),
         |d| Ok(path(d)),
     )?;
 

@@ -7,8 +7,9 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::error::QuicP2pError;
-use crate::utils::R;
+#![allow(unused)]
+
+use crate::error::{Error, Result};
 use log::{debug, info, warn};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4};
 use std::time::Duration;
@@ -17,10 +18,10 @@ use tokio::time::{self, Instant};
 /// Default duration of a UPnP lease, in seconds.
 pub const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
 /// Duration of wait for a UPnP result to come back.
-pub const UPNP_RESPONSE_TIMEOUT_MSEC: u64 = 1_000;
+pub const UPNP_RESPONSE_TIMEOUT_MSEC: u64 = 3_000;
 
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
-pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> R<SocketAddrV4> {
+pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result<SocketAddrV4> {
     let igd_res = add_port(local_addr, lease_duration).await;
 
     if let Ok(ref ext_sock_addr) = igd_res {
@@ -56,7 +57,7 @@ pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> R<Sock
 ///
 /// `lease_duration` is the life time of a port mapping (in seconds). If it is 0, the
 /// mapping will continue to exist as long as possible.
-pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> R<SocketAddrV4> {
+pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> Result<SocketAddrV4> {
     let gateway = igd::aio::search_gateway(Default::default()).await?;
 
     debug!("Found IGD gateway: {:?}", gateway);
@@ -76,7 +77,7 @@ pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> R<S
         Ok(ext_addr)
     } else {
         info!("IPv6 for IGD is not supported");
-        Err(QuicP2pError::IgdNotSupported)
+        Err(Error::IgdNotSupported)
     }
 }
 
@@ -85,7 +86,7 @@ pub(crate) async fn renew_port(
     local_addr: SocketAddr,
     ext_port: u16,
     lease_duration: u32,
-) -> R<()> {
+) -> Result<()> {
     let gateway = igd::aio::search_gateway(Default::default()).await?;
 
     if let SocketAddr::V4(socket_addr) = local_addr {
@@ -98,19 +99,20 @@ pub(crate) async fn renew_port(
                 "MaidSafe.net",
             )
             .await
-            .map_err(QuicP2pError::IgdRenewPort)?;
+            .map_err(Error::IgdRenewPort)?;
 
         debug!("Successfully renewed the port mapping");
 
         Ok(())
     } else {
         info!("IPv6 for IGD is not supported");
-        Err(QuicP2pError::IgdNotSupported)
+        Err(Error::IgdNotSupported)
     }
 }
 
 // Find our local IP address by connecting to the gateway and querying local socket address.
-pub(crate) fn get_local_ip() -> R<IpAddr> {
+pub(crate) fn get_local_ip() -> Result<IpAddr> {
+    debug!("Attempting to realise local IP address with IGD...");
     let gateway = igd::search_gateway(Default::default())?;
     let gateway_conn = std::net::TcpStream::connect(gateway.addr)?;
     let local_sa = gateway_conn.local_addr()?;

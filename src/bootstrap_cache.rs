@@ -7,9 +7,11 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+#![allow(unused)]
+
 use crate::dirs::Dirs;
 use crate::utils;
-use crate::{QuicP2pError, R};
+use crate::{Error, Result};
 use log::info;
 use std::{
     collections::{HashSet, VecDeque},
@@ -22,6 +24,7 @@ use std::{
 const MAX_CACHE_SIZE: usize = 200;
 
 /// A very simple LRU like struct that writes itself to disk every 10 entries added.
+#[derive(Clone)]
 pub struct BootstrapCache {
     peers: VecDeque<SocketAddr>,
     cache_path: PathBuf,
@@ -40,14 +43,14 @@ impl BootstrapCache {
     pub fn new(
         hard_coded_contacts: HashSet<SocketAddr>,
         user_override: Option<&Dirs>,
-    ) -> R<BootstrapCache> {
+    ) -> Result<BootstrapCache> {
         let path = |dir: &Dirs| {
             let path = dir.cache_dir();
             path.join("bootstrap_cache")
         };
 
         let cache_path = user_override.map_or_else(
-            || Ok::<_, QuicP2pError>(path(&utils::project_dir()?)),
+            || Ok::<_, Error>(path(&utils::project_dir()?)),
             |d| Ok(path(d)),
         )?;
 
@@ -57,7 +60,7 @@ impl BootstrapCache {
             let cache_dir = cache_path
                 .parent()
                 .ok_or_else(|| io::ErrorKind::NotFound.into())
-                .map_err(QuicP2pError::Io)?;
+                .map_err(Error::Io)?;
             fs::create_dir_all(&cache_dir)?;
             Default::default()
         };
@@ -123,6 +126,7 @@ impl BootstrapCache {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use crate::test_utils::{make_node_addr, rand_node_addr, test_dirs};

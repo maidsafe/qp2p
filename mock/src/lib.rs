@@ -30,7 +30,15 @@ use structopt::StructOpt;
 pub type Token = u64;
 
 #[derive(Debug)]
-pub struct QuicP2pError;
+pub struct Error;
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(formatter, "mock quic-p2p error")
+    }
+}
+
+impl std::error::Error for Error {}
 
 /// Senders for node and client events
 #[derive(Clone)]
@@ -91,12 +99,12 @@ impl QuicP2p {
     }
 
     /// Get our connection info to give to others for them to connect to us
-    pub fn our_connection_info(&mut self) -> Result<SocketAddr, QuicP2pError> {
+    pub fn our_connection_info(&mut self) -> Result<SocketAddr, Error> {
         self.inner.borrow().our_connection_info()
     }
 
     /// Retrieves current node bootstrap cache.
-    pub fn bootstrap_cache(&mut self) -> Result<Vec<SocketAddr>, QuicP2pError> {
+    pub fn bootstrap_cache(&mut self) -> Result<Vec<SocketAddr>, Error> {
         Ok(self.inner.borrow().bootstrap_cache())
     }
 
@@ -110,7 +118,7 @@ impl QuicP2p {
         self.inner.borrow().config().clone()
     }
 
-    pub fn new(event_tx: EventSenders) -> Result<QuicP2p, QuicP2pError> {
+    pub fn new(event_tx: EventSenders) -> Result<QuicP2p, Error> {
         Ok(Self {
             inner: Node::new(event_tx, Config::default()),
         })
@@ -123,7 +131,7 @@ impl QuicP2p {
         cfg: Option<Config>,
         _bootstrap_nodes: VecDeque<SocketAddr>,
         _use_bootstrap_nodes_exclusively: bool,
-    ) -> Result<QuicP2p, QuicP2pError> {
+    ) -> Result<QuicP2p, Error> {
         Ok(Self {
             inner: Node::new(event_tx, cfg.unwrap_or_default()),
         })
@@ -250,7 +258,7 @@ pub enum Event {
         /// The peer we attempted connecting to.
         peer: Peer,
         /// Error explaining connection failure.
-        err: QuicP2pError,
+        err: Error,
     },
     /// Message sent by us but not delivered due to connection drop.
     UnsentUserMessage {
@@ -338,7 +346,3 @@ impl Peer {
         }
     }
 }
-
-/// `QuicP2p` error.
-#[derive(Debug)]
-pub struct Error;
