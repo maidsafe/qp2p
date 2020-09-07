@@ -47,7 +47,7 @@ impl WireMsg {
             match msg_flag {
                 Some(flag) if flag == USER_MSG_FLAG => Ok(WireMsg::UserMsg(From::from(raw))),
                 Some(flag) if flag == !USER_MSG_FLAG => Ok(bincode::deserialize(&raw)?),
-                _x => Err(Error::InvalidWireMsgFlag),
+                _ => Err(Error::InvalidWireMsgFlag),
             }
         }
     }

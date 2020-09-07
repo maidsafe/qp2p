@@ -159,7 +159,13 @@ impl IncomingMessages {
                 error!("Failed to read incoming message on uni-stream: {}", err);
                 None
             }
-            Some(Ok(mut recv)) => read_bytes(&mut recv).await.ok().map(|bytes| (bytes, recv)),
+            Some(Ok(mut recv)) => match read_bytes(&mut recv).await {
+                Ok(bytes) => Some((bytes, recv)),
+                Err(err) => {
+                    error!("{}", err);
+                    None
+                }
+            },
         }
     }
 
@@ -177,10 +183,13 @@ impl IncomingMessages {
                 error!("Failed to read incoming message on bi-stream: {}", err);
                 None
             }
-            Some(Ok((send, mut recv))) => read_bytes(&mut recv)
-                .await
-                .ok()
-                .map(|bytes| (bytes, send, recv)),
+            Some(Ok((send, mut recv))) => match read_bytes(&mut recv).await {
+                Ok(bytes) => Some((bytes, send, recv)),
+                Err(err) => {
+                    error!("{}", err);
+                    None
+                }
+            },
         }
     }
 }
