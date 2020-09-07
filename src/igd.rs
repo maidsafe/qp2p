@@ -112,6 +112,7 @@ pub(crate) async fn renew_port(
 
 // Find our local IP address by connecting to the gateway and querying local socket address.
 pub(crate) fn get_local_ip() -> Result<IpAddr> {
+    debug!("Attempting to realise local IP address with IGD...");
     let gateway = igd::search_gateway(Default::default())?;
     let gateway_conn = std::net::TcpStream::connect(gateway.addr)?;
     let local_sa = gateway_conn.local_addr()?;
