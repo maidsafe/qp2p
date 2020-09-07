@@ -32,7 +32,6 @@ use std::{
 pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
 
 /// Message received from a peer
-#[derive(Debug)]
 pub enum Message {
     /// A message sent by peer on a uni-directional stream
     UniStream {

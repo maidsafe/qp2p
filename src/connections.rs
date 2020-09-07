@@ -7,7 +7,11 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use super::{api::Message, error::Result, wire_msg::WireMsg};
+use super::{
+    api::Message,
+    error::{Error, Result},
+    wire_msg::WireMsg,
+};
 use bytes::Bytes;
 use futures::{lock::Mutex, stream::StreamExt};
 use log::{trace, warn};
@@ -36,20 +40,20 @@ impl Connection {
     }
 
     /// Get connection streams for reading/writing
-    pub async fn open_bidirectional_stream(
-        &self,
-    ) -> Result<(quinn::SendStream, quinn::RecvStream)> {
-        Ok(self.quic_conn.open_bi().await?)
-    }
-
-    /// Send message to peer and await for a reponse.
-    pub async fn send(&self, msg: Bytes) -> Result<(SendStream, RecvStream)> {
-        let (mut send_stream, recv_stream) = self.open_bidirectional_stream().await?;
-        send_msg(&mut send_stream, msg).await?;
+    pub async fn open_bi_stream(&self) -> Result<(SendStream, RecvStream)> {
+        let (send_stream, recv_stream) = self.quic_conn.open_bi().await?;
         Ok((SendStream::new(send_stream), RecvStream::new(recv_stream)))
     }
 
-    /// Send message to peer using a uni-directional stream without awaiting for a reponse.
+    /// Send message to peer creating a bi-dreictional stream,
+    /// returning the streams to send and receive more messages.
+    pub async fn send(&self, msg: Bytes) -> Result<(SendStream, RecvStream)> {
+        let (mut send_stream, recv_stream) = self.open_bi_stream().await?;
+        send_stream.send(msg).await?;
+        Ok((send_stream, recv_stream))
+    }
+
+    /// Send message to peer using a uni-directional stream.
     pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
         let mut send_stream = self.quic_conn.open_uni().await?;
         send_msg(&mut send_stream, msg).await
@@ -180,7 +184,44 @@ impl IncomingMessages {
     }
 }
 
-// Read the message's bytes which size is capped
+/// Stream to receive multiple messages
+pub struct RecvStream {
+    quinn_recv_stream: quinn::RecvStream,
+}
+
+impl RecvStream {
+    pub(crate) fn new(quinn_recv_stream: quinn::RecvStream) -> Self {
+        Self { quinn_recv_stream }
+    }
+
+    /// Read next message from the stream
+    pub async fn next(&mut self) -> Result<Bytes> {
+        read_bytes(&mut self.quinn_recv_stream).await
+    }
+}
+
+/// Stream of outgoing messages
+pub struct SendStream {
+    quinn_send_stream: quinn::SendStream,
+}
+
+impl SendStream {
+    pub(crate) fn new(quinn_send_stream: quinn::SendStream) -> Self {
+        Self { quinn_send_stream }
+    }
+
+    /// Send a message using the bi-direction stream created by the initiator
+    pub async fn send(&mut self, msg: Bytes) -> Result<()> {
+        send_msg(&mut self.quinn_send_stream, msg).await
+    }
+
+    /// Gracefully finish current stream
+    pub async fn finish(mut self) -> Result<()> {
+        self.quinn_send_stream.finish().await.map_err(Error::from)
+    }
+}
+
+// Helper to read the message's bytes from the provided stream
 async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<Bytes> {
     let mut data_len: [u8; 1] = [0; 1];
     recv.read_exact(&mut data_len).await?;
@@ -216,52 +257,4 @@ async fn send_msg(send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()>
     trace!("Message was sent to remote peer");
 
     Ok(())
-}
-
-pub struct RecvStream {
-    quinn_recv_stream: quinn::RecvStream,
-}
-
-impl RecvStream {
-    pub(crate) fn new(quinn_recv_stream: quinn::RecvStream) -> Self {
-        Self { quinn_recv_stream }
-    }
-
-    pub async fn next(&mut self) -> Result<Bytes> {
-        read_bytes(&mut self.quinn_recv_stream).await
-    }
-}
-
-impl std::fmt::Debug for RecvStream {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "RecvStream {{ .. }}")
-    }
-}
-
-/// Stream of outgoing messages
-pub struct SendStream {
-    quinn_send_stream: quinn::SendStream,
-}
-
-impl SendStream {
-    pub(crate) fn new(quinn_send_stream: quinn::SendStream) -> Self {
-        Self { quinn_send_stream }
-    }
-
-    /// Send a message using the bi-direction stream created by the initiator
-    pub async fn send(&mut self, msg: Bytes) -> Result<()> {
-        send_msg(&mut self.quinn_send_stream, msg).await
-    }
-
-    /// Gracefully finish current stream
-    pub async fn finish(mut self) -> Result<()> {
-        self.quinn_send_stream.finish().await?;
-        Ok(())
-    }
-}
-
-impl std::fmt::Debug for SendStream {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "SendStream {{ .. }}")
-    }
 }
