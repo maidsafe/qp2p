@@ -76,6 +76,15 @@ pub struct QuicP2p {
 
 impl QuicP2p {
     /// Construct `QuicP2p` with the default config and bootstrap cache enabled
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use quic_p2p::QuicP2p;
+    ///
+    /// let quic_p2p = QuicP2p::new().expect("Error initializing QuicP2p");
+    /// ```
+
     pub fn new() -> Result<Self> {
         Self::with_config(None, Default::default(), true)
     }
@@ -87,6 +96,19 @@ impl QuicP2p {
     ///
     /// In addition to bootstrap nodes provided, optionally use the nodes found
     /// in the bootstrap cache file (if such a file exists) or disable this feature.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use quic_p2p::{QuicP2p, Config};
+    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    ///
+    /// let mut config = Config::default();
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    /// config.port = Some(3000);
+    /// let hcc = vec!["127.0.0.1:8080".parse().unwrap()];
+    /// let quic_p2p = QuicP2p::with_config(Some(config), hcc.into(), true).expect("Error initializing QuicP2p");
+    /// ```
     pub fn with_config(
         cfg: Option<Config>,
         bootstrap_nodes: VecDeque<SocketAddr>,
@@ -151,6 +173,28 @@ impl QuicP2p {
     /// previously cached.
     /// Once a connection with a peer succeeds, a `Connection` for such peer will be returned
     /// and all other connections will be dropped.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// #[tokio::main]
+    /// async fn main() {
+    /// use quic_p2p::{QuicP2p, Config};
+    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    ///
+    /// let mut config = Config::default();
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    /// config.port = Some(3000);
+    /// let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true).expect("Error initializing QuicP2p");
+    /// let endpoint = quic_p2p.new_endpoint().expect("Error creating new endpoint");
+    /// let peer_addr = endpoint.local_address();
+    ///
+    /// config.port = Some(3001);
+    /// let hcc = vec![peer_addr];
+    /// let mut quic_p2p = QuicP2p::with_config(Some(config), hcc.into(), true).expect("Error initializing QuicP2p");
+    /// let (endpoint, connection) = quic_p2p.bootstrap().await.expect("Error while bootstrapping");
+    /// }
+    /// ```
     pub async fn bootstrap(&mut self) -> Result<(Endpoint, Connection)> {
         // TODO: refactor bootstrap_cache so we can simply get the list of nodes
         let bootstrap_nodes: Vec<SocketAddr> = self
@@ -194,6 +238,24 @@ impl QuicP2p {
 
     /// Connect to the given peer and return the `Endpoint` created along with the `Connection`
     /// object if it succeeds, which can then be used to send messages to the connected peer.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// #[tokio::main]
+    /// async fn main() {
+    /// use quic_p2p::{QuicP2p, Config};
+    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    ///
+    /// let mut config = Config::default();
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    /// let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true).expect("Error initializing QuicP2p");
+    /// let peer_1 = quic_p2p.new_endpoint().expect("Error creating new endpoint");
+    /// let peer1_addr = peer_1.local_address();
+    ///
+    /// let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await.expect("Error when creating connection");
+    /// }
+    /// ```
     pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
         new_connection_to(
             node_addr,
@@ -207,6 +269,20 @@ impl QuicP2p {
 
     /// Create a new `Endpoint`  which can be used to connect to peers and send
     /// messages to them, as well as listen to messages incoming from other peers.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// #[tokio::main]
+    /// async fn main() {
+    /// use quic_p2p::{QuicP2p, Config};
+    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    ///
+    /// let mut config = Config::default();
+    /// config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    /// let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true).expect("Error initializing QuicP2p");
+    /// let endpoint = quic_p2p.new_endpoint().expect("Error creating new endpoint");
+    /// ```
     pub fn new_endpoint(&self) -> Result<Endpoint> {
         trace!("Creating a new enpoint");
         let (quinn_endpoint, quinn_incoming) = bind(
