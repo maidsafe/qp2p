@@ -27,7 +27,7 @@ pub(crate) fn make_node_addr(port: u16) -> SocketAddr {
 }
 
 fn tmp_rand_dir() -> PathBuf {
-    let fname = format!("quic_p2p_tests_{:016x}", rand::random::<u64>());
+    let fname = format!("qp2p_tests_{:016x}", rand::random::<u64>());
     let mut path = std::env::temp_dir();
     path.push(fname);
     path

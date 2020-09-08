@@ -1,16 +1,16 @@
 use bytes::Bytes;
-use quic_p2p::{Config, Error, Message, QuicP2p, Result};
+use qp2p::{Config, Error, Message, QuicP2p, Result};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
 
 /// Constructs a `QuicP2p` node with some sane defaults for testing.
-fn new_quic_p2p() -> QuicP2p {
-    new_quic_p2p_with_hcc(Default::default())
+fn new_qp2p() -> QuicP2p {
+    new_qp2p_with_hcc(Default::default())
 }
 
-fn new_quic_p2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> QuicP2p {
+fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> QuicP2p {
     QuicP2p::with_config(
         Some(Config {
             port: Some(0),
@@ -32,11 +32,11 @@ fn random_msg() -> Bytes {
 
 #[tokio::test]
 async fn successful_connection() -> Result<()> {
-    let quic_p2p = new_quic_p2p();
-    let peer1 = quic_p2p.new_endpoint()?;
+    let qp2p = new_qp2p();
+    let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.local_address();
 
-    let peer2 = quic_p2p.new_endpoint()?;
+    let peer2 = qp2p.new_endpoint()?;
     let _connection = peer2.connect_to(&peer1_addr).await?;
 
     let mut incoming_conn = peer1.listen()?;
@@ -52,11 +52,11 @@ async fn successful_connection() -> Result<()> {
 
 #[tokio::test]
 async fn bi_directional_streams() -> Result<()> {
-    let quic_p2p = new_quic_p2p();
-    let peer1 = quic_p2p.new_endpoint()?;
+    let qp2p = new_qp2p();
+    let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.local_address();
 
-    let peer2 = quic_p2p.new_endpoint()?;
+    let peer2 = qp2p.new_endpoint()?;
     let connection = peer2.connect_to(&peer1_addr).await?;
 
     let msg = random_msg();
@@ -108,12 +108,12 @@ async fn bi_directional_streams() -> Result<()> {
 
 #[tokio::test]
 async fn uni_directional_streams() -> Result<()> {
-    let quic_p2p = new_quic_p2p();
-    let peer1 = quic_p2p.new_endpoint()?;
+    let qp2p = new_qp2p();
+    let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.local_address();
     let mut incoming_conn_peer1 = peer1.listen()?;
 
-    let peer2 = quic_p2p.new_endpoint()?;
+    let peer2 = qp2p.new_endpoint()?;
     let peer2_addr = peer2.local_address();
     let mut incoming_conn_peer2 = peer2.listen()?;
 

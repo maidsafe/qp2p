@@ -1,9 +1,9 @@
 [package]
 name = "mock_quic_p2p"
-description = "Mock version of quic_p2p which doesn't use real network. For testing purposes only."
+description = "Mock version of qp2p which doesn't use real network. For testing purposes only."
 homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
-repository = "https://github.com/maidsafe/quic_p2p"
+repository = "https://github.com/maidsafe/qp2p"
 version = "0.1.0"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 edition = "2018"
