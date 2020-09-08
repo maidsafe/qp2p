@@ -93,7 +93,7 @@ impl QuicP2p {
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
         let cfg = unwrap_config_or_default(cfg)?;
-        debug!("Config passed in to quic_p2p: {:?}", cfg);
+        debug!("Config passed in to qp2p: {:?}", cfg);
 
         let (port, allow_random_port) = cfg
             .port
@@ -133,7 +133,7 @@ impl QuicP2p {
 
         let client_cfg = peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
 
-        let quic_p2p = Self {
+        let qp2p = Self {
             local_addr: SocketAddr::new(ip, port),
             allow_random_port,
             bootstrap_cache,
@@ -141,7 +141,7 @@ impl QuicP2p {
             client_cfg,
         };
 
-        Ok(quic_p2p)
+        Ok(qp2p)
     }
 
     /// Bootstrap to the network.

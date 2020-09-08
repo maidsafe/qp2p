@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-//! quic_p2p enables communication within a peer to peer network over the QUIC protocol.
+//! qp2p enables communication within a peer to peer network over the QUIC protocol.
 
 // For explanation of lint checks, run `rustc -W help`
 #![forbid(

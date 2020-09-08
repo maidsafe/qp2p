@@ -1,4 +1,4 @@
-# quic_p2p - Change Log
+# qp2p - Change Log
 
 ## [0.8.0]
 - Update repo/crate name to quic_p2p to match org naming convention

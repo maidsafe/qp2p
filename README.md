@@ -1,8 +1,8 @@
-# quic_p2p
+# qp2p
 
 |Crate|Documentation|
 |:---:|:-----------:|
-|[![](http://meritbadge.herokuapp.com/quic_p2p)](https://crates.io/crates/quic_p2p)|[![Documentation](https://docs.rs/quic_p2p/badge.svg)](https://docs.rs/quic_p2p)|
+|[![](http://meritbadge.herokuapp.com/qp2p)](https://crates.io/crates/qp2p)|[![Documentation](https://docs.rs/qp2p/badge.svg)](https://docs.rs/qp2p)|
 
 | [MaidSafe website](https://maidsafe.net) | [SAFE Dev Forum](https://forum.safedev.org) | [SAFE Network Forum](https://safenetforum.org) |
 |:-------------------------------------:|:---------------------------------------:|:------------------------------------------:|
@@ -31,15 +31,15 @@ QUIC provides connection security via the use of TLS 1.3. This library will allo
 1. Allow use of a private certificate authority.
 1. Allow no identity validation of peers, but do encrypt connections. (currently implemented)
 
-This should satisfy the requirements of many P2P networks, whether they trust any clearnet certificate authority (which may be a centralised attack source) or whether they pass the identity management up to a different layer to validate identities and simply use quic_p2p as a secured network in terms of encrypted connections.
+This should satisfy the requirements of many P2P networks, whether they trust any clearnet certificate authority (which may be a centralised attack source) or whether they pass the identity management up to a different layer to validate identities and simply use qp2p as a secured network in terms of encrypted connections.
 
 ### Bootstrap Cache
 
-quic_p2p will save any endpoints and certificates of nodes that are connectible without any setup such as is required by NAT hole punching. The most recently connected 200 nodes are stored and these are then used to re-join the network after any restart.
+qp2p will save any endpoints and certificates of nodes that are connectible without any setup such as is required by NAT hole punching. The most recently connected 200 nodes are stored and these are then used to re-join the network after any restart.
 
 ### Connectivity types
 
-quic_p2p uses 2 connection types when in P2P mode. This allows the connections to be defined as:
+qp2p uses 2 connection types when in P2P mode. This allows the connections to be defined as:
 
 1. A bi-directional connection.
 
