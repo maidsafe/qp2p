@@ -27,7 +27,7 @@ use std::path::Path;
 ))]
 #[inline]
 pub fn project_dir() -> Result<Dirs> {
-    let dirs = directories::ProjectDirs::from("net", "MaidSafe", "quic-p2p")
+    let dirs = directories::ProjectDirs::from("net", "MaidSafe", "quic_p2p")
         .ok_or_else(|| Error::Io(::std::io::ErrorKind::NotFound.into()))?;
     Ok(Dirs::Desktop(dirs))
 }

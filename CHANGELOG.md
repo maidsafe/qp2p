@@ -1,4 +1,17 @@
-# quic-p2p - Change Log
+# quic_p2p - Change Log
+
+## [0.8.0]
+- Update repo/crate name to quic_p2p to match org naming convention
+- Refactor the API to allow reusing of streams to exchange multiple messages
+- Refactor and fix tests to use the new API
+- Add api to get connection stream without sending a message
+- Update qp2p endpoint port when a random port is used
+- Expose a function to query remote address from a Connection
+- Add support for listening to messages from both uni-streams and bi-streams
+- Expose a 'listen' API which return a stream of connections and in turn messages
+- Support for bootstrapping using multiple nodes concurrently
+- Support sending a message on a Connection and awaiting for a response using unidirectional streams
+- Expose an async API
 
 ## [0.7.0]
 - Standardize cargo dependency versioning

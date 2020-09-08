@@ -1,12 +1,12 @@
 [package]
-name = "quic-p2p"
+name = "quic_p2p"
 description = "Peer-to-peer networking library using QUIC"
-documentation = "https://docs.rs/quic-p2p"
+documentation = "https://docs.rs/quic_p2p"
 homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
-repository = "https://github.com/maidsafe/quic-p2p"
-version = "0.7.0"
+repository = "https://github.com/maidsafe/quic_p2p"
+version = "0.8.0"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 edition = "2018"
 
