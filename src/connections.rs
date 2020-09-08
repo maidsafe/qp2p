@@ -233,9 +233,10 @@ impl SendStream {
 
 // Helper to read the message's bytes from the provided stream
 async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<Bytes> {
-    let mut data_len: [u8; 1] = [0; 1];
+    let mut data_len: [u8; 8] = [0; 8];
     recv.read_exact(&mut data_len).await?;
-    let mut data: Vec<u8> = vec![0; data_len[0] as usize];
+    let data_len = usize::from_le_bytes(data_len);
+    let mut data: Vec<u8> = vec![0; data_len];
     recv.read_exact(&mut data).await?;
     trace!("Got new message with {} bytes.", data.len());
     match WireMsg::from_raw(data)? {
@@ -256,7 +257,9 @@ async fn send_msg(send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()>
     trace!("Sending message to remote peer ({} bytes)", msg_bytes.len(),);
 
     // Send the length of the message + 1 (for the flag)
-    send_stream.write_all(&[msg_bytes.len() as u8 + 1]).await?;
+    send_stream
+        .write_all(&(msg_bytes.len() + 1).to_le_bytes())
+        .await?;
 
     // Send message bytes over QUIC
     send_stream.write_all(&msg_bytes[..]).await?;
