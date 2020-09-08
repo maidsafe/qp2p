@@ -6,7 +6,7 @@ homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/maidsafe/quic_p2p"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["MaidSafe Developers <dev@maidsafe.net>"]
 edition = "2018"
 
