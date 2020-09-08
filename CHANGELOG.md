@@ -1,5 +1,8 @@
 # qp2p - Change Log
 
+## [0.8.1]
+- Update repo/crate name to qp2p
+
 ## [0.8.0]
 - Update repo/crate name to quic_p2p to match org naming convention
 - Refactor the API to allow reusing of streams to exchange multiple messages
