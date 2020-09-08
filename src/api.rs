@@ -93,7 +93,7 @@ impl QuicP2p {
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
         let cfg = unwrap_config_or_default(cfg)?;
-        debug!("Config passed in to quic-p2p: {:?}", cfg);
+        debug!("Config passed in to quic_p2p: {:?}", cfg);
 
         let (port, allow_random_port) = cfg
             .port
@@ -288,7 +288,7 @@ fn bind(
 // Unwrap the conffig if provided by the user, otherwise construct the default one
 #[cfg(not(feature = "upnp"))]
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
-    cfg.map_or(Config::read_or_construct_default(None), |cfg| Ok(cfg))
+    cfg.map_or(Config::read_or_construct_default(None), Ok)
 }
 
 #[cfg(feature = "upnp")]

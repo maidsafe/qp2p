@@ -309,7 +309,7 @@ fn send_to_nonexisting_node() {
 
     // Note: the real quick-p2p will only emit `UnsentUserMessage` when a connection to the peer
     // was previously successfully established. That is not the case here, so we expect nothing.
-    // TODO: this is going to get changed in the real quic-p2p, remove comment then.
+    // TODO: this is going to get changed in the real quic_p2p, remove comment then.
     a.expect_unsent_message(&b_addr, &msg, 0);
 }
 
