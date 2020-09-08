@@ -1,4 +1,4 @@
-# quic-p2p - Change Log
+# quic_p2p - Change Log
 
 ## [0.7.0]
 - Standardize cargo dependency versioning

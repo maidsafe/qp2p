@@ -179,7 +179,7 @@ impl Node {
                 }
             }
             Packet::ConnectFailure => {
-                // Note: the real quic-p2p does not emit anything on unsuccessful connection
+                // Note: the real quic_p2p does not emit anything on unsuccessful connection
                 // attempts, only when a previously successfully established connection gets
                 // dropped, but it will in the future.
                 self.clear_pending_messages(src);
