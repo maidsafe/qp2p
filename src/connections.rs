@@ -34,19 +34,61 @@ impl Connection {
         Ok(Self { quic_conn })
     }
 
-    /// Remote address
+    /// Returns the address of the connected peer.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use qp2p::{QuicP2p, Config, Error};
+    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Error> {
+    ///
+    ///     let mut config = Config::default();
+    ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
+    ///     let peer_1 = quic_p2p.new_endpoint()?;
+    ///     let peer1_addr = peer_1.local_address();
+    ///
+    ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
+    ///     assert_eq!(connection.remote_address(), peer1_addr);
+    ///     Ok(())
+    /// }
+    /// ```
     pub fn remote_address(&self) -> SocketAddr {
         self.quic_conn.remote_address()
     }
 
     /// Get connection streams for reading/writing
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use qp2p::{QuicP2p, Config, Error};
+    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Error> {
+    ///
+    ///     let mut config = Config::default();
+    ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
+    ///     let peer_1 = quic_p2p.new_endpoint()?;
+    ///     let peer1_addr = peer_1.local_address();
+    ///
+    ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
+    ///     let (send_stream, recv_stream) = connection.open_bi_stream().await?;
+    ///     Ok(())
+    /// }
+    /// ```
     pub async fn open_bi_stream(&self) -> Result<(SendStream, RecvStream)> {
         let (send_stream, recv_stream) = self.quic_conn.open_bi().await?;
         Ok((SendStream::new(send_stream), RecvStream::new(recv_stream)))
     }
 
-    /// Send message to peer creating a bi-dreictional stream,
-    /// returning the streams to send and receive more messages.
+    /// Send message to the connected peer via a bi-directional stream.
+    /// This returns the streams to send additional messages / read responses sent using the same stream.
     pub async fn send(&self, msg: Bytes) -> Result<(SendStream, RecvStream)> {
         let (mut send_stream, recv_stream) = self.open_bi_stream().await?;
         send_stream.send(msg).await?;
