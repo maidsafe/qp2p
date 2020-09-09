@@ -10,7 +10,7 @@
 use super::{
     api::Message,
     error::{Error, Result},
-    wire_msg::WireMsg,
+    wire_msg::{MsgHeader, WireMsg, HEADER_LEN},
 };
 use bytes::Bytes;
 use futures::{lock::Mutex, stream::StreamExt};
@@ -233,13 +233,15 @@ impl SendStream {
 
 // Helper to read the message's bytes from the provided stream
 async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<Bytes> {
-    let mut data_len: [u8; 8] = [0; 8];
-    recv.read_exact(&mut data_len).await?;
-    let data_len = usize::from_le_bytes(data_len);
-    let mut data: Vec<u8> = vec![0; data_len];
+    let mut header_bytes = [0; HEADER_LEN];
+    recv.read_exact(&mut header_bytes).await?;
+
+    let msg_header = MsgHeader::from_bytes(header_bytes);
+    let mut data: Vec<u8> = vec![0; msg_header.data_len()];
+
     recv.read_exact(&mut data).await?;
     trace!("Got new message with {} bytes.", data.len());
-    match WireMsg::from_raw(data)? {
+    match WireMsg::from_raw(data, msg_header.usr_msg_flag())? {
         WireMsg::UserMsg(msg_bytes) => Ok(Bytes::copy_from_slice(&msg_bytes)),
         WireMsg::EndpointEchoReq | WireMsg::EndpointEchoResp(_) => {
             // TODO: handle the echo request/response message
@@ -253,19 +255,16 @@ async fn send_msg(send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()>
     // Let's generate the message bytes
     let wire_msg = WireMsg::UserMsg(msg);
     let (msg_bytes, msg_flag) = wire_msg.into();
+    trace!("Sending message to remote peer ({} bytes)", msg_bytes.len());
 
-    trace!("Sending message to remote peer ({} bytes)", msg_bytes.len(),);
+    let msg_header = MsgHeader::new(&msg_bytes, msg_flag)?;
+    let header_bytes = msg_header.to_bytes();
 
-    // Send the length of the message + 1 (for the flag)
-    send_stream
-        .write_all(&(msg_bytes.len() + 1).to_le_bytes())
-        .await?;
+    // Send the message header
+    send_stream.write_all(&header_bytes).await?;
 
     // Send message bytes over QUIC
     send_stream.write_all(&msg_bytes[..]).await?;
-
-    // Then send message flag over QUIC
-    send_stream.write_all(&[msg_flag]).await?;
 
     trace!("Message was sent to remote peer");
 
