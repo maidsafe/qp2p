@@ -34,7 +34,7 @@ fn random_msg() -> Bytes {
 async fn successful_connection() -> Result<()> {
     let qp2p = new_qp2p();
     let peer1 = qp2p.new_endpoint()?;
-    let peer1_addr = peer1.local_address();
+    let peer1_addr = peer1.our_endpoint()?;
 
     let peer2 = qp2p.new_endpoint()?;
     let _connection = peer2.connect_to(&peer1_addr).await?;
@@ -45,7 +45,7 @@ async fn successful_connection() -> Result<()> {
         .await
         .ok_or_else(|| Error::Unexpected("No incoming connection".to_string()))?;
 
-    assert_eq!(incoming_messages.remote_addr(), peer2.local_address());
+    assert_eq!(incoming_messages.remote_addr(), peer2.our_endpoint()?);
 
     Ok(())
 }
@@ -54,7 +54,7 @@ async fn successful_connection() -> Result<()> {
 async fn bi_directional_streams() -> Result<()> {
     let qp2p = new_qp2p();
     let peer1 = qp2p.new_endpoint()?;
-    let peer1_addr = peer1.local_address();
+    let peer1_addr = peer1.our_endpoint()?;
 
     let peer2 = qp2p.new_endpoint()?;
     let connection = peer2.connect_to(&peer1_addr).await?;
@@ -110,11 +110,11 @@ async fn bi_directional_streams() -> Result<()> {
 async fn uni_directional_streams() -> Result<()> {
     let qp2p = new_qp2p();
     let peer1 = qp2p.new_endpoint()?;
-    let peer1_addr = peer1.local_address();
+    let peer1_addr = peer1.our_endpoint()?;
     let mut incoming_conn_peer1 = peer1.listen()?;
 
     let peer2 = qp2p.new_endpoint()?;
-    let peer2_addr = peer2.local_address();
+    let peer2_addr = peer2.our_endpoint()?;
     let mut incoming_conn_peer2 = peer2.listen()?;
 
     // Peer 2 sends a message
