@@ -10,7 +10,7 @@
 use super::{
     api::Message,
     error::{Error, Result},
-    wire_msg::{MsgHeader, WireMsg, HEADER_LEN},
+    wire_msg::WireMsg,
 };
 use bytes::Bytes;
 use futures::{lock::Mutex, stream::StreamExt};
@@ -49,7 +49,7 @@ impl Connection {
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
     ///     let peer_1 = quic_p2p.new_endpoint()?;
-    ///     let peer1_addr = peer_1.local_address();
+    ///     let peer1_addr = peer_1.our_endpoint()?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
     ///     assert_eq!(connection.remote_address(), peer1_addr);
@@ -75,7 +75,7 @@ impl Connection {
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
     ///     let peer_1 = quic_p2p.new_endpoint()?;
-    ///     let peer1_addr = peer_1.local_address();
+    ///     let peer1_addr = peer_1.our_endpoint()?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
     ///     let (send_stream, recv_stream) = connection.open_bi_stream().await?;
@@ -275,16 +275,8 @@ impl SendStream {
 
 // Helper to read the message's bytes from the provided stream
 async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<Bytes> {
-    let mut header_bytes = [0; HEADER_LEN];
-    recv.read_exact(&mut header_bytes).await?;
-
-    let msg_header = MsgHeader::from_bytes(header_bytes);
-    let mut data: Vec<u8> = vec![0; msg_header.data_len()];
-
-    recv.read_exact(&mut data).await?;
-    trace!("Got new message with {} bytes.", data.len());
-    match WireMsg::from_raw(data, msg_header.usr_msg_flag())? {
-        WireMsg::UserMsg(msg_bytes) => Ok(Bytes::copy_from_slice(&msg_bytes)),
+    match WireMsg::read_from_stream(recv).await? {
+        WireMsg::UserMsg(msg_bytes) => Ok(msg_bytes),
         WireMsg::EndpointEchoReq | WireMsg::EndpointEchoResp(_) => {
             // TODO: handle the echo request/response message
             unimplemented!("echo message type not supported yet");
@@ -293,20 +285,9 @@ async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<Bytes> {
 }
 
 // Helper to send bytes to peer using the provided stream.
-async fn send_msg(send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()> {
-    // Let's generate the message bytes
+async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()> {
     let wire_msg = WireMsg::UserMsg(msg);
-    let (msg_bytes, msg_flag) = wire_msg.into();
-    trace!("Sending message to remote peer ({} bytes)", msg_bytes.len());
-
-    let msg_header = MsgHeader::new(&msg_bytes, msg_flag)?;
-    let header_bytes = msg_header.to_bytes();
-
-    // Send the message header
-    send_stream.write_all(&header_bytes).await?;
-
-    // Send message bytes over QUIC
-    send_stream.write_all(&msg_bytes[..]).await?;
+    wire_msg.write_to_stream(&mut send_stream).await?;
 
     trace!("Message was sent to remote peer");
 

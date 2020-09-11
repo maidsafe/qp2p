@@ -44,11 +44,6 @@ impl Endpoint {
         })
     }
 
-    /// Endpoint local address
-    pub fn local_address(&self) -> SocketAddr {
-        self.local_addr
-    }
-
     /// Get our connection adddress to give to others for them to connect to us.
     ///
     /// Attempts to use UPnP to automatically find the public endpoint and forward a port.
@@ -59,6 +54,12 @@ impl Endpoint {
     #[cfg(feature = "upnp")]
     pub fn our_endpoint(&self) -> Result<SocketAddr> {
         // TODO: make use of IGD and echo services
+        Ok(self.local_addr)
+    }
+
+    /// Endpoint local address
+    #[cfg(not(feature = "upnp"))]
+    pub fn our_endpoint(&self) -> Result<SocketAddr> {
         Ok(self.local_addr)
     }
 
