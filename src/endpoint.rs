@@ -13,7 +13,10 @@ use super::{
 };
 use futures::lock::Mutex;
 use log::trace;
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
 
 /// Host name of the Quic communication certificate used by peers
 // FIXME: make it configurable
@@ -34,7 +37,10 @@ impl Endpoint {
         quic_incoming: quinn::Incoming,
         client_cfg: quinn::ClientConfig,
     ) -> Result<Self> {
-        let local_addr = quic_endpoint.local_addr()?;
+        let mut local_addr = quic_endpoint.local_addr()?;
+        if local_addr.ip().is_unspecified() {
+            local_addr.set_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        }
 
         Ok(Self {
             local_addr,
@@ -85,7 +91,7 @@ impl Endpoint {
     pub fn listen(&self) -> Result<IncomingConnections> {
         trace!(
             "Incoming connections will be received at {}",
-            self.quic_endpoint.local_addr()?
+            self.local_addr()?
         );
         IncomingConnections::new(Arc::clone(&self.quic_incoming))
     }
