@@ -9,7 +9,7 @@
 
 use super::{
     connections::{Connection, IncomingConnections},
-    error::Result,
+    error::{Error, Result},
 };
 use futures::lock::Mutex;
 use log::trace;
@@ -35,13 +35,24 @@ impl Endpoint {
         client_cfg: quinn::ClientConfig,
     ) -> Result<Self> {
         let local_addr = quic_endpoint.local_addr()?;
+        if local_addr.ip().is_unspecified() {
+            Err(Error::Configuration(
+                "No IP not specified in the config and IGD detection is disabled or not available."
+                    .to_string(),
+            ))
+        } else {
+            Ok(Self {
+                local_addr,
+                quic_endpoint,
+                quic_incoming: Arc::new(Mutex::new(quic_incoming)),
+                client_cfg,
+            })
+        }
+    }
 
-        Ok(Self {
-            local_addr,
-            quic_endpoint,
-            quic_incoming: Arc::new(Mutex::new(quic_incoming)),
-            client_cfg,
-        })
+    /// Endpoint local address
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        Ok(self.local_addr)
     }
 
     /// Get our connection adddress to give to others for them to connect to us.
@@ -53,14 +64,14 @@ impl Endpoint {
     /// such an address cannot be reached and hence not useful.
     #[cfg(feature = "upnp")]
     pub fn our_endpoint(&self) -> Result<SocketAddr> {
-        // TODO: make use of IGD and echo services
-        Ok(self.local_addr)
+        // TODO: make use of UPnP
+        self.local_addr()
     }
 
-    /// Endpoint local address
+    /// Endpoint local address to give others for them to connect to us.
     #[cfg(not(feature = "upnp"))]
     pub fn our_endpoint(&self) -> Result<SocketAddr> {
-        Ok(self.local_addr)
+        self.local_addr()
     }
 
     /// Connect to another peer

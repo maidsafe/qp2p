@@ -355,13 +355,11 @@ fn bind(
                 Error::Endpoint(e)
             })
         }
-        Err(err) => Err(Error::Configuration {
-            e: format!(
-                "Could not bind to the user supplied port: {}! Error: {}",
-                local_addr.port(),
-                err
-            ),
-        }),
+        Err(err) => Err(Error::Configuration(format!(
+            "Could not bind to the user supplied port: {}! Error: {}",
+            local_addr.port(),
+            err
+        ))),
     }
 }
 
