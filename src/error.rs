@@ -23,8 +23,8 @@ pub enum Error {
     Io(#[source] io::Error),
     #[error(display = "quinn read")]
     Read(#[source] quinn::ReadError),
-    #[error(display = "Bi-directional stream attempted by peer {}", peer_addr)]
-    BiDirectionalStreamAttempted { peer_addr: SocketAddr },
+    #[error(display = "Bi-directional stream attempted by peer {}", 0)]
+    BiDirectionalStreamAttempted(SocketAddr),
     #[error(display = "Establishing connection")]
     Connect(#[source] quinn::ConnectError),
     #[error(display = "Connection lost")]
@@ -33,8 +33,8 @@ pub enum Error {
     Endpoint(#[source] quinn::EndpointError),
     #[error(display = "Cannot parse certificate ")]
     CertificateParseError,
-    #[error(display = "Already connected {}", peer_addr)]
-    DuplicateConnectionToPeer { peer_addr: SocketAddr },
+    #[error(display = "Already connected {}", 0)]
+    DuplicateConnectionToPeer(SocketAddr),
     #[error(display = "Could not find enpoint server")]
     NoEndpointEchoServerFound,
     #[error(display = "Oneshot receiver")]
@@ -45,8 +45,8 @@ pub enum Error {
     Bincode(#[source] bincode::Error),
     #[error(display = "Base64 decode ")]
     Base64(#[source] base64::DecodeError),
-    #[error(display = "Configuration {}", e)]
-    Configuration { e: String },
+    #[error(display = "Configuration {}", 0)]
+    Configuration(String),
     #[error(display = "Operation not allowed")]
     OperationNotAllowed,
     #[error(display = "Connection cancelled")]
