@@ -130,7 +130,10 @@ impl QuicP2p {
                 let ip = contact.ip();
 
                 if ip.is_loopback() {
-                    trace!("IP from ahrdcoded contact is loopback: {:?}", ip);
+                    trace!(
+                        "IP from hardcoded contact is loopback, setting our IP to: {:?}",
+                        ip
+                    );
                     our_ip = ip;
                 }
             }
@@ -311,10 +314,7 @@ impl QuicP2p {
             self.allow_random_port,
         )?;
 
-        trace!(
-            "Bound endpoint to local address: {}",
-            quinn_endpoint.local_addr()?
-        );
+        trace!("Bound endpoint to local address: {}", self.local_addr);
 
         let endpoint = Endpoint::new(quinn_endpoint, quinn_incoming, self.client_cfg.clone())?;
 
@@ -334,10 +334,7 @@ async fn new_connection_to(
 
     let (quinn_endpoint, quinn_incoming) = bind(endpoint_cfg, local_addr, allow_random_port)?;
 
-    trace!(
-        "Bound connection to local address: {}",
-        quinn_endpoint.local_addr()?
-    );
+    trace!("Bound connection to local address: {}", local_addr);
 
     let endpoint = Endpoint::new(quinn_endpoint, quinn_incoming, client_cfg)?;
     let connection = endpoint.connect_to(node_addr).await?;
