@@ -37,7 +37,7 @@ impl Endpoint {
         let local_addr = quic_endpoint.local_addr()?;
         if local_addr.ip().is_unspecified() {
             Err(Error::Configuration(
-                "No IP not specified in the config and IGD detection is disabled or not available."
+                "No IP specified in the config and IGD detection is disabled or not available."
                     .to_string(),
             ))
         } else {
