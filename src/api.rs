@@ -122,7 +122,21 @@ impl QuicP2p {
             .map(|p| (p, false))
             .unwrap_or((DEFAULT_PORT_TO_TRY, true));
 
-        let ip = cfg.ip.unwrap_or_else(|| IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+        let ip = cfg.ip.unwrap_or_else(|| {
+            let mut our_ip = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+
+            // check hard coded contacts for being local (aka loopback)
+            if let Some(contact) = cfg.hard_coded_contacts.iter().next() {
+                let ip = contact.ip();
+
+                if ip.is_loopback() {
+                    trace!("IP from ahrdcoded contact is loopback: {:?}", ip);
+                    our_ip = ip;
+                }
+            }
+
+            our_ip
+        });
 
         let idle_timeout_msec = cfg.idle_timeout_msec.unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
 
