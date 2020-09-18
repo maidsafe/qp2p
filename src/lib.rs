@@ -15,7 +15,7 @@
     mutable_transmutes,
     no_mangle_const_items,
     unknown_crate_types,
-    //warnings
+    warnings
 )]
 #![deny(
     bad_style,
@@ -63,12 +63,9 @@ mod test_utils;
 mod utils;
 mod wire_msg;
 
-#[cfg(feature = "upnp")]
-pub use crate::igd::{DEFAULT_UPNP_LEASE_DURATION_SEC, UPNP_RESPONSE_TIMEOUT_MSEC};
 pub use api::{Message, QuicP2p};
 pub use config::Config;
 pub use connections::{Connection, IncomingConnections, IncomingMessages, RecvStream, SendStream};
 pub use dirs::{Dirs, OverRide};
 pub use endpoint::Endpoint;
 pub use error::{Error, Result};
-pub use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};

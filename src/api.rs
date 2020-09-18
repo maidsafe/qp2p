@@ -27,6 +27,9 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 /// before using a random port.
 pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
 
+/// Default duration of a UPnP lease, in seconds.
+pub const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
+
 /// Message received from a peer
 pub enum Message {
     /// A message sent by peer on a uni-directional stream
@@ -68,6 +71,7 @@ pub struct QuicP2p {
     bootstrap_cache: BootstrapCache,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
+    upnp_lease_duration: u32,
 }
 
 impl QuicP2p {
@@ -80,7 +84,6 @@ impl QuicP2p {
     ///
     /// let quic_p2p = QuicP2p::new().expect("Error initializing QuicP2p");
     /// ```
-
     pub fn new() -> Result<Self> {
         Self::with_config(None, Default::default(), true)
     }
@@ -170,15 +173,18 @@ impl QuicP2p {
 
         let client_cfg = peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
 
-        let qp2p = Self {
+        let upnp_lease_duration = cfg
+            .upnp_lease_duration
+            .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC);
+
+        Ok(Self {
             local_addr: SocketAddr::new(ip, port),
             allow_random_port,
             bootstrap_cache,
             endpoint_cfg,
             client_cfg,
-        };
-
-        Ok(qp2p)
+            upnp_lease_duration,
+        })
     }
 
     /// Bootstrap to the network.
@@ -230,6 +236,7 @@ impl QuicP2p {
             let client_cfg = self.client_cfg.clone();
             let local_addr = self.local_addr;
             let allow_random_port = self.allow_random_port;
+            let upnp_lease_duration = self.upnp_lease_duration;
             let task_handle = tokio::spawn(async move {
                 new_connection_to(
                     &node_addr,
@@ -237,6 +244,7 @@ impl QuicP2p {
                     client_cfg,
                     local_addr,
                     allow_random_port,
+                    upnp_lease_duration,
                 )
                 .await
             });
@@ -281,6 +289,7 @@ impl QuicP2p {
             self.client_cfg.clone(),
             self.local_addr,
             self.allow_random_port,
+            self.upnp_lease_duration,
         )
         .await
     }
@@ -313,11 +322,18 @@ impl QuicP2p {
 
         trace!("Bound endpoint to local address: {}", self.local_addr);
 
-        let endpoint = Endpoint::new(quinn_endpoint, quinn_incoming, self.client_cfg.clone())?;
+        let endpoint = Endpoint::new(
+            quinn_endpoint,
+            quinn_incoming,
+            self.client_cfg.clone(),
+            self.upnp_lease_duration,
+        )?;
 
         Ok(endpoint)
     }
 }
+
+// Private helpers
 
 // Creates a new Connection
 async fn new_connection_to(
@@ -326,6 +342,7 @@ async fn new_connection_to(
     client_cfg: quinn::ClientConfig,
     local_addr: SocketAddr,
     allow_random_port: bool,
+    upnp_lease_duration: u32,
 ) -> Result<(Endpoint, Connection)> {
     trace!("Attempting to connect to peer: {}", node_addr);
 
@@ -333,7 +350,12 @@ async fn new_connection_to(
 
     trace!("Bound connection to local address: {}", local_addr);
 
-    let endpoint = Endpoint::new(quinn_endpoint, quinn_incoming, client_cfg)?;
+    let endpoint = Endpoint::new(
+        quinn_endpoint,
+        quinn_incoming,
+        client_cfg,
+        upnp_lease_duration,
+    )?;
     let connection = endpoint.connect_to(node_addr).await?;
 
     Ok((endpoint, connection))
@@ -346,7 +368,6 @@ fn bind(
     allow_random_port: bool,
 ) -> Result<(quinn::Endpoint, quinn::Incoming)> {
     let mut endpoint_builder = quinn::Endpoint::builder();
-    // TODO: allow to optionally accept incoming conns, needed for clients
     let _ = endpoint_builder.listen(endpoint_cfg);
 
     match UdpSocket::bind(&local_addr) {
@@ -371,9 +392,7 @@ fn bind(
     }
 }
 
-// Private helpers
-
-// Unwrap the conffig if provided by the user, otherwise construct the default one
+// Unwrap the config if provided by the user, otherwise construct the default one
 #[cfg(not(feature = "upnp"))]
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
     cfg.map_or(Config::read_or_construct_default(None), Ok)
