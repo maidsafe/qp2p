@@ -21,11 +21,7 @@ use super::{
 use bytes::Bytes;
 use futures::future::select_ok;
 use log::{debug, error, info, trace};
-use std::{
-    collections::VecDeque,
-    mem,
-    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
-};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.
@@ -106,12 +102,12 @@ impl QuicP2p {
     /// let mut config = Config::default();
     /// config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     /// config.port = Some(3000);
-    /// let hcc = vec!["127.0.0.1:8080".parse().unwrap()];
-    /// let quic_p2p = QuicP2p::with_config(Some(config), hcc.into(), true).expect("Error initializing QuicP2p");
+    /// let hcc = &["127.0.0.1:8080".parse().unwrap()];
+    /// let quic_p2p = QuicP2p::with_config(Some(config), hcc, true).expect("Error initializing QuicP2p");
     /// ```
     pub fn with_config(
         cfg: Option<Config>,
-        bootstrap_nodes: VecDeque<SocketAddr>,
+        bootstrap_nodes: &[SocketAddr],
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
         let cfg = unwrap_config_or_default(cfg)?;
@@ -160,11 +156,13 @@ impl QuicP2p {
         let mut bootstrap_cache =
             BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref())?;
         if use_bootstrap_cache {
-            bootstrap_cache
-                .peers_mut()
-                .extend(bootstrap_nodes.into_iter());
+            bootstrap_cache.peers_mut().extend(bootstrap_nodes);
         } else {
-            let _ = mem::replace(bootstrap_cache.peers_mut(), bootstrap_nodes);
+            let bootstrap_cache = bootstrap_cache.peers_mut();
+            bootstrap_cache.clear();
+            for addr in bootstrap_nodes {
+                bootstrap_cache.push_back(*addr);
+            }
         }
 
         let endpoint_cfg =
@@ -203,13 +201,12 @@ impl QuicP2p {
     ///     let mut config = Config::default();
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     config.port = Some(3000);
-    ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
+    ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), &[], true)?;
     ///     let endpoint = quic_p2p.new_endpoint()?;
     ///     let peer_addr = endpoint.our_endpoint()?;
     ///
     ///     config.port = Some(3001);
-    ///     let hcc = vec![peer_addr];
-    ///     let mut quic_p2p = QuicP2p::with_config(Some(config), hcc.into(), true)?;
+    ///     let mut quic_p2p = QuicP2p::with_config(Some(config), &[peer_addr], true)?;
     ///     let (endpoint, connection) = quic_p2p.bootstrap().await?;
     ///     Ok(())
     /// }
