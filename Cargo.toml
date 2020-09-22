@@ -6,29 +6,49 @@ homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/maidsafe/qp2p"
-version = "0.8.1"
-authors = ["MaidSafe Developers <dev@maidsafe.net>"]
-keywords = ["quic"]
+version = "0.8.2"
+authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
+keywords = [ "quic" ]
 edition = "2018"
 
 [dependencies]
-quinn = { version = "~0.6.1", features = ["tls-rustls"], default-features = false }
 futures = "~0.3.5"
-tokio = { version = "~0.2.21", features = ["rt-core", "sync", "time", "io-driver", "macros"] }
 unwrap = "1.2.1"
 bincode = "1.2.1"
-bytes = { version = "~0.5.5", features = ["serde"] }
 crossbeam-channel = "~0.4.2"
-igd = { version = "~0.11.1", features = ["aio"], optional = true }
-serde = { version = "1.0.113", features = ["derive"] }
 serde_json = "1.0.55"
 structopt = "~0.3.15"
 rcgen = "~0.8.4"
-rustls = { version = "~0.17.0", features = ["dangerous_configuration"] }
 log = "~0.4.8"
 base64 = "~0.12.2"
 err-derive = "~0.2.4"
 webpki = "~0.21.3"
+
+  [dependencies.quinn]
+  version = "~0.6.1"
+  features = [ "tls-rustls" ]
+  default-features = false
+
+  [dependencies.tokio]
+  version = "~0.2.21"
+  features = [ "rt-core", "sync", "time", "io-driver", "macros" ]
+
+  [dependencies.bytes]
+  version = "~0.5.5"
+  features = [ "serde" ]
+
+  [dependencies.igd]
+  version = "~0.11.1"
+  features = [ "aio" ]
+  optional = true
+
+  [dependencies.serde]
+  version = "1.0.113"
+  features = [ "derive" ]
+
+  [dependencies.rustls]
+  version = "~0.17.0"
+  features = [ "dangerous_configuration" ]
 
 [dev-dependencies]
 clap = "2.33.1"
@@ -36,11 +56,10 @@ tracing = "~0.1.15"
 rand = "~0.7.3"
 
 [features]
-upnp = ["igd"]
+upnp = [ "igd" ]
 
-# Mobile and embedded platforms should not include these dependencies to override config file paths
-[target.'cfg(any(all(unix, not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))), windows))'.dependencies]
+[target."cfg(any(all(unix, not(any(target_os = \"android\", target_os = \"androideabi\", target_os = \"ios\"))), windows))".dependencies]
 directories = "2.0.2"
 
 [workspace]
-members = ["mock"]
+members = [ "mock" ]
