@@ -1,0 +1,37 @@
+name: Create GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    # only if we have a tag
+    name: Release
+    runs-on: ubuntu-20.04
+    if: "startsWith(github.event.head_commit.message, 'chore(release):')"
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: '0'
+
+      - name: Set tag as env
+        shell: bash
+        run: echo ::set-env name=RELEASE_VERSION::$(echo ${GITHUB_REF:10})
+
+      - name: lets check tag
+        shell: bash
+        run: echo ${{ env.RELEASE_VERSION }}
+
+      - name: Generate Changelog
+        shell: bash
+        run: awk '/# \[/{c++;p=1}{if(c==2){exit}}p;' CHANGELOG.md > RELEASE-CHANGELOG.txt
+      - run: cat RELEASE-CHANGELOG.txt
+      - name: Release generation
+        uses: softprops/action-gh-release@91409e712cf565ce9eff10c87a8d1b11b81757ae
+        env:
+          GITHUB_TOKEN: ${{ secrets.MERGE_BUMP_BRANCH_TOKEN }}
+        with:
+          body_path: RELEASE-CHANGELOG.txt

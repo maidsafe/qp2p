@@ -1,0 +1,37 @@
+# auto merge workflow.
+#
+# Auto merge PR if commit msg begins with `chore(release):`,
+# or if it has been raised by Dependabot.
+# Uses https://github.com/ridedott/merge-me-action.
+
+name: Merge Version Change and Dependabot PRs automatically
+
+on: pull_request
+
+jobs:
+  merge:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: '0'
+
+    - name: get commit message
+      run: |
+           echo ::set-env name=commitmsg::$(git log --format=%B -n 1 ${{ github.event.pull_request.head.sha }})
+    - name: show commit message
+      run : echo $commitmsg
+
+    - name: Merge Version change PR
+      if: startsWith( env.commitmsg, 'chore(release):')
+      uses: ridedott/merge-me-action@81667e6ae186ddbe6d3c3186d27d91afa7475e2c
+      with:
+        GITHUB_LOGIN: dirvine
+        GITHUB_TOKEN: ${{ secrets.MERGE_BUMP_BRANCH_TOKEN }}
+        MERGE_METHOD: REBASE
+
+    - name: Dependabot Merge
+      uses: ridedott/merge-me-action@master
+      with:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        MERGE_METHOD: REBASE
