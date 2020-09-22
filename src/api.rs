@@ -211,7 +211,7 @@ impl QuicP2p {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn bootstrap(&mut self) -> Result<(Endpoint, Connection)> {
+    pub async fn bootstrap(&self) -> Result<(Endpoint, Connection)> {
         // TODO: refactor bootstrap_cache so we can simply get the list of nodes
         let bootstrap_nodes: Vec<SocketAddr> = self
             .bootstrap_cache
@@ -274,7 +274,7 @@ impl QuicP2p {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
+    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
         new_connection_to(
             node_addr,
             self.endpoint_cfg.clone(),
