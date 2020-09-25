@@ -6,7 +6,7 @@ use std::{
 };
 
 /// Constructs a `QuicP2p` node with some sane defaults for testing.
-fn new_qp2p() -> QuicP2p {
+pub fn new_qp2p() -> QuicP2p {
     new_qp2p_with_hcc(Default::default())
 }
 
@@ -33,10 +33,10 @@ fn random_msg() -> Bytes {
 #[tokio::test]
 async fn successful_connection() -> Result<()> {
     let qp2p = new_qp2p();
-    let peer1 = qp2p.new_endpoint()?;
-    let peer1_addr = peer1.our_endpoint()?;
+    let mut peer1 = qp2p.new_endpoint()?;
+    let peer1_addr = peer1.our_endpoint().await?;
 
-    let peer2 = qp2p.new_endpoint()?;
+    let mut peer2 = qp2p.new_endpoint()?;
     let _connection = peer2.connect_to(&peer1_addr).await?;
 
     let mut incoming_conn = peer1.listen()?;
@@ -45,7 +45,7 @@ async fn successful_connection() -> Result<()> {
         .await
         .ok_or_else(|| Error::Unexpected("No incoming connection".to_string()))?;
 
-    assert_eq!(incoming_messages.remote_addr(), peer2.our_endpoint()?);
+    assert_eq!(incoming_messages.remote_addr(), peer2.our_endpoint().await?);
 
     Ok(())
 }
@@ -53,8 +53,8 @@ async fn successful_connection() -> Result<()> {
 #[tokio::test]
 async fn bi_directional_streams() -> Result<()> {
     let qp2p = new_qp2p();
-    let peer1 = qp2p.new_endpoint()?;
-    let peer1_addr = peer1.our_endpoint()?;
+    let mut peer1 = qp2p.new_endpoint()?;
+    let peer1_addr = peer1.our_endpoint().await?;
 
     let peer2 = qp2p.new_endpoint()?;
     let connection = peer2.connect_to(&peer1_addr).await?;
@@ -88,7 +88,7 @@ async fn bi_directional_streams() -> Result<()> {
 
     // Peer 2 should be able to re-use the stream to send an additional message
     let msg = random_msg();
-    send_stream2.send(msg.clone()).await?;
+    send_stream2.send_user_msg(msg.clone()).await?;
 
     // Peer 1 should recieve the message in the stream recieved along with the
     // previous message
@@ -97,7 +97,7 @@ async fn bi_directional_streams() -> Result<()> {
 
     // Peer 1 responds using the send stream
     let response_msg = random_msg();
-    send_stream1.send(response_msg.clone()).await?;
+    send_stream1.send_user_msg(response_msg.clone()).await?;
 
     let received_response = recv_stream2.next().await?;
 
@@ -109,12 +109,12 @@ async fn bi_directional_streams() -> Result<()> {
 #[tokio::test]
 async fn uni_directional_streams() -> Result<()> {
     let qp2p = new_qp2p();
-    let peer1 = qp2p.new_endpoint()?;
-    let peer1_addr = peer1.our_endpoint()?;
+    let mut peer1 = qp2p.new_endpoint()?;
+    let peer1_addr = peer1.our_endpoint().await?;
     let mut incoming_conn_peer1 = peer1.listen()?;
 
-    let peer2 = qp2p.new_endpoint()?;
-    let peer2_addr = peer2.our_endpoint()?;
+    let mut peer2 = qp2p.new_endpoint()?;
+    let peer2_addr = peer2.our_endpoint().await?;
     let mut incoming_conn_peer2 = peer2.listen()?;
 
     // Peer 2 sends a message

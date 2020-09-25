@@ -91,7 +91,7 @@ impl Connection {
     /// This returns the streams to send additional messages / read responses sent using the same stream.
     pub async fn send(&self, msg: Bytes) -> Result<(SendStream, RecvStream)> {
         let (mut send_stream, recv_stream) = self.open_bi_stream().await?;
-        send_stream.send(msg).await?;
+        send_stream.send_user_msg(msg).await?;
         Ok((send_stream, recv_stream))
     }
 
@@ -238,7 +238,7 @@ impl IncomingMessages {
 
 /// Stream to receive multiple messages
 pub struct RecvStream {
-    quinn_recv_stream: quinn::RecvStream,
+    pub(crate) quinn_recv_stream: quinn::RecvStream,
 }
 
 impl RecvStream {
@@ -262,15 +262,20 @@ impl SendStream {
         Self { quinn_send_stream }
     }
 
-    /// Send a message using the bi-directional stream created by the initiator
-    pub async fn send(&mut self, msg: Bytes) -> Result<()> {
+    /// Send a message using the stream created by the initiator
+    pub async fn send_user_msg(&mut self, msg: Bytes) -> Result<()> {
         send_msg(&mut self.quinn_send_stream, msg).await
     }
-
+    
+    /// Send a wire message
+    pub async fn send(&mut self, msg: WireMsg) -> Result<()> {
+        msg.write_to_stream(&mut self.quinn_send_stream).await
+    }
     /// Gracefully finish current stream
     pub async fn finish(mut self) -> Result<()> {
         self.quinn_send_stream.finish().await.map_err(Error::from)
     }
+
 }
 
 // Helper to read the message's bytes from the provided stream
@@ -278,8 +283,7 @@ async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<Bytes> {
     match WireMsg::read_from_stream(recv).await? {
         WireMsg::UserMsg(msg_bytes) => Ok(msg_bytes),
         WireMsg::EndpointEchoReq | WireMsg::EndpointEchoResp(_) => {
-            // TODO: handle the echo request/response message
-            unimplemented!("echo message type not supported yet");
+            Err(Error::UnexpectedMessageType)
         }
     }
 }
