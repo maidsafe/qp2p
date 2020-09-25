@@ -9,14 +9,17 @@
 
 #[cfg(feature = "upnp")]
 use super::igd::forward_port;
-use super::{
-    connections::{Connection, IncomingConnections},
-    error::{Error, Result},
-};
-use futures::lock::Mutex;
-use log::trace;
 #[cfg(feature = "upnp")]
 use log::{debug, info};
+#[cfg(feature = "upnp")]
+use super::error::Error;
+use super::{
+    connections::{Connection, IncomingConnections},
+    error::Result,
+};
+use super::wire_msg::WireMsg;
+use futures::lock::Mutex;
+use log::trace;
 use std::{net::SocketAddr, sync::Arc};
 
 /// Host name of the Quic communication certificate used by peers
@@ -30,7 +33,10 @@ pub struct Endpoint {
     quic_endpoint: quinn::Endpoint,
     quic_incoming: Arc<Mutex<quinn::Incoming>>,
     client_cfg: quinn::ClientConfig,
+    #[cfg(feature = "upnp")]
     upnp_lease_duration: u32,
+    #[cfg(feature = "upnp")]
+    bootstrap_nodes: Vec<SocketAddr>,
 }
 
 impl std::fmt::Debug for Endpoint {
@@ -49,23 +55,23 @@ impl Endpoint {
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,
         client_cfg: quinn::ClientConfig,
+        #[cfg(feature = "upnp")]
         upnp_lease_duration: u32,
+        #[cfg(feature = "upnp")]
+        bootstrap_nodes: Vec<SocketAddr>,
     ) -> Result<Self> {
         let local_addr = quic_endpoint.local_addr()?;
-        if local_addr.ip().is_unspecified() {
-            Err(Error::Configuration(
-                "No IP specified in the config and IGD detection is disabled or not available."
-                    .to_string(),
-            ))
-        } else {
-            Ok(Self {
-                local_addr,
-                quic_endpoint,
-                quic_incoming: Arc::new(Mutex::new(quic_incoming)),
-                client_cfg,
-                upnp_lease_duration,
-            })
-        }
+        dbg!(local_addr);
+        Ok(Self {
+            local_addr,
+            quic_endpoint,
+            quic_incoming: Arc::new(Mutex::new(quic_incoming)),
+            client_cfg,
+            #[cfg(feature = "upnp")]
+            upnp_lease_duration,
+            #[cfg(feature = "upnp")]
+            bootstrap_nodes,
+        })
     }
 
     /// Endpoint local address
@@ -81,50 +87,53 @@ impl Endpoint {
     /// Note that if such an obtained address is of unspecified category we will ignore that as
     /// such an address cannot be reached and hence not useful.
     #[cfg(feature = "upnp")]
-    pub async fn our_addr(&self) -> Result<SocketAddr> {
-        // Make use of UPnP to detect our public addr
-        let is_loopback = self.local_addr.ip().is_loopback();
+    pub async fn our_endpoint(&mut self) -> Result<SocketAddr> {
 
-        // In parallel, try to contact an echo service
-        let echo_service_res = match self.query_ip_echo_service() {
-            Ok(addr) => Ok(addr),
-            Err(Error::NoEndpointEchoServerFound) => Ok(self.local_addr),
-            Err(err) => {
-                info!("Could not contact echo service: {} - {:?}", err, err);
-                Err(err)
-            }
-        };
+        // Skip port forwarding
+        if self.local_addr.ip().is_loopback() || !self.local_addr.ip().is_unspecified() {
+            return Ok(self.local_addr);
+        }
 
         let mut addr = None;
-        // Skip port forwarding if we are running locally
-        if !is_loopback {
-            // Attempt to use IGD for port forwarding
-            match forward_port(self.local_addr, self.upnp_lease_duration).await {
-                Ok(public_sa) => {
-                    debug!("IGD success: {:?}", SocketAddr::V4(public_sa));
-                    let mut local_addr = self.local_addr;
-                    local_addr.set_port(public_sa.port());
-                    addr = Some(local_addr)
-                }
-                Err(e) => {
-                    info!("IGD request failed: {} - {:?}", e, e);
-                    return Err(Error::IgdNotSupported);
-                }
+
+        // Attempt to use IGD for port forwarding
+        match forward_port(self.local_addr, self.upnp_lease_duration).await {
+            Ok(public_sa) => {
+                debug!("IGD success: {:?}", SocketAddr::V4(public_sa));
+                addr = Some(SocketAddr::V4(public_sa));
+            }
+            Err(e) => {
+                info!("IGD request failed: {} - {:?}", e, e);
+                // return Err(Error::IgdNotSupported);
             }
         }
 
-        echo_service_res.map(|echo_srvc_addr| {
-            if let Some(our_address) = addr {
-                our_address
-            } else {
-                echo_srvc_addr
+        // Try to contact an echo service
+        match self.query_ip_echo_service().await {
+            Ok(echo_res) => {
+                match addr {
+                    None => {
+                        addr = Some(echo_res);
+                    },
+                    Some(address) => {
+                        info!("Got response from echo service: {:?}, but IGD has already provided our external address: {:?}", echo_res, address);
+                    }
+                }
+            },
+            Err(err) => {
+                info!("Could not contact echo service: {} - {:?}", err, err);
             }
-        })
+        };
+        if let Some(socket_addr) = addr {
+            Ok(socket_addr)
+        } else {
+            Err(Error::Unexpected("No response from echo service".to_string()))   
+        }
     }
 
     /// Endpoint local address to give others for them to connect to us.
     #[cfg(not(feature = "upnp"))]
-    pub fn our_addr(&self) -> Result<SocketAddr> {
+    pub async fn our_endpoint(&mut self) -> Result<SocketAddr> {
         self.local_addr()
     }
 
@@ -157,76 +166,28 @@ impl Endpoint {
 
     // Private helper
     #[cfg(feature = "upnp")]
-    fn query_ip_echo_service(&self) -> Result<SocketAddr> {
-        Ok(self.local_addr)
-        /*    // Bail out early if we don't have any contacts.
-        if self.cfg.hard_coded_contacts.is_empty() {
-            return Err(QuicP2pError::NoEndpointEchoServerFound);
+    async fn query_ip_echo_service(&self) -> Result<SocketAddr> {
+        // Bail out early if we don't have any contacts.
+        if self.bootstrap_nodes.is_empty() {
+            return Err(Error::NoEndpointEchoServerFound);
         }
 
-        // Create a separate event stream for the IP echo request.
-        let (echo_resp_tx, echo_resp_rx) = mpsc::channel();
-
-        let idle_timeout_msec = Duration::from_millis(
-            self.cfg
-                .idle_timeout_msec
-                .unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC),
-        );
-
-        self.el.post(move || {
-            ctx_mut(|ctx| {
-                ctx.our_ext_addr_tx = Some(echo_resp_tx);
+        let mut tasks = Vec::default();
+        for node in self.bootstrap_nodes.iter().cloned() {
+            let connection = self.connect_to(&node).await?; // TODO: move into loop
+            let task_handle = tokio::spawn(async move {
+                let (mut send_stream, mut recv_stream) = connection.open_bi_stream().await?;
+                send_stream.send(WireMsg::EndpointEchoReq).await?;
+                match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
+                    Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
+                    Ok(_) => Err(Error::Unexpected("Unexpected message".to_string())),
+                    Err(err) => Err(err),
+                }
             });
-        });
+            tasks.push(task_handle);
+        }
 
-        debug!(
-            "Querying IP echo service to find our public IP address (contact list: {:?})",
-            self.cfg.hard_coded_contacts
-        );
+        self.local_addr()
 
-        loop {
-            if self.cfg.hard_coded_contacts.is_empty() {
-                return Err(QuicP2pError::NoEndpointEchoServerFound);
-            }
-
-            let (notify_tx, notify_rx) = utils::new_unbounded_channels();
-
-            self.el.post(move || {
-                let _ = bootstrap::echo_request(notify_tx);
-            });
-
-            match notify_rx.recv_timeout(idle_timeout_msec) {
-                Ok(Event::BootstrapFailure { .. }) => {
-                    debug!("BootstrapFailure");
-                    break Err(QuicP2pError::NoEndpointEchoServerFound);
-                }
-                Ok(Event::BootstrappedTo { node }) => {
-                    debug!("BootstrappedTo {{ node: {:?} }}", node);
-                    match echo_resp_rx.recv_timeout(idle_timeout_msec) {
-                        Ok(res) => {
-                            debug!("Found our address: {:?}", res);
-                            break Ok(res);
-                        }
-                        Err(_e) => {
-                            // This node hasn't replied in a timely manner, so remove it from our bootstrap list and try again.
-                            let _ = self.cfg.hard_coded_contacts.remove(&node);
-                            info!(
-                "Node {} is unresponsive, removing it from bootstrap contacts; {} contacts left",
-                                node,
-                                self.cfg.hard_coded_contacts.len()
-                            );
-                        }
-                    }
-                }
-                Ok(ev) => {
-                    debug!("Unexpected event: {:?}", ev);
-                    break Err(QuicP2pError::NoEndpointEchoServerFound);
-                }
-                Err(err) => {
-                    debug!("Unexpected error: {:?}", err);
-                    break Err(QuicP2pError::NoEndpointEchoServerFound);
-                }
-            }
-        }*/
     }
 }

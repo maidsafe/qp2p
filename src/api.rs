@@ -7,8 +7,6 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-#[cfg(feature = "upnp")]
-use super::igd;
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
@@ -17,6 +15,7 @@ use super::{
     endpoint::Endpoint,
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
+    utils::init_logging,
 };
 use bytes::Bytes;
 use futures::future::select_ok;
@@ -113,6 +112,7 @@ impl QuicP2p {
         bootstrap_nodes: &[SocketAddr],
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
+        init_logging();
         let cfg = unwrap_config_or_default(cfg)?;
         debug!("Config passed in to qp2p: {:?}", cfg);
 
@@ -231,11 +231,13 @@ impl QuicP2p {
         trace!("Bootstrapping with nodes {:?}", bootstrap_nodes);
         // Attempt to connect to all nodes and return the first one to succeed
         let mut tasks = Vec::default();
-        for node_addr in bootstrap_nodes {
+        for node_addr in bootstrap_nodes.iter().cloned() {
+            let nodes = bootstrap_nodes.clone();
             let endpoint_cfg = self.endpoint_cfg.clone();
             let client_cfg = self.client_cfg.clone();
             let local_addr = self.local_addr;
             let allow_random_port = self.allow_random_port;
+            #[cfg(feature = "upnp")]
             let upnp_lease_duration = self.upnp_lease_duration;
             let task_handle = tokio::spawn(async move {
                 new_connection_to(
@@ -244,7 +246,10 @@ impl QuicP2p {
                     client_cfg,
                     local_addr,
                     allow_random_port,
+                    #[cfg(feature = "upnp")]
                     upnp_lease_duration,
+                    #[cfg(feature = "upnp")]
+                    nodes
                 )
                 .await
             });
@@ -282,14 +287,28 @@ impl QuicP2p {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
+    pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
+
+        #[cfg(feature = "upnp")]
+        let bootstrap_nodes: Vec<SocketAddr> = self
+            .bootstrap_cache
+            .peers()
+            .iter()
+            .rev()
+            .chain(self.bootstrap_cache.hard_coded_contacts().iter())
+            .cloned()
+            .collect();
+
         new_connection_to(
             node_addr,
             self.endpoint_cfg.clone(),
             self.client_cfg.clone(),
             self.local_addr,
             self.allow_random_port,
+            #[cfg(feature = "upnp")]
             self.upnp_lease_duration,
+            #[cfg(feature = "upnp")]    
+            bootstrap_nodes
         )
         .await
     }
@@ -314,6 +333,17 @@ impl QuicP2p {
     /// ```
     pub fn new_endpoint(&self) -> Result<Endpoint> {
         trace!("Creating a new enpoint");
+
+        #[cfg(feature = "upnp")]
+        let bootstrap_nodes: Vec<SocketAddr> = self
+            .bootstrap_cache
+            .peers()
+            .iter()
+            .rev()
+            .chain(self.bootstrap_cache.hard_coded_contacts().iter())
+            .cloned()
+            .collect();
+
         let (quinn_endpoint, quinn_incoming) = bind(
             self.endpoint_cfg.clone(),
             self.local_addr,
@@ -326,7 +356,10 @@ impl QuicP2p {
             quinn_endpoint,
             quinn_incoming,
             self.client_cfg.clone(),
+            #[cfg(feature = "upnp")]
             self.upnp_lease_duration,
+            #[cfg(feature = "upnp")]
+            bootstrap_nodes,
         )?;
 
         Ok(endpoint)
@@ -342,7 +375,10 @@ async fn new_connection_to(
     client_cfg: quinn::ClientConfig,
     local_addr: SocketAddr,
     allow_random_port: bool,
+    #[cfg(feature = "upnp")]
     upnp_lease_duration: u32,
+    #[cfg(feature = "upnp")]
+    bootstrap_nodes: Vec<SocketAddr>,
 ) -> Result<(Endpoint, Connection)> {
     trace!("Attempting to connect to peer: {}", node_addr);
 
@@ -354,7 +390,10 @@ async fn new_connection_to(
         quinn_endpoint,
         quinn_incoming,
         client_cfg,
+        #[cfg(feature = "upnp")]
         upnp_lease_duration,
+        #[cfg(feature = "upnp")]
+        bootstrap_nodes,
     )?;
     let connection = endpoint.connect_to(node_addr).await?;
 
@@ -393,17 +432,16 @@ fn bind(
 }
 
 // Unwrap the config if provided by the user, otherwise construct the default one
-#[cfg(not(feature = "upnp"))]
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
     cfg.map_or(Config::read_or_construct_default(None), Ok)
 }
 
-#[cfg(feature = "upnp")]
-fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
-    let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
-    if cfg.ip.is_none() {
-        cfg.ip = igd::get_local_ip().ok();
-    };
+// #[cfg(feature = "upnp")]
+// fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
+//     let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
+//     if cfg.ip.is_none() {
+//         cfg.ip = igd::get_local_ip().ok();
+//     };
 
-    Ok(cfg)
-}
+//     Ok(cfg)
+// }
