@@ -11,13 +11,13 @@ use crate::{
     dirs::Dirs,
     error::{Error, Result},
 };
+use flexi_logger::{DeferredNow, Logger};
+use log::Record;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
-use flexi_logger::{DeferredNow, Logger};
-use log::Record;
 
 /// Get the project directory
 #[cfg(any(
@@ -96,24 +96,27 @@ where
 }
 
 pub(crate) fn init_logging() {
-        // Custom formatter for logs
-        let do_format = move |writer: &mut dyn Write, clock: &mut DeferredNow, record: &Record| {
-            let handle = std::thread::current();
-            write!(
-                writer,
-                "[{}] {} {} [{}:{}] {}",
-                handle
-                    .name()
-                    .unwrap_or(&format!("Thread-{:?}", handle.id())),
-                record.level(),
-                clock.now().to_rfc3339(),
-                record.file().unwrap_or_default(),
-                record.line().unwrap_or_default(),
-                record.args()
-            )
-        };
+    // Custom formatter for logs
+    let do_format = move |writer: &mut dyn Write, clock: &mut DeferredNow, record: &Record| {
+        let handle = std::thread::current();
+        write!(
+            writer,
+            "[{}] {} {} [{}:{}] {}",
+            handle
+                .name()
+                .unwrap_or(&format!("Thread-{:?}", handle.id())),
+            record.level(),
+            clock.now().to_rfc3339(),
+            record.file().unwrap_or_default(),
+            record.line().unwrap_or_default(),
+            record.args()
+        )
+    };
 
-        Logger::with_env()
-            .format(do_format)
-            .suppress_timestamp().start().map(|_| ()).unwrap_or(());
+    Logger::with_env()
+        .format(do_format)
+        .suppress_timestamp()
+        .start()
+        .map(|_| ())
+        .unwrap_or(());
 }
