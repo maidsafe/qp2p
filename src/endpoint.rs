@@ -8,18 +8,18 @@
 // Software.
 
 #[cfg(feature = "upnp")]
-use super::igd::forward_port;
-#[cfg(feature = "upnp")]
-use log::{debug, info};
-#[cfg(feature = "upnp")]
 use super::error::Error;
+#[cfg(feature = "upnp")]
+use super::igd::forward_port;
+use super::wire_msg::WireMsg;
 use super::{
     connections::{Connection, IncomingConnections},
     error::Result,
 };
-use super::wire_msg::WireMsg;
 use futures::lock::Mutex;
 use log::trace;
+#[cfg(feature = "upnp")]
+use log::{debug, info};
 use std::{net::SocketAddr, sync::Arc};
 
 /// Host name of the Quic communication certificate used by peers
@@ -44,10 +44,8 @@ impl Endpoint {
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,
         client_cfg: quinn::ClientConfig,
-        #[cfg(feature = "upnp")]
-        upnp_lease_duration: u32,
-        #[cfg(feature = "upnp")]
-        bootstrap_nodes: Vec<SocketAddr>,
+        #[cfg(feature = "upnp")] upnp_lease_duration: u32,
+        #[cfg(feature = "upnp")] bootstrap_nodes: Vec<SocketAddr>,
     ) -> Result<Self> {
         let local_addr = quic_endpoint.local_addr()?;
         dbg!(local_addr);
@@ -77,9 +75,8 @@ impl Endpoint {
     /// such an address cannot be reached and hence not useful.
     #[cfg(feature = "upnp")]
     pub async fn our_endpoint(&mut self) -> Result<SocketAddr> {
-
         // Skip port forwarding
-        if self.local_addr.ip().is_loopback() || !self.local_addr.ip().is_unspecified() {
+        if self.local_addr.ip().is_loopback() {
             return Ok(self.local_addr);
         }
 
@@ -99,14 +96,12 @@ impl Endpoint {
 
         // Try to contact an echo service
         match self.query_ip_echo_service().await {
-            Ok(echo_res) => {
-                match addr {
-                    None => {
-                        addr = Some(echo_res);
-                    },
-                    Some(address) => {
-                        info!("Got response from echo service: {:?}, but IGD has already provided our external address: {:?}", echo_res, address);
-                    }
+            Ok(echo_res) => match addr {
+                None => {
+                    addr = Some(echo_res);
+                }
+                Some(address) => {
+                    info!("Got response from echo service: {:?}, but IGD has already provided our external address: {:?}", echo_res, address);
                 }
             },
             Err(err) => {
@@ -116,7 +111,9 @@ impl Endpoint {
         if let Some(socket_addr) = addr {
             Ok(socket_addr)
         } else {
-            Err(Error::Unexpected("No response from echo service".to_string()))   
+            Err(Error::Unexpected(
+                "No response from echo service".to_string(),
+            ))
         }
     }
 
@@ -163,20 +160,26 @@ impl Endpoint {
 
         let mut tasks = Vec::default();
         for node in self.bootstrap_nodes.iter().cloned() {
+            debug!("Connecting to {:?}", &node);
             let connection = self.connect_to(&node).await?; // TODO: move into loop
             let task_handle = tokio::spawn(async move {
                 let (mut send_stream, mut recv_stream) = connection.open_bi_stream().await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
-                    Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
+                    Ok(WireMsg::EndpointEchoResp(socket_addr)) => {
+                        send_stream.send_user_msg(bytes::Bytes::from("OK")).await?;
+                        Ok(socket_addr)
+                    }
                     Ok(_) => Err(Error::Unexpected("Unexpected message".to_string())),
                     Err(err) => Err(err),
                 }
             });
             tasks.push(task_handle);
         }
-
-        self.local_addr()
-
+        let (result, _) = futures::future::select_ok(tasks).await.map_err(|err| {
+            log::error!("Failed to contact echo service: {}", err);
+            Error::BootstrapFailure
+        })?;
+        result
     }
 }

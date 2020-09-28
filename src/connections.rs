@@ -177,7 +177,7 @@ impl IncomingMessages {
                     src,
                     recv: RecvStream::new(recv)
                 }),
-            next_bi = Self::next_on_bi_streams(&mut self.bi_streams) =>
+            next_bi = Self::next_on_bi_streams(&mut self.bi_streams, self.peer_addr) =>
                 next_bi.map(|(bytes, send, recv)| Message::BiStream {
                     bytes,
                     src,
@@ -202,7 +202,11 @@ impl IncomingMessages {
                 None
             }
             Some(Ok(mut recv)) => match read_bytes(&mut recv).await {
-                Ok(bytes) => Some((bytes, recv)),
+                Ok(WireMsg::UserMsg(bytes)) => Some((bytes, recv)),
+                Ok(msg) => {
+                    error!("Unexpected message type: {:?}", msg);
+                    None
+                }
                 Err(err) => {
                     error!("{}", err);
                     None
@@ -214,6 +218,7 @@ impl IncomingMessages {
     // Returns next message sent by peer in a bidirectional stream.
     async fn next_on_bi_streams(
         bi_streams: &mut quinn::IncomingBiStreams,
+        peer_addr: SocketAddr,
     ) -> Option<(Bytes, quinn::SendStream, quinn::RecvStream)> {
         match bi_streams.next().await {
             None => None,
@@ -225,8 +230,17 @@ impl IncomingMessages {
                 error!("Failed to read incoming message on bi-stream: {}", err);
                 None
             }
-            Some(Ok((send, mut recv))) => match read_bytes(&mut recv).await {
-                Ok(bytes) => Some((bytes, send, recv)),
+            Some(Ok((mut send, mut recv))) => match read_bytes(&mut recv).await {
+                Ok(WireMsg::UserMsg(bytes)) => Some((bytes, send, recv)),
+                Ok(WireMsg::EndpointEchoReq) => {
+                    let message = WireMsg::EndpointEchoResp(peer_addr);
+                    message.write_to_stream(&mut send).await.ok()?;
+                    Some((Bytes::from(""), send, recv))
+                }
+                Ok(msg) => {
+                    error!("Unexpected message type: {:?}", msg);
+                    None
+                }
                 Err(err) => {
                     error!("{}", err);
                     None
@@ -248,7 +262,14 @@ impl RecvStream {
 
     /// Read next message from the stream
     pub async fn next(&mut self) -> Result<Bytes> {
-        read_bytes(&mut self.quinn_recv_stream).await
+        match read_bytes(&mut self.quinn_recv_stream).await {
+            Ok(WireMsg::UserMsg(bytes)) => Ok(bytes),
+            Ok(msg) => Err(Error::Unexpected(format!(
+                "Unexpected message type: {:?}",
+                msg
+            ))),
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -266,7 +287,7 @@ impl SendStream {
     pub async fn send_user_msg(&mut self, msg: Bytes) -> Result<()> {
         send_msg(&mut self.quinn_send_stream, msg).await
     }
-    
+
     /// Send a wire message
     pub async fn send(&mut self, msg: WireMsg) -> Result<()> {
         msg.write_to_stream(&mut self.quinn_send_stream).await
@@ -275,17 +296,11 @@ impl SendStream {
     pub async fn finish(mut self) -> Result<()> {
         self.quinn_send_stream.finish().await.map_err(Error::from)
     }
-
 }
 
 // Helper to read the message's bytes from the provided stream
-async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<Bytes> {
-    match WireMsg::read_from_stream(recv).await? {
-        WireMsg::UserMsg(msg_bytes) => Ok(msg_bytes),
-        WireMsg::EndpointEchoReq | WireMsg::EndpointEchoResp(_) => {
-            Err(Error::UnexpectedMessageType)
-        }
-    }
+async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg> {
+    WireMsg::read_from_stream(recv).await
 }
 
 // Helper to send bytes to peer using the provided stream.
