@@ -35,9 +35,13 @@ impl WireMsg {
     // Read a message's bytes from the provided stream
     pub async fn read_from_stream(recv: &mut quinn::RecvStream) -> Result<Self> {
         let mut header_bytes = [0; MSG_HEADER_LEN];
+        log::debug!("reading header");
         recv.read_exact(&mut header_bytes).await?;
+        dbg!(&header_bytes);
 
         let msg_header = MsgHeader::from_bytes(header_bytes);
+        dbg!(&msg_header);
+        log::debug!("reading data: {}", msg_header.data_len());
         let mut data: Vec<u8> = vec![0; msg_header.data_len()];
         let msg_flag = msg_header.usr_msg_flag();
 
@@ -62,17 +66,19 @@ impl WireMsg {
             WireMsg::UserMsg(ref m) => (m.clone(), USER_MSG_FLAG),
             _ => (
                 From::from(unwrap!(bincode::serialize(&self))),
-                !USER_MSG_FLAG,
+                ECHO_SRVC_MSG_FLAG,
             ),
         };
         trace!("Sending message to remote peer ({} bytes)", msg_bytes.len());
 
         let msg_header = MsgHeader::new(&msg_bytes, msg_flag)?;
         let header_bytes = msg_header.to_bytes();
+        dbg!(&header_bytes);
 
         // Send the header bytes over QUIC
         send_stream.write_all(&header_bytes).await?;
 
+        dbg!(&msg_bytes);
         // Send message bytes over QUIC
         send_stream.write_all(&msg_bytes[..]).await?;
 
@@ -96,6 +102,7 @@ impl fmt::Display for WireMsg {
 /// Format of the message header is as follows
 /// | version | message length | usr_msg_flag | reserved |
 /// | 2 bytes |     4 bytes    |    1 byte    | 2 bytes  |
+#[derive(Debug)]
 struct MsgHeader {
     version: u16,
     data_len: usize,

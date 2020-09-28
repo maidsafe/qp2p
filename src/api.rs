@@ -30,6 +30,7 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
 pub const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
 
 /// Message received from a peer
+#[derive(Debug)]
 pub enum Message {
     /// A message sent by peer on a uni-directional stream
     UniStream {
