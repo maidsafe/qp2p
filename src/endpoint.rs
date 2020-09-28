@@ -120,7 +120,7 @@ impl Endpoint {
             }
         };
         if let Some(socket_addr) = addr {
-            Ok(socket_addr)
+            Ok(self.local_addr) // FIXME: changing this to `socket_addr` breaks echo service functionality
         } else {
             Err(Error::Unexpected(
                 "No response from echo service".to_string(),
@@ -178,7 +178,6 @@ impl Endpoint {
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
                     Ok(WireMsg::EndpointEchoResp(socket_addr)) => {
-                        send_stream.send_user_msg(bytes::Bytes::from("OK")).await?;
                         Ok(socket_addr)
                     }
                     Ok(_) => Err(Error::Unexpected("Unexpected message".to_string())),
