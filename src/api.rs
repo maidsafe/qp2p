@@ -249,7 +249,7 @@ impl QuicP2p {
                     #[cfg(feature = "upnp")]
                     upnp_lease_duration,
                     #[cfg(feature = "upnp")]
-                    nodes
+                    nodes,
                 )
                 .await
             });
@@ -288,7 +288,6 @@ impl QuicP2p {
     /// }
     /// ```
     pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
-
         #[cfg(feature = "upnp")]
         let bootstrap_nodes: Vec<SocketAddr> = self
             .bootstrap_cache
@@ -307,8 +306,8 @@ impl QuicP2p {
             self.allow_random_port,
             #[cfg(feature = "upnp")]
             self.upnp_lease_duration,
-            #[cfg(feature = "upnp")]    
-            bootstrap_nodes
+            #[cfg(feature = "upnp")]
+            bootstrap_nodes,
         )
         .await
     }
@@ -375,10 +374,8 @@ async fn new_connection_to(
     client_cfg: quinn::ClientConfig,
     local_addr: SocketAddr,
     allow_random_port: bool,
-    #[cfg(feature = "upnp")]
-    upnp_lease_duration: u32,
-    #[cfg(feature = "upnp")]
-    bootstrap_nodes: Vec<SocketAddr>,
+    #[cfg(feature = "upnp")] upnp_lease_duration: u32,
+    #[cfg(feature = "upnp")] bootstrap_nodes: Vec<SocketAddr>,
 ) -> Result<(Endpoint, Connection)> {
     trace!("Attempting to connect to peer: {}", node_addr);
 
@@ -432,16 +429,17 @@ fn bind(
 }
 
 // Unwrap the config if provided by the user, otherwise construct the default one
+#[cfg(not(feature = "upnp"))]
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
     cfg.map_or(Config::read_or_construct_default(None), Ok)
 }
 
-// #[cfg(feature = "upnp")]
-// fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
-//     let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
-//     if cfg.ip.is_none() {
-//         cfg.ip = igd::get_local_ip().ok();
-//     };
+#[cfg(feature = "upnp")]
+fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
+    let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
+    if cfg.ip.is_none() {
+        cfg.ip = crate::igd::get_local_ip().ok();
+    };
 
-//     Ok(cfg)
-// }
+    Ok(cfg)
+}

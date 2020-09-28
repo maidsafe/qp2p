@@ -55,6 +55,8 @@ pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> Res
 
     debug!("Found IGD gateway: {:?}", gateway);
 
+    debug!("Our local address: {:?}", local_addr);
+
     if let SocketAddr::V4(socket_addr) = local_addr {
         let ext_addr = gateway
             .get_any_address(
