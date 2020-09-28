@@ -235,7 +235,7 @@ impl IncomingMessages {
                 Ok(WireMsg::EndpointEchoReq) => {
                     let message = WireMsg::EndpointEchoResp(peer_addr);
                     message.write_to_stream(&mut send).await.ok()?;
-                    Some((Bytes::from(""), send, recv))
+                    None
                 }
                 Ok(msg) => {
                     error!("Unexpected message type: {:?}", msg);
@@ -273,6 +273,12 @@ impl RecvStream {
     }
 }
 
+impl std::fmt::Debug for RecvStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "RecvStream {{ .. }} ")
+    }
+}
+
 /// Stream of outgoing messages
 pub struct SendStream {
     quinn_send_stream: quinn::SendStream,
@@ -295,6 +301,12 @@ impl SendStream {
     /// Gracefully finish current stream
     pub async fn finish(mut self) -> Result<()> {
         self.quinn_send_stream.finish().await.map_err(Error::from)
+    }
+}
+
+impl std::fmt::Debug for SendStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "SendStream {{ .. }} ")
     }
 }
 
