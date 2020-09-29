@@ -52,8 +52,7 @@ webpki = "~0.21.3"
   features = [ "dangerous_configuration" ]
 
 [dev-dependencies]
-clap = "2.33.1"
-tracing = "~0.1.15"
+async-std = "1.6.5"
 rand = "~0.7.3"
 
 [features]
