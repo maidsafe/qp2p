@@ -120,7 +120,7 @@ impl Endpoint {
             }
         };
         if let Some(socket_addr) = addr {
-            Ok(self.local_addr) // FIXME: changing this to `socket_addr` breaks echo service functionality
+            Ok(socket_addr)
         } else {
             Err(Error::Unexpected(
                 "No response from echo service".to_string(),
