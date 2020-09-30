@@ -6,7 +6,7 @@ homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/maidsafe/qp2p"
-version = "0.8.3"
+version = "0.8.4"
 authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 keywords = [ "quic" ]
 edition = "2018"
@@ -24,31 +24,31 @@ base64 = "~0.12.2"
 err-derive = "~0.2.4"
 webpki = "~0.21.3"
 
-[dependencies.quinn]
-version = "~0.6.1"
-features = [ "tls-rustls" ]
-default-features = false
+  [dependencies.quinn]
+  version = "~0.6.1"
+  features = [ "tls-rustls" ]
+  default-features = false
 
-[dependencies.tokio]
-version = "~0.2.21"
-features = [ "rt-core", "sync", "time", "io-driver", "macros" ]
+  [dependencies.tokio]
+  version = "~0.2.21"
+  features = [ "rt-core", "sync", "time", "io-driver", "macros" ]
 
-[dependencies.bytes]
-version = "~0.5.5"
-features = [ "serde" ]
+  [dependencies.bytes]
+  version = "~0.5.5"
+  features = [ "serde" ]
 
-[dependencies.igd]
-version = "~0.11.1"
-features = [ "aio" ]
-optional = true
+  [dependencies.igd]
+  version = "~0.11.1"
+  features = [ "aio" ]
+  optional = true
 
-[dependencies.serde]
-version = "1.0.113"
-features = [ "derive" ]
+  [dependencies.serde]
+  version = "1.0.113"
+  features = [ "derive" ]
 
-[dependencies.rustls]
-version = "~0.17.0"
-features = [ "dangerous_configuration" ]
+  [dependencies.rustls]
+  version = "~0.17.0"
+  features = [ "dangerous_configuration" ]
 
 [dev-dependencies]
 clap = "2.33.1"
