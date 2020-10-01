@@ -37,10 +37,8 @@ impl WireMsg {
         let mut header_bytes = [0; MSG_HEADER_LEN];
         log::debug!("reading header");
         recv.read_exact(&mut header_bytes).await?;
-        dbg!(&header_bytes);
 
         let msg_header = MsgHeader::from_bytes(header_bytes);
-        dbg!(&msg_header);
         log::debug!("reading data: {}", msg_header.data_len());
         let mut data: Vec<u8> = vec![0; msg_header.data_len()];
         let msg_flag = msg_header.usr_msg_flag();
@@ -73,12 +71,10 @@ impl WireMsg {
 
         let msg_header = MsgHeader::new(&msg_bytes, msg_flag)?;
         let header_bytes = msg_header.to_bytes();
-        dbg!(&header_bytes);
 
         // Send the header bytes over QUIC
         send_stream.write_all(&header_bytes).await?;
 
-        dbg!(&msg_bytes);
         // Send message bytes over QUIC
         send_stream.write_all(&msg_bytes[..]).await?;
 
