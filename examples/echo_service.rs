@@ -29,18 +29,20 @@ async fn main() -> Result<(), Error> {
     if genesis {
         println!("Waiting for connections");
         let mut incoming = endpoint.listen()?;
-        let mut messages = incoming.next().await.ok_or(Error::Unexpected(
-            "Error during incoming connection".to_string(),
-        ))?;
+        let mut messages = incoming
+            .next()
+            .await
+            .ok_or_else(|| Error::Unexpected("Error during incoming connection".to_string()))?;
         let connecting_peer = messages.remote_addr();
         println!("Incoming connection from: {}", &connecting_peer);
         let message = messages.next().await;
         assert!(message.is_none());
         println!("Responded to peer with EchoService response");
         println!("Waiting for messages...");
-        let mut messages = incoming.next().await.ok_or(Error::Unexpected(
-            "Error during incoming connection".to_string(),
-        ))?;
+        let mut messages = incoming
+            .next()
+            .await
+            .ok_or_else(|| Error::Unexpected("Error during incoming connection".to_string()))?;
         let message = messages.next().await.unwrap();
         let (mut bytes, mut send, mut recv) = if let Message::BiStream {
             bytes, send, recv, ..
