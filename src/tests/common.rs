@@ -1,5 +1,5 @@
+use crate::{Config, Error, Message, QuicP2p, Result};
 use bytes::Bytes;
-use qp2p::{Config, Error, Message, QuicP2p, Result};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},

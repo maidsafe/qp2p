@@ -69,3 +69,6 @@ pub use connections::{Connection, IncomingConnections, IncomingMessages, RecvStr
 pub use dirs::{Dirs, OverRide};
 pub use endpoint::Endpoint;
 pub use error::{Error, Result};
+
+#[cfg(test)]
+mod tests;

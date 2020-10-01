@@ -11,6 +11,7 @@
 use super::error::Error;
 #[cfg(feature = "upnp")]
 use super::igd::forward_port;
+#[cfg(feature = "upnp")]
 use super::wire_msg::WireMsg;
 use super::{
     connections::{Connection, IncomingConnections},
@@ -48,7 +49,6 @@ impl Endpoint {
         #[cfg(feature = "upnp")] bootstrap_nodes: Vec<SocketAddr>,
     ) -> Result<Self> {
         let local_addr = quic_endpoint.local_addr()?;
-        dbg!(local_addr);
         Ok(Self {
             local_addr,
             quic_endpoint,
@@ -166,9 +166,7 @@ impl Endpoint {
                 let (mut send_stream, mut recv_stream) = connection.open_bi_stream().await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
-                    Ok(WireMsg::EndpointEchoResp(socket_addr)) => {
-                        Ok(socket_addr)
-                    }
+                    Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
                     Ok(_) => Err(Error::Unexpected("Unexpected message".to_string())),
                     Err(err) => Err(err),
                 }
