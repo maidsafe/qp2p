@@ -24,7 +24,7 @@ async fn main() -> Result<(), Error> {
         false,
     )?;
     let mut endpoint = qp2p.new_endpoint()?;
-    let socket_addr = endpoint.our_endpoint().await?;
+    let socket_addr = endpoint.socket_addr().await?;
     println!("Process running at: {}", &socket_addr);
     if genesis {
         println!("Waiting for connections");

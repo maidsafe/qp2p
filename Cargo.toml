@@ -45,7 +45,6 @@ webpki = "~0.21.3"
   [dependencies.igd]
   version = "~0.11.1"
   features = [ "aio" ]
-  optional = true
 
   [dependencies.rustls]
   version = "~0.17.0"
@@ -54,9 +53,6 @@ webpki = "~0.21.3"
 [dev-dependencies]
 async-std = "1.6.5"
 rand = "~0.7.3"
-
-[features]
-upnp = [ "igd" ]
 
 [target."cfg(any(all(unix, not(any(target_os = \"android\", target_os = \"androideabi\", target_os = \"ios\"))), windows))".dependencies]
 directories = "2.0.2"

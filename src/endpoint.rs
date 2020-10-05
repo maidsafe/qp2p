@@ -7,11 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-#[cfg(feature = "upnp")]
 use super::error::Error;
-#[cfg(feature = "upnp")]
 use super::igd::forward_port;
-#[cfg(feature = "upnp")]
 use super::wire_msg::WireMsg;
 use super::{
     connections::{Connection, IncomingConnections},
@@ -19,7 +16,6 @@ use super::{
 };
 use futures::lock::Mutex;
 use log::trace;
-#[cfg(feature = "upnp")]
 use log::{debug, info};
 use std::{net::SocketAddr, sync::Arc};
 
@@ -34,9 +30,7 @@ pub struct Endpoint {
     quic_endpoint: quinn::Endpoint,
     quic_incoming: Arc<Mutex<quinn::Incoming>>,
     client_cfg: quinn::ClientConfig,
-    #[cfg(feature = "upnp")]
     upnp_lease_duration: u32,
-    #[cfg(feature = "upnp")]
     bootstrap_nodes: Vec<SocketAddr>,
 }
 
@@ -56,8 +50,8 @@ impl Endpoint {
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,
         client_cfg: quinn::ClientConfig,
-        #[cfg(feature = "upnp")] upnp_lease_duration: u32,
-        #[cfg(feature = "upnp")] bootstrap_nodes: Vec<SocketAddr>,
+        upnp_lease_duration: u32,
+        bootstrap_nodes: Vec<SocketAddr>,
     ) -> Result<Self> {
         let local_addr = quic_endpoint.local_addr()?;
         Ok(Self {
@@ -65,16 +59,23 @@ impl Endpoint {
             quic_endpoint,
             quic_incoming: Arc::new(Mutex::new(quic_incoming)),
             client_cfg,
-            #[cfg(feature = "upnp")]
             upnp_lease_duration,
-            #[cfg(feature = "upnp")]
             bootstrap_nodes,
         })
     }
 
     /// Endpoint local address
-    pub fn local_addr(&self) -> Result<SocketAddr> {
+    async fn local_addr(&self) -> Result<SocketAddr> {
         Ok(self.local_addr)
+    }
+
+    /// Returns the socket address of the endpoint
+    pub async fn socket_addr(&mut self) -> Result<SocketAddr> {
+        if cfg!(test) {
+            self.local_addr().await
+        } else {
+            self.public_addr().await
+        }
     }
 
     /// Get our connection adddress to give to others for them to connect to us.
@@ -84,8 +85,7 @@ impl Endpoint {
     /// simply build our connection info by querying the underlying bound socket for our address.
     /// Note that if such an obtained address is of unspecified category we will ignore that as
     /// such an address cannot be reached and hence not useful.
-    #[cfg(feature = "upnp")]
-    pub async fn our_endpoint(&mut self) -> Result<SocketAddr> {
+    async fn public_addr(&mut self) -> Result<SocketAddr> {
         // Skip port forwarding
         if self.local_addr.ip().is_loopback() {
             return Ok(self.local_addr);
@@ -128,12 +128,6 @@ impl Endpoint {
         }
     }
 
-    /// Endpoint local address to give others for them to connect to us.
-    #[cfg(not(feature = "upnp"))]
-    pub async fn our_endpoint(&mut self) -> Result<SocketAddr> {
-        self.local_addr()
-    }
-
     /// Connect to another peer
     pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<Connection> {
         let quinn_connecting = self.quic_endpoint.connect_with(
@@ -162,7 +156,6 @@ impl Endpoint {
     }
 
     // Private helper
-    #[cfg(feature = "upnp")]
     async fn query_ip_echo_service(&self) -> Result<SocketAddr> {
         // Bail out early if we don't have any contacts.
         if self.bootstrap_nodes.is_empty() {

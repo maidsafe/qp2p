@@ -1,7 +1,7 @@
 use crate::{Config, Error, QuicP2p};
 
 #[tokio::test]
-#[ignore = "Will fail due to potential lack of hairpinning"]
+// #[ignore = "Will fail due to potential lack of hairpinning"]
 async fn echo_service() -> Result<(), Error> {
     // Endpoint builder
     let qp2p = QuicP2p::with_config(
@@ -16,7 +16,7 @@ async fn echo_service() -> Result<(), Error> {
     // Create Endpoint
     let mut peer1 = qp2p.new_endpoint()?;
     // Get our address (using IGD only)
-    let peer_addr = peer1.our_endpoint().await?;
+    let peer_addr = peer1.socket_addr().await?;
 
     // Another EP builder with bootstrap node
     let qp2p = QuicP2p::with_config(
@@ -47,7 +47,7 @@ async fn echo_service() -> Result<(), Error> {
     // get our address using echo service
     let handle2 = rt.spawn(async move {
         let mut peer2 = qp2p.new_endpoint()?;
-        let socket_addr = peer2.our_endpoint().await?;
+        let socket_addr = peer2.socket_addr().await?;
         Ok::<_, Error>(socket_addr)
     });
     handle1
