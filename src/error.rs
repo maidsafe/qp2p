@@ -67,16 +67,12 @@ pub enum Error {
     ReadExactError(#[source] quinn::ReadExactError),
     #[error(display = "Could not add certificate")]
     AddCertificateError(#[source] quinn::ParseError),
-    #[cfg(feature = "upnp")]
     #[error(display = "Could not use IGD for automatic port forwarding")]
     IgdAddPort(#[source] igd::AddAnyPortError),
-    #[cfg(feature = "upnp")]
     #[error(display = "Could not renew port mapping using IGD")]
     IgdRenewPort(#[source] igd::AddPortError),
-    #[cfg(feature = "upnp")]
     #[error(display = "Could not find the gateway device for IGD")]
     IgdSearch(#[source] igd::SearchError),
-    #[cfg(feature = "upnp")]
     #[error(display = "IGD is not supported")]
     IgdNotSupported,
     #[error(display = "Empty response message received from peer")]

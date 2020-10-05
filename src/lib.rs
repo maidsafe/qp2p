@@ -55,7 +55,6 @@ mod connections;
 mod dirs;
 mod endpoint;
 mod error;
-#[cfg(feature = "upnp")]
 mod igd;
 mod peer_config;
 #[cfg(test)]
