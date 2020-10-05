@@ -281,7 +281,7 @@ impl std::fmt::Debug for RecvStream {
 
 /// Stream of outgoing messages
 pub struct SendStream {
-    quinn_send_stream: quinn::SendStream,
+    pub(crate) quinn_send_stream: quinn::SendStream,
 }
 
 impl SendStream {
