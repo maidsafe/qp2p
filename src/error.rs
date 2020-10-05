@@ -73,6 +73,8 @@ pub enum Error {
     IgdRenewPort(#[source] igd::AddPortError),
     #[error(display = "Could not find the gateway device for IGD")]
     IgdSearch(#[source] igd::SearchError),
+    #[error(display = "JoinError")]
+    JoinError(#[source] tokio::task::JoinError),
     #[error(display = "IGD is not supported")]
     IgdNotSupported,
     #[error(display = "Empty response message received from peer")]
