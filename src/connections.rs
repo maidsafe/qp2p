@@ -205,11 +205,11 @@ impl IncomingMessages {
                 Ok(WireMsg::UserMsg(bytes)) => Some((bytes, recv)),
                 Ok(msg) => {
                     error!("Unexpected message type: {:?}", msg);
-                    None
+                    Some((Bytes::new(), recv))
                 }
                 Err(err) => {
                     error!("{}", err);
-                    None
+                    Some((Bytes::new(), recv))
                 }
             },
         }
@@ -235,15 +235,15 @@ impl IncomingMessages {
                 Ok(WireMsg::EndpointEchoReq) => {
                     let message = WireMsg::EndpointEchoResp(peer_addr);
                     message.write_to_stream(&mut send).await.ok()?;
-                    None
+                    Some((Bytes::new(), send, recv))
                 }
                 Ok(msg) => {
                     error!("Unexpected message type: {:?}", msg);
-                    None
+                    Some((Bytes::new(), send, recv))
                 }
                 Err(err) => {
                     error!("{}", err);
-                    None
+                    Some((Bytes::new(), send, recv))
                 }
             },
         }
