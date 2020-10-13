@@ -70,7 +70,7 @@ impl Endpoint {
     }
 
     /// Returns the socket address of the endpoint
-    pub async fn socket_addr(&mut self) -> Result<SocketAddr> {
+    pub async fn socket_addr(&self) -> Result<SocketAddr> {
         if cfg!(test) {
             self.local_addr().await
         } else {
@@ -85,7 +85,7 @@ impl Endpoint {
     /// simply build our connection info by querying the underlying bound socket for our address.
     /// Note that if such an obtained address is of unspecified category we will ignore that as
     /// such an address cannot be reached and hence not useful.
-    async fn public_addr(&mut self) -> Result<SocketAddr> {
+    async fn public_addr(&self) -> Result<SocketAddr> {
         // Skip port forwarding
         if self.local_addr.ip().is_loopback() {
             return Ok(self.local_addr);
