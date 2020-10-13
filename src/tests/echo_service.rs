@@ -23,8 +23,7 @@ async fn echo_service() -> Result<()> {
             .next()
             .await
             .ok_or_else(|| Error::Unexpected("No incoming messages".to_string()))?;
-        let message = inbound_messages.next().await;
-        assert!(message.is_none()); // Qp2p  would handle this message internally
+        let _message = inbound_messages.next().await;
         Ok::<_, Error>(inbound_messages) // Return this object to prevent the connection from being dropped
     });
 
