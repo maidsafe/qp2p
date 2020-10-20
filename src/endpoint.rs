@@ -14,7 +14,7 @@ use super::{
     connections::{Connection, IncomingConnections},
     error::Result,
 };
-use futures::lock::Mutex;
+use futures::{lock::Mutex, FutureExt};
 use log::trace;
 use log::{debug, info};
 use std::{net::SocketAddr, sync::Arc};
@@ -87,44 +87,59 @@ impl Endpoint {
     /// such an address cannot be reached and hence not useful.
     async fn public_addr(&self) -> Result<SocketAddr> {
         // Skip port forwarding
-        if self.local_addr.ip().is_loopback() {
+        if self.local_addr.ip().is_loopback() || !self.local_addr.ip().is_unspecified() {
             return Ok(self.local_addr);
         }
 
         let mut addr = None;
 
         // Attempt to use IGD for port forwarding
-        match forward_port(self.local_addr, self.upnp_lease_duration).await {
-            Ok(public_sa) => {
-                debug!("IGD success: {:?}", SocketAddr::V4(public_sa));
-                addr = Some(SocketAddr::V4(public_sa));
+        match tokio::time::timeout(std::time::Duration::from_secs(30), forward_port(self.local_addr, self.upnp_lease_duration)).await {
+            Ok(res) => {
+                match res {
+                    Ok(public_sa) => {
+                        debug!("IGD success: {:?}", SocketAddr::V4(public_sa));
+                        addr = Some(SocketAddr::V4(public_sa));
+                    }
+                    Err(e) => {
+                        info!("IGD request failed: {} - {:?}", e, e);
+                        // return Err(Error::IgdNotSupported);
+                    }
+                }
             }
             Err(e) => {
-                info!("IGD request failed: {} - {:?}", e, e);
+                info!("IGD request timeout: {:?}", e);
                 // return Err(Error::IgdNotSupported);
             }
         }
 
         // Try to contact an echo service
-        match self.query_ip_echo_service().await {
-            Ok(echo_res) => match addr {
-                None => {
-                    addr = Some(echo_res);
-                }
-                Some(address) => {
-                    info!("Got response from echo service: {:?}, but IGD has already provided our external address: {:?}", echo_res, address);
+        match tokio::time::timeout(std::time::Duration::from_secs(30), self.query_ip_echo_service()).await {
+            Ok(res) => {
+                match res {
+                    Ok(echo_res) => match addr {
+                        None => {
+                            addr = Some(echo_res);
+                        }
+                        Some(address) => {
+                            info!("Got response from echo service: {:?}, but IGD has already provided our external address: {:?}", echo_res, address);
+                        }
+                    },
+                    Err(err) => {
+                        info!("Could not contact echo service: {} - {:?}", err, err);
+                    }
                 }
             },
-            Err(err) => {
-                info!("Could not contact echo service: {} - {:?}", err, err);
+            Err(e) => {
+                info!("Echo service timed out: {:?}", e)
             }
-        };
+        }
         if let Some(socket_addr) = addr {
             Ok(socket_addr)
         } else {
             Err(Error::Unexpected(
                 "No response from echo service".to_string(),
-            ))
+        ))
         }
     }
 
