@@ -63,6 +63,9 @@ pub struct Config {
     /// Duration of a UPnP port mapping.
     #[structopt(long)]
     pub upnp_lease_duration: Option<u32>,
+    /// Specify if port forwarding via UPnP should be done or not
+    #[structopt(long)]
+    pub forward_port: bool,
 }
 
 impl Config {
