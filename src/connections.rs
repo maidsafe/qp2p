@@ -48,7 +48,7 @@ impl Connection {
     ///     let mut config = Config::default();
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut peer_1 = quic_p2p.new_endpoint()?;
+    ///     let peer_1 = quic_p2p.new_endpoint()?;
     ///     let peer1_addr = peer_1.socket_addr().await?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
@@ -74,7 +74,7 @@ impl Connection {
     ///     let mut config = Config::default();
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut peer_1 = quic_p2p.new_endpoint()?;
+    ///     let peer_1 = quic_p2p.new_endpoint()?;
     ///     let peer1_addr = peer_1.socket_addr().await?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;

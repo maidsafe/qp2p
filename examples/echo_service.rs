@@ -23,7 +23,7 @@ async fn main() -> Result<(), Error> {
         &bootstrap_nodes,
         false,
     )?;
-    let mut endpoint = qp2p.new_endpoint()?;
+    let endpoint = qp2p.new_endpoint()?;
     let socket_addr = endpoint.socket_addr().await?;
     println!("Process running at: {}", &socket_addr);
     if genesis {
