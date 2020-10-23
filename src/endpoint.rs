@@ -13,11 +13,13 @@ use super::wire_msg::WireMsg;
 use super::{
     connections::{Connection, IncomingConnections},
     error::Result,
+    Config,
 };
-use futures::{lock::Mutex, FutureExt};
+use futures::lock::Mutex;
 use log::trace;
 use log::{debug, info};
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::time::timeout;
 
 /// Host name of the Quic communication certificate used by peers
 // FIXME: make it configurable
@@ -30,8 +32,8 @@ pub struct Endpoint {
     quic_endpoint: quinn::Endpoint,
     quic_incoming: Arc<Mutex<quinn::Incoming>>,
     client_cfg: quinn::ClientConfig,
-    upnp_lease_duration: u32,
     bootstrap_nodes: Vec<SocketAddr>,
+    qp2p_config: Config,
 }
 
 impl Endpoint {
@@ -39,8 +41,8 @@ impl Endpoint {
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,
         client_cfg: quinn::ClientConfig,
-        upnp_lease_duration: u32,
         bootstrap_nodes: Vec<SocketAddr>,
+        qp2p_config: Config,
     ) -> Result<Self> {
         let local_addr = quic_endpoint.local_addr()?;
         Ok(Self {
@@ -48,8 +50,8 @@ impl Endpoint {
             quic_endpoint,
             quic_incoming: Arc::new(Mutex::new(quic_incoming)),
             client_cfg,
-            upnp_lease_duration,
             bootstrap_nodes,
+            qp2p_config,
         })
     }
 
@@ -60,7 +62,7 @@ impl Endpoint {
 
     /// Returns the socket address of the endpoint
     pub async fn socket_addr(&self) -> Result<SocketAddr> {
-        if cfg!(test) {
+        if cfg!(test) || !self.qp2p_config.forward_port {
             self.local_addr().await
         } else {
             self.public_addr().await
@@ -83,7 +85,17 @@ impl Endpoint {
         let mut addr = None;
 
         // Attempt to use IGD for port forwarding
-        match tokio::time::timeout(std::time::Duration::from_secs(30), forward_port(self.local_addr, self.upnp_lease_duration)).await {
+        match timeout(
+            Duration::from_secs(30),
+            forward_port(
+                self.local_addr,
+                self.qp2p_config.upnp_lease_duration.ok_or_else(|| {
+                    Error::Unexpected("Missing UPnP config parameter".to_string())
+                })?,
+            ),
+        )
+        .await
+        {
             Ok(res) => {
                 match res {
                     Ok(public_sa) => {
@@ -103,32 +115,28 @@ impl Endpoint {
         }
 
         // Try to contact an echo service
-        match tokio::time::timeout(std::time::Duration::from_secs(30), self.query_ip_echo_service()).await {
-            Ok(res) => {
-                match res {
-                    Ok(echo_res) => match addr {
-                        None => {
-                            addr = Some(echo_res);
-                        }
-                        Some(address) => {
-                            info!("Got response from echo service: {:?}, but IGD has already provided our external address: {:?}", echo_res, address);
-                        }
-                    },
-                    Err(err) => {
-                        info!("Could not contact echo service: {} - {:?}", err, err);
+        match timeout(Duration::from_secs(30), self.query_ip_echo_service()).await {
+            Ok(res) => match res {
+                Ok(echo_res) => match addr {
+                    None => {
+                        addr = Some(echo_res);
                     }
+                    Some(address) => {
+                        info!("Got response from echo service: {:?}, but IGD has already provided our external address: {:?}", echo_res, address);
+                    }
+                },
+                Err(err) => {
+                    info!("Could not contact echo service: {} - {:?}", err, err);
                 }
             },
-            Err(e) => {
-                info!("Echo service timed out: {:?}", e)
-            }
+            Err(e) => info!("Echo service timed out: {:?}", e),
         }
         if let Some(socket_addr) = addr {
             Ok(socket_addr)
         } else {
             Err(Error::Unexpected(
                 "No response from echo service".to_string(),
-        ))
+            ))
         }
     }
 

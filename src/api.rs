@@ -71,7 +71,7 @@ pub struct QuicP2p {
     bootstrap_cache: BootstrapCache,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
-    upnp_lease_duration: u32,
+    qp2p_config: Config,
 }
 
 impl QuicP2p {
@@ -157,6 +157,8 @@ impl QuicP2p {
             .clone()
             .map(|custom_dir| Dirs::Overide(OverRide::new(&custom_dir)));
 
+        let mut qp2p_config = cfg.clone();
+
         let mut bootstrap_cache =
             BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref())?;
         if use_bootstrap_cache {
@@ -178,13 +180,19 @@ impl QuicP2p {
             .upnp_lease_duration
             .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC);
 
+        qp2p_config.ip = Some(ip);
+        qp2p_config.port = Some(port);
+        qp2p_config.keep_alive_interval_msec = Some(keep_alive_interval_msec);
+        qp2p_config.idle_timeout_msec = Some(idle_timeout_msec);
+        qp2p_config.upnp_lease_duration = Some(upnp_lease_duration);
+
         Ok(Self {
             local_addr: SocketAddr::new(ip, port),
             allow_random_port,
             bootstrap_cache,
             endpoint_cfg,
             client_cfg,
-            upnp_lease_duration,
+            qp2p_config,
         })
     }
 
@@ -209,7 +217,7 @@ impl QuicP2p {
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     config.port = Some(3000);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut endpoint = quic_p2p.new_endpoint()?;
+    ///     let endpoint = quic_p2p.new_endpoint()?;
     ///     let peer_addr = endpoint.socket_addr().await?;
     ///
     ///     config.port = Some(3001);
@@ -233,12 +241,12 @@ impl QuicP2p {
         // Attempt to connect to all nodes and return the first one to succeed
         let mut tasks = Vec::default();
         for node_addr in bootstrap_nodes.iter().cloned() {
+            let qp2p_config = self.qp2p_config.clone();
             let nodes = bootstrap_nodes.clone();
             let endpoint_cfg = self.endpoint_cfg.clone();
             let client_cfg = self.client_cfg.clone();
             let local_addr = self.local_addr;
             let allow_random_port = self.allow_random_port;
-            let upnp_lease_duration = self.upnp_lease_duration;
             let task_handle = tokio::spawn(async move {
                 new_connection_to(
                     &node_addr,
@@ -246,8 +254,8 @@ impl QuicP2p {
                     client_cfg,
                     local_addr,
                     allow_random_port,
-                    upnp_lease_duration,
                     nodes,
+                    qp2p_config,
                 )
                 .await
             });
@@ -278,14 +286,14 @@ impl QuicP2p {
     ///     let mut config = Config::default();
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut peer_1 = quic_p2p.new_endpoint()?;
+    ///     let peer_1 = quic_p2p.new_endpoint()?;
     ///     let peer1_addr = peer_1.socket_addr().await?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
     ///     Ok(())
     /// }
     /// ```
-    pub async fn connect_to(&mut self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
+    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
         let bootstrap_nodes: Vec<SocketAddr> = self
             .bootstrap_cache
             .peers()
@@ -301,8 +309,8 @@ impl QuicP2p {
             self.client_cfg.clone(),
             self.local_addr,
             self.allow_random_port,
-            self.upnp_lease_duration,
             bootstrap_nodes,
+            self.qp2p_config.clone(),
         )
         .await
     }
@@ -349,8 +357,8 @@ impl QuicP2p {
             quinn_endpoint,
             quinn_incoming,
             self.client_cfg.clone(),
-            self.upnp_lease_duration,
             bootstrap_nodes,
+            self.qp2p_config.clone(),
         )?;
 
         Ok(endpoint)
@@ -366,8 +374,8 @@ async fn new_connection_to(
     client_cfg: quinn::ClientConfig,
     local_addr: SocketAddr,
     allow_random_port: bool,
-    upnp_lease_duration: u32,
     bootstrap_nodes: Vec<SocketAddr>,
+    qp2p_config: Config,
 ) -> Result<(Endpoint, Connection)> {
     trace!("Attempting to connect to peer: {}", node_addr);
 
@@ -379,8 +387,8 @@ async fn new_connection_to(
         quinn_endpoint,
         quinn_incoming,
         client_cfg,
-        upnp_lease_duration,
         bootstrap_nodes,
+        qp2p_config,
     )?;
     let connection = endpoint.connect_to(node_addr).await?;
 

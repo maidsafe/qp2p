@@ -33,10 +33,10 @@ fn random_msg() -> Bytes {
 #[tokio::test]
 async fn successful_connection() -> Result<()> {
     let qp2p = new_qp2p();
-    let mut peer1 = qp2p.new_endpoint()?;
+    let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
 
-    let mut peer2 = qp2p.new_endpoint()?;
+    let peer2 = qp2p.new_endpoint()?;
     let _connection = peer2.connect_to(&peer1_addr).await?;
 
     let mut incoming_conn = peer1.listen()?;
@@ -53,7 +53,7 @@ async fn successful_connection() -> Result<()> {
 #[tokio::test]
 async fn bi_directional_streams() -> Result<()> {
     let qp2p = new_qp2p();
-    let mut peer1 = qp2p.new_endpoint()?;
+    let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
 
     let peer2 = qp2p.new_endpoint()?;
@@ -109,11 +109,11 @@ async fn bi_directional_streams() -> Result<()> {
 #[tokio::test]
 async fn uni_directional_streams() -> Result<()> {
     let qp2p = new_qp2p();
-    let mut peer1 = qp2p.new_endpoint()?;
+    let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
     let mut incoming_conn_peer1 = peer1.listen()?;
 
-    let mut peer2 = qp2p.new_endpoint()?;
+    let peer2 = qp2p.new_endpoint()?;
     let peer2_addr = peer2.socket_addr().await?;
     let mut incoming_conn_peer2 = peer2.listen()?;
 
