@@ -7,6 +7,7 @@ async fn echo_service() -> Result<()> {
         Some(Config {
             port: None,
             ip: None,
+            forward_port: true,
             ..Default::default()
         }),
         Default::default(),

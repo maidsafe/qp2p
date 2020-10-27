@@ -43,6 +43,7 @@ impl BootstrapCache {
     pub fn new(
         hard_coded_contacts: HashSet<SocketAddr>,
         user_override: Option<&Dirs>,
+        fresh: bool,
     ) -> Result<BootstrapCache> {
         let path = |dir: &Dirs| {
             let path = dir.cache_dir();
@@ -55,7 +56,11 @@ impl BootstrapCache {
         )?;
 
         let peers = if cache_path.exists() {
-            utils::read_from_disk(&cache_path)?
+            if fresh {
+                VecDeque::new()
+            } else {
+                utils::read_from_disk(&cache_path)?
+            }
         } else {
             let cache_dir = cache_path
                 .parent()
@@ -107,6 +112,23 @@ impl BootstrapCache {
         self.try_sync_to_disk();
     }
 
+    pub fn clear_from_disk(user_override: Option<&Dirs>) -> Result<()> {
+        let path = |dir: &Dirs| {
+            let path = dir.cache_dir();
+            path.join("bootstrap_cache")
+        };
+
+        let cache_path = user_override.map_or_else(
+            || Ok::<_, Error>(path(&utils::project_dir()?)),
+            |d| Ok(path(d)),
+        )?;
+
+        if cache_path.exists() {
+            std::fs::remove_file(cache_path)?;
+        }
+        Ok(())
+    }
+
     fn move_to_cache_top(&mut self, peer: SocketAddr) {
         if let Some(pos) = self.peers.iter().position(|p| *p == peer) {
             let _ = self.peers.remove(pos);
@@ -138,7 +160,7 @@ mod tests {
         #[test]
         fn when_10_peers_are_added_they_are_synced_to_disk() {
             let dirs = test_dirs();
-            let mut cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs)));
+            let mut cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs), false));
 
             for _ in 0..10 {
                 cache.add_peer(rand_node_addr());
@@ -146,7 +168,7 @@ mod tests {
 
             assert_eq!(cache.peers.len(), 10);
 
-            let cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs)));
+            let cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs), false));
             assert_eq!(cache.peers.len(), 10);
         }
 
@@ -158,7 +180,7 @@ mod tests {
             assert!(hard_coded.insert(peer1));
 
             let dirs = test_dirs();
-            let mut cache = BootstrapCache::new(hard_coded, Some(&dirs)).unwrap();
+            let mut cache = BootstrapCache::new(hard_coded, Some(&dirs), false).unwrap();
 
             cache.add_peer(peer1);
             cache.add_peer(peer2);
@@ -172,7 +194,7 @@ mod tests {
             let dirs = test_dirs();
             let port_base = 5000;
 
-            let mut cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs)));
+            let mut cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs), false));
 
             for i in 0..MAX_CACHE_SIZE {
                 cache.add_peer(make_node_addr(port_base + i as u16));
@@ -190,7 +212,7 @@ mod tests {
         #[test]
         fn it_moves_given_node_to_the_top_of_the_list() {
             let dirs = test_dirs();
-            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs)).unwrap();
+            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs), false).unwrap();
             let peer1 = rand_node_addr();
             let peer2 = rand_node_addr();
             let peer3 = rand_node_addr();
