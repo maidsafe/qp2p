@@ -66,6 +66,12 @@ pub struct Config {
     /// Specify if port forwarding via UPnP should be done or not
     #[structopt(long)]
     pub forward_port: bool,
+    /// Use a fresh config without re-using any config available on disk
+    #[structopt(long)]
+    pub fresh: bool,
+    /// Clean all existing config available on disk
+    #[structopt(long)]
+    pub clean: bool,
 }
 
 impl Config {
@@ -90,6 +96,15 @@ impl Config {
 
             Ok(cfg)
         }
+    }
+
+    /// Clear all configuration files from disk
+    pub fn clear_config_from_disk(user_override: Option<&Dirs>) -> Result<()> {
+        let config_path = config_path(user_override)?;
+        if config_path.exists() {
+            fs::remove_file(&config_path)?;
+        }
+        Ok(())
     }
 }
 

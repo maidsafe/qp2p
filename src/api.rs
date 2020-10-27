@@ -159,8 +159,12 @@ impl QuicP2p {
 
         let mut qp2p_config = cfg.clone();
 
+        if cfg.clean {
+            BootstrapCache::clear_from_disk(custom_dirs.as_ref())?;
+        }
+
         let mut bootstrap_cache =
-            BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref())?;
+            BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref(), cfg.fresh)?;
         if use_bootstrap_cache {
             bootstrap_cache.peers_mut().extend(bootstrap_nodes);
         } else {
@@ -428,9 +432,11 @@ fn bind(
 
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
     let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
-    if cfg.ip.is_none() {
+    if cfg.ip.is_none() && cfg.forward_port {
         cfg.ip = crate::igd::get_local_ip().ok();
     };
-
+    if cfg.clean {
+        Config::clear_config_from_disk(None)?;
+    }
     Ok(cfg)
 }
