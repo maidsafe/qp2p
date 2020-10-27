@@ -16,6 +16,7 @@ futures = "~0.3.5"
 unwrap = "1.2.1"
 bincode = "1.2.1"
 crossbeam-channel = "~0.4.2"
+serde = { version = "1.0.117", features = ["derive"] }
 serde_json = "1.0.59"
 structopt = "~0.3.15"
 rcgen = "~0.8.4"
@@ -41,10 +42,6 @@ webpki = "~0.21.3"
   version = "~0.11.1"
   features = [ "aio" ]
   optional = true
-
-  [dependencies.serde]
-  version = "1.0.117"
-  features = [ "derive" ]
 
   [dependencies.rustls]
   version = "~0.17.0"
