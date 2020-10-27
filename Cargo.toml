@@ -6,7 +6,7 @@ homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/maidsafe/qp2p"
-version = "0.8.5"
+version = "0.8.6"
 authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 keywords = [ "quic" ]
 edition = "2018"
@@ -16,7 +16,6 @@ futures = "~0.3.5"
 unwrap = "1.2.1"
 bincode = "1.2.1"
 crossbeam-channel = "~0.4.2"
-serde = { version = "1.0.117", features = ["derive"] }
 serde_json = "1.0.59"
 structopt = "~0.3.15"
 rcgen = "~0.8.4"
@@ -24,6 +23,10 @@ log = "~0.4.8"
 base64 = "~0.12.2"
 err-derive = "~0.2.4"
 webpki = "~0.21.3"
+
+  [dependencies.serde]
+  version = "1.0.117"
+  features = [ "derive" ]
 
   [dependencies.quinn]
   version = "~0.6.1"
