@@ -203,7 +203,7 @@ impl QuicP2p {
     ///     config.port = Some(3000);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), &[], true)?;
     ///     let endpoint = quic_p2p.new_endpoint()?;
-    ///     let peer_addr = endpoint.our_endpoint()?;
+    ///     let peer_addr = endpoint.our_addr()?;
     ///
     ///     config.port = Some(3001);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config), &[peer_addr], true)?;
@@ -268,7 +268,7 @@ impl QuicP2p {
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
     ///     let peer_1 = quic_p2p.new_endpoint()?;
-    ///     let peer1_addr = peer_1.our_endpoint()?;
+    ///     let peer1_addr = peer_1.our_addr()?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
     ///     Ok(())

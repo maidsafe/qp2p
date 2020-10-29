@@ -63,14 +63,14 @@ impl Endpoint {
     /// Note that if such an obtained address is of unspecified category we will ignore that as
     /// such an address cannot be reached and hence not useful.
     #[cfg(feature = "upnp")]
-    pub fn our_endpoint(&self) -> Result<SocketAddr> {
+    pub fn our_addr(&self) -> Result<SocketAddr> {
         // TODO: make use of UPnP
         self.local_addr()
     }
 
     /// Endpoint local address to give others for them to connect to us.
     #[cfg(not(feature = "upnp"))]
-    pub fn our_endpoint(&self) -> Result<SocketAddr> {
+    pub fn our_addr(&self) -> Result<SocketAddr> {
         self.local_addr()
     }
 
