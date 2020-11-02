@@ -8,13 +8,13 @@
 // Software.
 
 use crate::{
-    dirs::Dirs,
     error::{Error, Result},
     utils,
 };
 use bytes::Bytes;
 use log::trace;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::{
     collections::HashSet, fmt, fs, io, net::IpAddr, net::SocketAddr, path::PathBuf, str::FromStr,
 };
@@ -78,7 +78,7 @@ impl Config {
     /// Try and read the config off the disk first. If such a file-path doesn't exist it'll create
     /// a default one with random certificate and write that to the disk, eventually returning that
     /// config to the caller.
-    pub fn read_or_construct_default(user_override: Option<&Dirs>) -> Result<Config> {
+    pub fn read_or_construct_default(user_override: Option<&Path>) -> Result<Config> {
         let config_path = config_path(user_override)?;
 
         if config_path.exists() {
@@ -99,7 +99,7 @@ impl Config {
     }
 
     /// Clear all configuration files from disk
-    pub fn clear_config_from_disk(user_override: Option<&Dirs>) -> Result<()> {
+    pub fn clear_config_from_disk(user_override: Option<&Path>) -> Result<()> {
         let config_path = config_path(user_override)?;
         if config_path.exists() {
             fs::remove_file(&config_path)?;
@@ -175,15 +175,12 @@ impl fmt::Debug for SerialisableCertificate {
     }
 }
 
-fn config_path(user_override: Option<&Dirs>) -> Result<PathBuf> {
-    let path = |dir: &Dirs| {
-        let path = dir.config_dir();
-        path.join("config")
-    };
+fn config_path(user_override: Option<&Path>) -> Result<PathBuf> {
+    let get_config_file = |dir: &Path| dir.join("config");
 
     let cfg_path = user_override.map_or_else(
-        || Ok::<_, Error>(path(&utils::project_dir()?)),
-        |d| Ok(path(d)),
+        || Ok::<_, Error>(get_config_file(&utils::project_dir()?)),
+        |d| Ok(get_config_file(d)),
     )?;
 
     Ok(cfg_path)

@@ -11,7 +11,6 @@ use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
     connections::{Connection, RecvStream, SendStream},
-    dirs::{Dirs, OverRide},
     endpoint::Endpoint,
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
@@ -21,6 +20,7 @@ use bytes::Bytes;
 use futures::future::select_ok;
 use log::{debug, error, info, trace};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::path::PathBuf;
 
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.
@@ -152,10 +152,7 @@ impl QuicP2p {
             our_complete_cert.obtain_priv_key_and_cert()?
         };
 
-        let custom_dirs = cfg
-            .bootstrap_cache_dir
-            .clone()
-            .map(|custom_dir| Dirs::Overide(OverRide::new(&custom_dir)));
+        let custom_dirs = cfg.bootstrap_cache_dir.clone().map(PathBuf::from);
 
         let mut qp2p_config = cfg.clone();
 
