@@ -52,7 +52,6 @@ mod api;
 mod bootstrap_cache;
 mod config;
 mod connections;
-mod dirs;
 mod endpoint;
 mod error;
 mod igd;
@@ -65,7 +64,6 @@ mod wire_msg;
 pub use api::{Message, QuicP2p};
 pub use config::Config;
 pub use connections::{Connection, IncomingConnections, IncomingMessages, RecvStream, SendStream};
-pub use dirs::{Dirs, OverRide};
 pub use endpoint::Endpoint;
 pub use error::{Error, Result};
 

@@ -7,17 +7,14 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{
-    dirs::Dirs,
-    error::{Error, Result},
-};
+use crate::error::{Error, Result};
 use flexi_logger::{DeferredNow, Logger};
 use log::Record;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Get the project directory
 #[cfg(any(
@@ -28,10 +25,11 @@ use std::path::Path;
     windows
 ))]
 #[inline]
-pub fn project_dir() -> Result<Dirs> {
-    let dirs = directories::ProjectDirs::from("net", "MaidSafe", "qp2p")
-        .ok_or_else(|| Error::Io(::std::io::ErrorKind::NotFound.into()))?;
-    Ok(Dirs::Desktop(dirs))
+pub fn project_dir() -> Result<PathBuf> {
+    let dirs =
+        dirs_next::home_dir().ok_or_else(|| Error::Io(::std::io::ErrorKind::NotFound.into()))?;
+    let project_dir = dirs.join(".safe").join("qp2p");
+    Ok(project_dir)
 }
 
 /// Get the project directory

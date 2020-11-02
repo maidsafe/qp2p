@@ -9,7 +9,6 @@
 
 #![allow(unused)]
 
-use crate::dirs::Dirs;
 use crate::utils;
 use crate::{Error, Result};
 use log::info;
@@ -17,7 +16,7 @@ use std::{
     collections::{HashSet, VecDeque},
     fs, io,
     net::SocketAddr,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 /// Maximum peers in the cache.
@@ -42,17 +41,14 @@ impl BootstrapCache {
     ///   not be cached upon successful connection.
     pub fn new(
         hard_coded_contacts: HashSet<SocketAddr>,
-        user_override: Option<&Dirs>,
+        user_override: Option<&PathBuf>,
         fresh: bool,
     ) -> Result<BootstrapCache> {
-        let path = |dir: &Dirs| {
-            let path = dir.cache_dir();
-            path.join("bootstrap_cache")
-        };
+        let get_cache_path = |dir: &PathBuf| dir.join("bootstrap_cache");
 
         let cache_path = user_override.map_or_else(
-            || Ok::<_, Error>(path(&utils::project_dir()?)),
-            |d| Ok(path(d)),
+            || Ok::<_, Error>(get_cache_path(&utils::project_dir()?)),
+            |d| Ok(get_cache_path(d)),
         )?;
 
         let peers = if cache_path.exists() {
@@ -114,15 +110,12 @@ impl BootstrapCache {
         self.try_sync_to_disk();
     }
 
-    pub fn clear_from_disk(user_override: Option<&Dirs>) -> Result<()> {
-        let path = |dir: &Dirs| {
-            let path = dir.cache_dir();
-            path.join("bootstrap_cache")
-        };
+    pub fn clear_from_disk(user_override: Option<&PathBuf>) -> Result<()> {
+        let get_cache_path = |dir: &PathBuf| dir.join("bootstrap_cache");
 
         let cache_path = user_override.map_or_else(
-            || Ok::<_, Error>(path(&utils::project_dir()?)),
-            |d| Ok(path(d)),
+            || Ok::<_, Error>(get_cache_path(&utils::project_dir()?)),
+            |d| Ok(get_cache_path(d)),
         )?;
 
         if cache_path.exists() {

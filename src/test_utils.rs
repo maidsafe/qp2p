@@ -7,14 +7,12 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::dirs::{Dirs, OverRide};
 use rand::Rng;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::PathBuf;
-use unwrap::unwrap;
 
-pub(crate) fn test_dirs() -> Dirs {
-    Dirs::Overide(OverRide::new(&unwrap!(tmp_rand_dir().to_str())))
+pub(crate) fn test_dirs() -> PathBuf {
+    tmp_rand_dir()
 }
 
 pub(crate) fn rand_node_addr() -> SocketAddr {
