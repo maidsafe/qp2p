@@ -28,6 +28,17 @@ pub struct Endpoint {
     client_cfg: quinn::ClientConfig,
 }
 
+impl std::fmt::Debug for Endpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Endpoint")
+            .field("local_addr", &self.local_addr)
+            .field("quic_endpoint", &"<endpoint omitted>".to_string())
+            .field("quic_incoming", &self.quic_incoming)
+            .field("client_cfg", &self.client_cfg)
+            .finish()
+    }
+}
+
 impl Endpoint {
     pub(crate) fn new(
         quic_endpoint: quinn::Endpoint,

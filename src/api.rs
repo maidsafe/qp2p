@@ -61,7 +61,7 @@ impl Message {
 }
 
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct QuicP2p {
     local_addr: SocketAddr,
     allow_random_port: bool,
