@@ -24,7 +24,7 @@ use std::{
 const MAX_CACHE_SIZE: usize = 200;
 
 /// A very simple LRU like struct that writes itself to disk every 10 entries added.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct BootstrapCache {
     peers: VecDeque<SocketAddr>,
     cache_path: PathBuf,
