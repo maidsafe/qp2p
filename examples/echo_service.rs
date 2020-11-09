@@ -1,7 +1,7 @@
-use async_std::io;
 use bytes::Bytes;
 use qp2p::{Config, Error, Message, QuicP2p};
 use std::env;
+use tokio::io::AsyncBufReadExt;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -35,15 +35,12 @@ async fn main() -> Result<(), Error> {
             .ok_or_else(|| Error::Unexpected("Error during incoming connection".to_string()))?;
         let connecting_peer = messages.remote_addr();
         println!("Incoming connection from: {}", &connecting_peer);
-        let message = messages.next().await;
-        assert!(message.is_none());
-        println!("Responded to peer with EchoService response");
-        println!("Waiting for messages...");
-        let mut messages = incoming
+        let message = messages
             .next()
             .await
-            .ok_or_else(|| Error::Unexpected("Error during incoming connection".to_string()))?;
-        let message = messages.next().await.unwrap();
+            .expect("Error reading message from incoming connection");
+        println!("Responded to peer with EchoService response");
+        println!("Waiting for messages...");
         let (mut bytes, mut send, mut recv) = if let Message::BiStream {
             bytes, send, recv, ..
         } = message
@@ -85,6 +82,8 @@ async fn main() -> Result<(), Error> {
 
 async fn read_from_stdin() -> String {
     let mut input = String::new();
-    io::stdin().read_line(&mut input).await.unwrap_or(0);
+    let stdin = tokio::io::stdin();
+    let mut buf_reader = tokio::io::BufReader::new(stdin);
+    buf_reader.read_line(&mut input).await.unwrap_or(0);
     input
 }
