@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.8.8](https://github.com/maidsafe/qp2p/compare/v0.8.7...v0.8.8) (2020-11-10)
+
+
+### Features
+
+* **config:** add --fresh and --clean flags to the config to prevent use ([b685d77](https://github.com/maidsafe/qp2p/commit/b685d77a93099d44d56624704545a6e043758711))
+* **port_forwarding:** refactor IGD and echo service to be async ([a19cd51](https://github.com/maidsafe/qp2p/commit/a19cd51e160f531571f6ba91a6c0ce7a672e66b7))
+* **upnp:** add config to disable port forwarding for clients ([4a14488](https://github.com/maidsafe/qp2p/commit/4a144886cc1924ea51fa783625551849be8cab84))
+
+
+### Bug Fixes
+
+* **echo_service:** respond to echo service request and expand test ([40217e1](https://github.com/maidsafe/qp2p/commit/40217e1fa4f666ddd3b4decff1b94a9b29e685e4))
+* **echo_service_test:** refactor test to use tokio::spawn and join! ([2f82af2](https://github.com/maidsafe/qp2p/commit/2f82af2047b186d996c5e139e57160cf1cdda4e0))
+* **examples:** Fix clippy errors in examples ([c201df3](https://github.com/maidsafe/qp2p/commit/c201df3bfb6d1f8ec50274c8637937d85036895c))
+* **upnp:** add timeout for IGD and echo service ([2167ead](https://github.com/maidsafe/qp2p/commit/2167eade5d2f72c4d7efdeb81c14f88cfd89ff39))
+
 ### [0.8.7](https://github.com/maidsafe/qp2p/compare/v0.8.6...v0.8.7) (2020-11-05)
 
 ### [0.8.6](https://github.com/maidsafe/qp2p/compare/v0.8.5...v0.8.6) (2020-10-27)
