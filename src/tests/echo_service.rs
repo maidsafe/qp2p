@@ -19,7 +19,7 @@ async fn echo_service() -> Result<()> {
 
     // Listen for messages / connections at peer 1
     let handle1 = tokio::spawn(async move {
-        let mut incoming = peer1.listen()?;
+        let mut incoming = peer1.listen();
         let mut inbound_messages = incoming
             .next()
             .await
@@ -32,8 +32,8 @@ async fn echo_service() -> Result<()> {
     let handle2 = tokio::spawn(async move {
         let peer2 = qp2p.new_endpoint()?;
         let socket_addr = peer2.socket_addr().await?;
-        let connection = peer2.connect_to(&peer1_addr).await?;
-        let (mut send_stream, mut recv_stream) = connection.open_bi_stream().await?;
+        let (connection, _) = peer2.connect_to(&peer1_addr).await?;
+        let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
         let echo_service_req = WireMsg::EndpointEchoReq;
         echo_service_req
             .write_to_stream(&mut send_stream.quinn_send_stream)

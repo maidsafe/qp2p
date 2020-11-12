@@ -39,7 +39,7 @@ async fn successful_connection() -> Result<()> {
     let peer2 = qp2p.new_endpoint()?;
     let _connection = peer2.connect_to(&peer1_addr).await?;
 
-    let mut incoming_conn = peer1.listen()?;
+    let mut incoming_conn = peer1.listen();
     let incoming_messages = incoming_conn
         .next()
         .await
@@ -57,14 +57,14 @@ async fn bi_directional_streams() -> Result<()> {
     let peer1_addr = peer1.socket_addr().await?;
 
     let peer2 = qp2p.new_endpoint()?;
-    let connection = peer2.connect_to(&peer1_addr).await?;
+    let (connection, _) = peer2.connect_to(&peer1_addr).await?;
 
     let msg = random_msg();
     // Peer 2 sends a message and gets the bi-directional streams
-    let (mut send_stream2, mut recv_stream2) = connection.send(msg.clone()).await?;
+    let (mut send_stream2, mut recv_stream2) = connection.send_bi(msg.clone()).await?;
 
     // Peer 1 gets an incoming connection
-    let mut incoming_conn = peer1.listen()?;
+    let mut incoming_conn = peer1.listen();
     let mut incoming_messages = incoming_conn
         .next()
         .await
@@ -111,15 +111,14 @@ async fn uni_directional_streams() -> Result<()> {
     let qp2p = new_qp2p();
     let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
-    let mut incoming_conn_peer1 = peer1.listen()?;
+    let mut incoming_conn_peer1 = peer1.listen();
 
     let peer2 = qp2p.new_endpoint()?;
     let peer2_addr = peer2.socket_addr().await?;
-    let mut incoming_conn_peer2 = peer2.listen()?;
+    let mut incoming_conn_peer2 = peer2.listen();
 
     // Peer 2 sends a message
-    let conn_to_peer1 = peer2.connect_to(&peer1_addr).await?;
-
+    let (conn_to_peer1, _) = peer2.connect_to(&peer1_addr).await?;
     let msg_from_peer2 = random_msg();
     conn_to_peer1.send_uni(msg_from_peer2.clone()).await?;
     drop(conn_to_peer1);
@@ -140,12 +139,18 @@ async fn uni_directional_streams() -> Result<()> {
         assert_eq!(src, peer2_addr);
         src
     } else {
-        return Err(Error::UnexpectedMessageType);
+        panic!("Expected a unidirectional stream")
     };
 
+    // Peer 2 dropped the connection to peer 1 after sending the message, so the incoming message
+    // stream gets closed. Drop the stream which also removes the connection from the connection
+    // pool.
+    assert!(incoming_messages.next().await.is_none());
+    drop(incoming_messages);
+
     // Peer 1 sends back a message to Peer 2 on a new uni-directional stream
+    let (conn_to_peer2, _) = peer1.connect_to(&src).await?;
     let msg_from_peer1 = random_msg();
-    let conn_to_peer2 = peer1.connect_to(&src).await?;
     conn_to_peer2.send_uni(msg_from_peer1.clone()).await?;
     drop(conn_to_peer2);
 
@@ -163,10 +168,13 @@ async fn uni_directional_streams() -> Result<()> {
     if let Message::UniStream { bytes, src, .. } = message {
         assert_eq!(msg_from_peer1, bytes);
         assert_eq!(src, peer1_addr);
-        Ok(())
     } else {
-        Err(Error::Unexpected(
-            "Expected a Unidirectional stream".to_string(),
-        ))
+        panic!("Expected a unidirectional stream")
     }
+
+    // Peer 1 dropped the connection to peer 2 after sending the message, so the incoming message
+    // stream gets closed.
+    assert!(incoming_messages.next().await.is_none());
+
+    Ok(())
 }

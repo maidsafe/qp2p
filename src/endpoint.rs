@@ -11,7 +11,8 @@ use super::error::Error;
 use super::igd::forward_port;
 use super::wire_msg::WireMsg;
 use super::{
-    connections::{Connection, IncomingConnections},
+    connection_pool::ConnectionPool,
+    connections::{Connection, IncomingConnections, IncomingMessages},
     error::Result,
     Config,
 };
@@ -34,6 +35,7 @@ pub struct Endpoint {
     client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
     qp2p_config: Config,
+    connection_pool: ConnectionPool,
 }
 
 impl std::fmt::Debug for Endpoint {
@@ -63,18 +65,19 @@ impl Endpoint {
             client_cfg,
             bootstrap_nodes,
             qp2p_config,
+            connection_pool: ConnectionPool::new(),
         })
     }
 
     /// Endpoint local address
-    async fn local_addr(&self) -> Result<SocketAddr> {
-        Ok(self.local_addr)
+    fn local_addr(&self) -> SocketAddr {
+        self.local_addr
     }
 
     /// Returns the socket address of the endpoint
     pub async fn socket_addr(&self) -> Result<SocketAddr> {
         if cfg!(test) || !self.qp2p_config.forward_port {
-            self.local_addr().await
+            Ok(self.local_addr())
         } else {
             self.public_addr().await
         }
@@ -151,31 +154,43 @@ impl Endpoint {
         }
     }
 
-    /// Connect to another peer
-    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<Connection> {
-        let quinn_connecting = self.quic_endpoint.connect_with(
-            self.client_cfg.clone(),
-            &node_addr,
-            CERT_SERVER_NAME,
-        )?;
+    /// Connects to another peer
+    ///
+    pub async fn connect_to(
+        &self,
+        node_addr: &SocketAddr,
+    ) -> Result<(Connection, Option<IncomingMessages>)> {
+        if let Some((conn, guard)) = self.connection_pool.get(node_addr) {
+            trace!("Using cached connection to peer: {}", node_addr);
+            return Ok((Connection::new(conn, guard), None));
+        }
 
-        let quinn::NewConnection {
-            connection: quinn_conn,
-            ..
-        } = quinn_connecting.await?;
+        let new_conn = self
+            .quic_endpoint
+            .connect_with(self.client_cfg.clone(), node_addr, CERT_SERVER_NAME)?
+            .await?;
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        Connection::new(quinn_conn).await
+        let guard = self.connection_pool.insert(
+            new_conn.connection.remote_address(),
+            new_conn.connection.clone(),
+        );
+
+        let conn = Connection::new(new_conn.connection, guard.clone());
+        let incoming_msgs =
+            IncomingMessages::new(*node_addr, new_conn.uni_streams, new_conn.bi_streams, guard);
+
+        Ok((conn, Some(incoming_msgs)))
     }
 
     /// Obtain stream of incoming QUIC connections
-    pub fn listen(&self) -> Result<IncomingConnections> {
+    pub fn listen(&self) -> IncomingConnections {
         trace!(
             "Incoming connections will be received at {}",
-            self.quic_endpoint.local_addr()?
+            self.local_addr()
         );
-        IncomingConnections::new(Arc::clone(&self.quic_incoming))
+        IncomingConnections::new(self.quic_incoming.clone(), self.connection_pool.clone())
     }
 
     // Private helper
@@ -188,9 +203,9 @@ impl Endpoint {
         let mut tasks = Vec::default();
         for node in self.bootstrap_nodes.iter().cloned() {
             debug!("Connecting to {:?}", &node);
-            let connection = self.connect_to(&node).await?; // TODO: move into loop
+            let (connection, _) = self.connect_to(&node).await?; // TODO: move into loop
             let task_handle = tokio::spawn(async move {
-                let (mut send_stream, mut recv_stream) = connection.open_bi_stream().await?;
+                let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
                     Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),

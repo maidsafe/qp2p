@@ -28,7 +28,7 @@ async fn main() -> Result<(), Error> {
     println!("Process running at: {}", &socket_addr);
     if genesis {
         println!("Waiting for connections");
-        let mut incoming = endpoint.listen()?;
+        let mut incoming = endpoint.listen();
         let mut messages = incoming
             .next()
             .await
@@ -63,8 +63,8 @@ async fn main() -> Result<(), Error> {
     } else {
         println!("Echo service complete");
         let node_addr = bootstrap_nodes[0];
-        let connection = endpoint.connect_to(&node_addr).await?;
-        let (mut send, mut recv) = connection.open_bi_stream().await?;
+        let (connection, _) = endpoint.connect_to(&node_addr).await?;
+        let (mut send, mut recv) = connection.open_bi().await?;
         loop {
             println!("Enter message:");
             let mut input = String::new();

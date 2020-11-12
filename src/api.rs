@@ -391,7 +391,7 @@ async fn new_connection_to(
         bootstrap_nodes,
         qp2p_config,
     )?;
-    let connection = endpoint.connect_to(node_addr).await?;
+    let (connection, _) = endpoint.connect_to(node_addr).await?;
 
     Ok((endpoint, connection))
 }

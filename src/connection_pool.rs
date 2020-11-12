@@ -7,72 +7,108 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use slotmap::{DefaultKey, DenseSlotMap};
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::BTreeMap,
     net::SocketAddr,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, PoisonError},
 };
 
+// Pool for keeping open connections. Pooled connections are associated with a `ConnectionRemover`
+// which can be used to remove them from the pool.
 #[derive(Clone)]
 pub(crate) struct ConnectionPool {
-    store: Arc<RwLock<Store>>,
+    store: Arc<Mutex<Store>>,
 }
 
 impl ConnectionPool {
     pub fn new() -> Self {
         Self {
-            store: Arc::new(RwLock::new(Store {
-                connections: DenseSlotMap::new(),
-                keys: HashMap::new(),
-            })),
+            store: Arc::new(Mutex::new(Store::default())),
         }
     }
 
-    pub fn insert(&self, conn: quinn::Connection) -> Handle {
-        let addr = conn.remote_address();
+    pub fn insert(&self, addr: SocketAddr, conn: quinn::Connection) -> ConnectionRemover {
+        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
 
-        let mut store = self.store.write().expect("RwLock poisoned");
-        let key = store.connections.insert(conn);
-        let _ = store.keys.insert(addr, key);
+        let key = Key {
+            addr,
+            id: store.id_gen.next(),
+        };
+        let _ = store.map.insert(key, conn);
 
-        Handle {
+        ConnectionRemover {
             store: self.store.clone(),
             key,
         }
     }
 
-    pub fn get(&self, addr: &SocketAddr) -> Option<quinn::Connection> {
-        let store = self.store.read().ok()?;
-        let key = store.keys.get(addr)?;
-        store.connections.get(*key).cloned()
-    }
-}
+    pub fn get(&self, addr: &SocketAddr) -> Option<(quinn::Connection, ConnectionRemover)> {
+        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
 
-pub(crate) struct Handle {
-    store: Arc<RwLock<Store>>,
-    key: DefaultKey,
-}
+        // Efficiently fetch the first entry whose key is equal to `key`.
+        let (key, conn) = store
+            .map
+            .range_mut(Key::min(*addr)..=Key::max(*addr))
+            .next()?;
 
-impl Drop for Handle {
-    fn drop(&mut self) {
-        let mut store = if let Ok(store) = self.store.write() {
-            store
-        } else {
-            return;
+        let conn = conn.clone();
+        let remover = ConnectionRemover {
+            store: self.store.clone(),
+            key: *key,
         };
 
-        if let Some(conn) = store.connections.remove(self.key) {
-            if let Entry::Occupied(entry) = store.keys.entry(conn.remote_address()) {
-                if entry.get() == &self.key {
-                    let _ = entry.remove();
-                }
-            }
-        }
+        Some((conn, remover))
     }
 }
 
+// Handle for removing a connection from the pool.
+#[derive(Clone)]
+pub(crate) struct ConnectionRemover {
+    store: Arc<Mutex<Store>>,
+    key: Key,
+}
+
+impl ConnectionRemover {
+    // Remove the connection from the pool.
+    pub fn remove(&self) {
+        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+        let _ = store.map.remove(&self.key);
+    }
+}
+
+#[derive(Default)]
 struct Store {
-    connections: DenseSlotMap<DefaultKey, quinn::Connection>,
-    keys: HashMap<SocketAddr, DefaultKey>,
+    map: BTreeMap<Key, quinn::Connection>,
+    id_gen: IdGen,
+}
+
+// Unique key identifying a connection. Two connections will always have distict keys even if they
+// have the same socket address.
+#[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+struct Key {
+    addr: SocketAddr,
+    id: u64,
+}
+
+impl Key {
+    // Returns the minimal `Key` for the given address according to its `Ord` relation.
+    fn min(addr: SocketAddr) -> Self {
+        Self { addr, id: u64::MIN }
+    }
+
+    // Returns the maximal `Key` for the given address according to its `Ord` relation.
+    fn max(addr: SocketAddr) -> Self {
+        Self { addr, id: u64::MAX }
+    }
+}
+
+#[derive(Default)]
+struct IdGen(u64);
+
+impl IdGen {
+    fn next(&mut self) -> u64 {
+        let id = self.0;
+        self.0 = self.0.wrapping_add(1);
+        id
+    }
 }

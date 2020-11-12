@@ -9,6 +9,7 @@
 
 use super::{
     api::Message,
+    connection_pool::{ConnectionPool, ConnectionRemover},
     error::{Error, Result},
     wire_msg::WireMsg,
 };
@@ -21,6 +22,7 @@ use tokio::select;
 /// Connection instance to a node which can be used to send messages to it
 pub struct Connection {
     quic_conn: quinn::Connection,
+    remover: ConnectionRemover,
 }
 
 impl Drop for Connection {
@@ -30,8 +32,8 @@ impl Drop for Connection {
 }
 
 impl Connection {
-    pub(crate) async fn new(quic_conn: quinn::Connection) -> Result<Self> {
-        Ok(Self { quic_conn })
+    pub(crate) fn new(quic_conn: quinn::Connection, remover: ConnectionRemover) -> Self {
+        Self { quic_conn, remover }
     }
 
     /// Returns the address of the connected peer.
@@ -78,44 +80,62 @@ impl Connection {
     ///     let peer1_addr = peer_1.socket_addr().await?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
-    ///     let (send_stream, recv_stream) = connection.open_bi_stream().await?;
+    ///     let (send_stream, recv_stream) = connection.open_bi().await?;
     ///     Ok(())
     /// }
     /// ```
-    pub async fn open_bi_stream(&self) -> Result<(SendStream, RecvStream)> {
-        let (send_stream, recv_stream) = self.quic_conn.open_bi().await?;
+    pub async fn open_bi(&self) -> Result<(SendStream, RecvStream)> {
+        let (send_stream, recv_stream) = self.handle_error(self.quic_conn.open_bi().await)?;
         Ok((SendStream::new(send_stream), RecvStream::new(recv_stream)))
     }
 
     /// Send message to the connected peer via a bi-directional stream.
     /// This returns the streams to send additional messages / read responses sent using the same stream.
-    pub async fn send(&self, msg: Bytes) -> Result<(SendStream, RecvStream)> {
-        let (mut send_stream, recv_stream) = self.open_bi_stream().await?;
-        send_stream.send_user_msg(msg).await?;
+    pub async fn send_bi(&self, msg: Bytes) -> Result<(SendStream, RecvStream)> {
+        let (mut send_stream, recv_stream) = self.open_bi().await?;
+        self.handle_error(send_stream.send_user_msg(msg).await)?;
         Ok((send_stream, recv_stream))
     }
 
     /// Send message to peer using a uni-directional stream.
     pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
-        let mut send_stream = self.quic_conn.open_uni().await?;
-        send_msg(&mut send_stream, msg).await?;
-        send_stream.finish().await.map_err(Error::from)
+        let mut send_stream = self.handle_error(self.quic_conn.open_uni().await)?;
+        self.handle_error(send_msg(&mut send_stream, msg).await)?;
+        self.handle_error(send_stream.finish().await)
+            .map_err(Error::from)
     }
 
     /// Gracefully close connection immediatelly
     pub fn close(&self) {
         self.quic_conn.close(0u32.into(), b"");
+        // TODO: uncomment
+        // self.remover.remove();
+    }
+
+    fn handle_error<T, E>(&self, result: Result<T, E>) -> Result<T, E> {
+        if result.is_err() {
+            self.remover.remove()
+        }
+
+        result
     }
 }
 
 /// Stream of incoming QUIC connections
 pub struct IncomingConnections {
     quinn_incoming: Arc<Mutex<quinn::Incoming>>,
+    connection_pool: ConnectionPool,
 }
 
 impl IncomingConnections {
-    pub(crate) fn new(quinn_incoming: Arc<Mutex<quinn::Incoming>>) -> Result<Self> {
-        Ok(Self { quinn_incoming })
+    pub(crate) fn new(
+        quinn_incoming: Arc<Mutex<quinn::Incoming>>,
+        connection_pool: ConnectionPool,
+    ) -> Self {
+        Self {
+            quinn_incoming,
+            connection_pool,
+        }
     }
 
     /// Returns next QUIC connection established by a peer
@@ -127,11 +147,18 @@ impl IncomingConnections {
                     uni_streams,
                     bi_streams,
                     ..
-                }) => Some(IncomingMessages::new(
-                    connection.remote_address(),
-                    uni_streams,
-                    bi_streams,
-                )),
+                }) => {
+                    let pool_handle = self
+                        .connection_pool
+                        .insert(connection.remote_address(), connection.clone());
+
+                    Some(IncomingMessages::new(
+                        connection.remote_address(),
+                        uni_streams,
+                        bi_streams,
+                        pool_handle,
+                    ))
+                }
                 Err(_err) => None,
             },
             None => None,
@@ -144,6 +171,7 @@ pub struct IncomingMessages {
     peer_addr: SocketAddr,
     uni_streams: quinn::IncomingUniStreams,
     bi_streams: quinn::IncomingBiStreams,
+    remover: ConnectionRemover,
 }
 
 impl IncomingMessages {
@@ -151,11 +179,13 @@ impl IncomingMessages {
         peer_addr: SocketAddr,
         uni_streams: quinn::IncomingUniStreams,
         bi_streams: quinn::IncomingBiStreams,
+        remover: ConnectionRemover,
     ) -> Self {
         Self {
             peer_addr,
             uni_streams,
             bi_streams,
+            remover,
         }
     }
 
@@ -247,6 +277,12 @@ impl IncomingMessages {
                 }
             },
         }
+    }
+}
+
+impl Drop for IncomingMessages {
+    fn drop(&mut self) {
+        self.remover.remove()
     }
 }
 

@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::{io, sync::mpsc};
 
 /// Result used by `QuicP2p`.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
