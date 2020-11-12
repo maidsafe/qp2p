@@ -35,8 +35,7 @@
     unused_parens,
     while_true,
     clippy::unicode_not_nfc,
-    clippy::wrong_pub_self_convention,
-    clippy::unwrap_used
+    clippy::wrong_pub_self_convention
 )]
 #![warn(
     trivial_casts,

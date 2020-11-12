@@ -12,31 +12,16 @@ keywords = [ "quic" ]
 edition = "2018"
 
 [dependencies]
-futures = "~0.3.5"
-unwrap = "1.2.1"
-bincode = "1.2.1"
-crossbeam-channel = "~0.4.2"
-serde_json = "1.0.59"
-flexi_logger = "~0.16.1"
-structopt = "~0.3.15"
-rcgen = "~0.8.4"
-log = "~0.4.8"
 base64 = "~0.12.2"
+bincode = "1.2.1"
 err-derive = "~0.2.4"
+flexi_logger = "~0.16.1"
+futures = "~0.3.5"
+log = "~0.4.8"
+rcgen = "~0.8.4"
+serde_json = "1.0.59"
+structopt = "~0.3.15"
 webpki = "~0.21.3"
-
-  [dependencies.serde]
-  version = "1.0.117"
-  features = [ "derive" ]
-
-  [dependencies.quinn]
-  version = "~0.6.1"
-  features = [ "tls-rustls" ]
-  default-features = false
-
-  [dependencies.tokio]
-  version = "~0.2.21"
-  features = [ "rt-core", "sync", "time", "macros", "io-std", "io-util" ]
 
   [dependencies.bytes]
   version = "~0.5.5"
@@ -46,9 +31,22 @@ webpki = "~0.21.3"
   version = "~0.11.1"
   features = [ "aio" ]
 
+  [dependencies.quinn]
+  version = "~0.6.1"
+  features = [ "tls-rustls" ]
+  default-features = false
+
   [dependencies.rustls]
   version = "~0.17.0"
   features = [ "dangerous_configuration" ]
+
+  [dependencies.serde]
+  version = "1.0.117"
+  features = [ "derive" ]
+
+  [dependencies.tokio]
+  version = "~0.2.21"
+  features = [ "rt-core", "sync", "time", "macros", "io-std", "io-util" ]
 
 [dev-dependencies]
 rand = "~0.7.3"

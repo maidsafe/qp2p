@@ -51,8 +51,6 @@ pub enum Error {
     OperationNotAllowed,
     #[error(display = "Connection cancelled")]
     ConnectionCancelled,
-    #[error(display = "MPMC channel receive error")]
-    MultiChannelRecv(#[source] crossbeam_channel::RecvError),
     #[error(display = "Channel receive error")]
     ChannelRecv(#[source] mpsc::RecvError),
     #[error(display = "Could not add certificate to PKI")]
