@@ -156,7 +156,41 @@ impl Endpoint {
 
     /// Connects to another peer.
     ///
+    /// Returns `Connection` which is a handle for sending messages to the peer and
+    /// `IncomingMessages` which is a stream of messages received from the peer.
+    /// The incoming messages stream might be `None`. See the next section for more info.
     ///
+    /// # Connection pooling
+    ///
+    /// Connection are stored in an internal pool and reused if possible. A connection remains in
+    /// the pool while its `IncomingMessages` instances exists and while the connection is open.
+    ///
+    /// When a new connection is established, this function returns both the `Connection` instance
+    /// and the `IncomingMessages` stream. If an existing connection is retrieved from the pool,
+    /// the incoming messages will be `None`. Multiple `Connection` instances can exists
+    /// simultaneously and they all share the same underlying connection resource. On the other
+    /// hand, at most one `IncomingMessages` stream can exist per peer.
+    ///
+    /// How to handle the `IncomingMessages` depends on the networking model of the application:
+    ///
+    /// In the peer-to-peer model, where peers can arbitrarily send and receive messages to/from
+    /// other peers, it is recommended to keep the `IncomingMessages` around and listen on it for
+    /// new messages by repeatedly calling `next` and only drop it when it returns `None`.
+    /// On the other hand, there is no need to keep `Connection` around as it can be cheaply
+    /// retrieved again when needed by calling `connect_to`. When the connection gets closed by the
+    /// peer or it timeouts due to inactivity, the incoming messages stream gets closed and once
+    /// it's dropped the connection gets removed from the pool automatically. Calling `connect_to`
+    /// afterwards will open a new connection.
+    ///
+    /// In the client-server model, where only the client send requests to the server and then
+    /// listens for responses and never the other way around, it's OK to ignore (drop) the incoming
+    /// messages stream and only use bi-directional streams obtained by calling
+    /// `Connection::open_bi`. In this case the connection won't be pooled and the application is
+    /// responsible for caching it.
+    ///
+    /// When sending a message on `Connection` fails, the connection is also automatically removed
+    /// from the pool and the subsequent call to `connect_to` is guaranteed to reopen new connection
+    /// too.
     pub async fn connect_to(
         &self,
         node_addr: &SocketAddr,
