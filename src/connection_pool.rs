@@ -74,6 +74,10 @@ impl ConnectionRemover {
         let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
         let _ = store.map.remove(&self.key);
     }
+
+    pub fn remote_addr(&self) -> &SocketAddr {
+        &self.key.addr
+    }
 }
 
 #[derive(Default)]

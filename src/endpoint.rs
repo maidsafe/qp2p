@@ -154,7 +154,8 @@ impl Endpoint {
         }
     }
 
-    /// Connects to another peer
+    /// Connects to another peer.
+    ///
     ///
     pub async fn connect_to(
         &self,
@@ -172,14 +173,12 @@ impl Endpoint {
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        let guard = self.connection_pool.insert(
-            new_conn.connection.remote_address(),
-            new_conn.connection.clone(),
-        );
+        let guard = self
+            .connection_pool
+            .insert(*node_addr, new_conn.connection.clone());
 
         let conn = Connection::new(new_conn.connection, guard.clone());
-        let incoming_msgs =
-            IncomingMessages::new(*node_addr, new_conn.uni_streams, new_conn.bi_streams, guard);
+        let incoming_msgs = IncomingMessages::new(new_conn.uni_streams, new_conn.bi_streams, guard);
 
         Ok((conn, Some(incoming_msgs)))
     }
