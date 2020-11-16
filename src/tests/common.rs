@@ -178,3 +178,159 @@ async fn uni_directional_streams() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn reuse_outgoing_connection() -> Result<()> {
+    let qp2p = new_qp2p();
+    let alice = qp2p.new_endpoint()?;
+
+    let bob = qp2p.new_endpoint()?;
+    let bob_addr = bob.socket_addr().await?;
+    let mut bob_incoming_conns = bob.listen();
+
+    // Connect for the first time and send a message.
+    let (conn0, incoming_messages) = alice.connect_to(&bob_addr).await?;
+    assert!(incoming_messages.is_some());
+    let msg0 = random_msg();
+    conn0.send_uni(msg0.clone()).await?;
+
+    // Connect for the second time and send another message. This should reuse the previously
+    // established connection.
+    let (conn1, incoming_messages) = alice.connect_to(&bob_addr).await?;
+    assert!(incoming_messages.is_none());
+    let msg1 = random_msg();
+    conn1.send_uni(msg1.clone()).await?;
+
+    // Both messages should be received on the same stream.
+    let mut incoming_messages = bob_incoming_conns
+        .next()
+        .await
+        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+
+    assert_eq!(
+        incoming_messages
+            .next()
+            .await
+            .map(|msg| msg.get_message_data()),
+        Some(msg0)
+    );
+    assert_eq!(
+        incoming_messages
+            .next()
+            .await
+            .map(|msg| msg.get_message_data()),
+        Some(msg1)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn reuse_incoming_connection() -> Result<()> {
+    let qp2p = new_qp2p();
+    let alice = qp2p.new_endpoint()?;
+    let alice_addr = alice.socket_addr().await?;
+
+    let bob = qp2p.new_endpoint()?;
+    let bob_addr = bob.socket_addr().await?;
+    let mut bob_incoming_conns = bob.listen();
+
+    // Alice connects and sends a message.
+    let (alice_conn, alice_incoming_messages) = alice.connect_to(&bob_addr).await?;
+    let mut alice_incoming_messages = alice_incoming_messages.expect("no incoming messages");
+    let msg0 = random_msg();
+    alice_conn.send_uni(msg0.clone()).await?;
+
+    // Bob receives incoming connection from alice
+    let mut bob_incoming_messages0 = bob_incoming_conns
+        .next()
+        .await
+        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+    assert_eq!(
+        bob_incoming_messages0
+            .next()
+            .await
+            .map(|msg| msg.get_message_data()),
+        Some(msg0)
+    );
+
+    // Bob sends message back to Alice. This should reuse the same incoming connection.
+    let (bob_conn, bob_incoming_messages1) = bob.connect_to(&alice_addr).await?;
+    assert!(bob_incoming_messages1.is_none());
+
+    let msg1 = random_msg();
+    bob_conn.send_uni(msg1.clone()).await?;
+
+    // Alice should receive Bob's message on the already established connection.
+    assert_eq!(
+        alice_incoming_messages
+            .next()
+            .await
+            .map(|msg| msg.get_message_data()),
+        Some(msg1)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn remove_closed_connection_from_pool() -> Result<()> {
+    let qp2p = new_qp2p();
+    let alice = qp2p.new_endpoint()?;
+
+    let bob = qp2p.new_endpoint()?;
+    let bob_addr = bob.socket_addr().await?;
+    let mut bob_incoming_conns = bob.listen();
+
+    // Alice sends a message to Bob
+    let (alice_conn, alice_incoming_messages) = alice.connect_to(&bob_addr).await?;
+    let mut alice_incoming_messages = alice_incoming_messages.expect("no incoming messages");
+    let msg0 = random_msg();
+    alice_conn.send_uni(msg0.clone()).await?;
+
+    // Bob receives the connection...
+    let mut bob_incoming_messages = bob_incoming_conns
+        .next()
+        .await
+        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+    assert_eq!(
+        bob_incoming_messages
+            .next()
+            .await
+            .map(|msg| msg.get_message_data()),
+        Some(msg0)
+    );
+    // ..and closes the stream. This removes the connection from Bob's pool and because there are
+    // no other live references to the connection it gets dropped...
+    drop(bob_incoming_messages);
+
+    // ...which closes it on Alice's side too.
+    assert!(alice_incoming_messages.next().await.is_none());
+
+    // Any attempt to send on the connection now fails.
+    let msg1 = random_msg();
+    assert!(alice_conn.send_uni(msg1).await.is_err());
+
+    // Alice reconnects to Bob which creates new connection.
+    let (alice_conn, alice_incoming_messages) = alice.connect_to(&bob_addr).await?;
+    assert!(alice_incoming_messages.is_some());
+
+    // Alice sends another message...
+    let msg2 = random_msg();
+    alice_conn.send_uni(msg2.clone()).await?;
+
+    // ...which Bob receives on new connection.
+    let mut bob_incoming_messages = bob_incoming_conns
+        .next()
+        .await
+        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+    assert_eq!(
+        bob_incoming_messages
+            .next()
+            .await
+            .map(|msg| msg.get_message_data()),
+        Some(msg2)
+    );
+
+    Ok(())
+}
