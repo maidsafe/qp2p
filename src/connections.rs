@@ -25,12 +25,6 @@ pub struct Connection {
     remover: ConnectionRemover,
 }
 
-impl Drop for Connection {
-    fn drop(&mut self) {
-        self.close();
-    }
-}
-
 impl Connection {
     pub(crate) fn new(quic_conn: quinn::Connection, remover: ConnectionRemover) -> Self {
         Self { quic_conn, remover }
