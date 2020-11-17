@@ -20,6 +20,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::select;
 
 /// Connection instance to a node which can be used to send messages to it
+#[derive(Clone)]
 pub struct Connection {
     quic_conn: quinn::Connection,
     remover: ConnectionRemover,
