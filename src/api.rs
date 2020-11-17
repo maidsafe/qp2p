@@ -10,7 +10,7 @@
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
-    connections::{Connection, RecvStream, SendStream},
+    connections::{Connection, IncomingMessages, RecvStream, SendStream},
     endpoint::Endpoint,
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
@@ -223,11 +223,11 @@ impl QuicP2p {
     ///
     ///     config.port = Some(3001);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config), &[peer_addr], true)?;
-    ///     let (endpoint, connection) = quic_p2p.bootstrap().await?;
+    ///     let (endpoint, connection, incoming_messages) = quic_p2p.bootstrap().await?;
     ///     Ok(())
     /// }
     /// ```
-    pub async fn bootstrap(&self) -> Result<(Endpoint, Connection)> {
+    pub async fn bootstrap(&self) -> Result<(Endpoint, Connection, IncomingMessages)> {
         let endpoint = self.new_endpoint()?;
 
         trace!("Bootstrapping with nodes {:?}", endpoint.bootstrap_nodes());
@@ -238,15 +238,20 @@ impl QuicP2p {
             .iter()
             .map(|addr| Box::pin(endpoint.connect_to(addr)));
 
-        let conn = match future::select_ok(tasks).await {
-            Ok(((conn, _incoming_messages), _)) => conn,
-            Err(err) => {
-                log::error!("Failed to botstrap to the network: {}", err);
-                return Err(Error::BootstrapFailure);
-            }
-        };
+        let (conn, incoming_messages) = future::select_ok(tasks)
+            .await
+            .map_err(|err| {
+                error!("Failed to bootstrap to the network: {}", err);
+                Error::BootstrapFailure
+            })?
+            .0;
 
-        Ok((endpoint, conn))
+        // NOTE: this error is impossible because we just created new endpoint so the connection
+        // cannot be in the pool yet and thus `incoming_messages` should be `Some`. But handling it
+        // anyway to avoid `unwrap`.
+        let incoming_messages = incoming_messages.ok_or(Error::BootstrapFailure)?;
+
+        Ok((endpoint, conn, incoming_messages))
     }
 
     /// Connect to the given peer and return the `Endpoint` created along with the `Connection`
