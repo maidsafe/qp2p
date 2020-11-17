@@ -103,8 +103,7 @@ impl Connection {
     /// Gracefully close connection immediatelly
     pub fn close(&self) {
         self.quic_conn.close(0u32.into(), b"");
-        // TODO: uncomment
-        // self.remover.remove();
+        self.remover.remove();
     }
 
     fn handle_error<T, E>(&self, result: Result<T, E>) -> Result<T, E> {
@@ -178,7 +177,7 @@ impl IncomingMessages {
 
     /// Returns the address of the peer who initiated the connection
     pub fn remote_addr(&self) -> SocketAddr {
-        *self.pool_handle.remote_addr()
+        *self.remover.remote_addr()
     }
 
     /// Returns next message sent by the peer on current QUIC connection,
