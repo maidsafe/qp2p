@@ -61,10 +61,7 @@ impl WireMsg {
         // Let's generate the message bytes
         let (msg_bytes, msg_flag) = match self {
             WireMsg::UserMsg(ref m) => (m.clone(), USER_MSG_FLAG),
-            _ => (
-                From::from(bincode::serialize(&self).unwrap()),
-                ECHO_SRVC_MSG_FLAG,
-            ),
+            _ => (From::from(bincode::serialize(&self)?), ECHO_SRVC_MSG_FLAG),
         };
         trace!("Sending message to remote peer ({} bytes)", msg_bytes.len());
 

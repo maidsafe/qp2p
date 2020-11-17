@@ -118,6 +118,24 @@ pub(crate) struct SerialisableCertificate {
 }
 
 impl SerialisableCertificate {
+    /// Returns a new Certificate that is valid for the list of domain names provided
+    pub fn new(domains: impl Into<Vec<String>>) -> Result<Self> {
+        let cert = rcgen::generate_simple_self_signed(domains)
+            .map_err(|_| Error::Unexpected("Error generating certificate".to_string()))?;
+
+        Ok(Self {
+            cert_der: cert
+                .serialize_der()
+                .map_err(|_| {
+                    Error::Unexpected(
+                        "Error serializing certificate into binary DER format".to_string(),
+                    )
+                })?
+                .into(),
+            key_der: cert.serialize_private_key_der().into(),
+        })
+    }
+
     /// Parses DER encoded binary key material to a format that can be used by Quinn
     ///
     /// # Errors
@@ -132,17 +150,6 @@ impl SerialisableCertificate {
     }
 }
 
-impl Default for SerialisableCertificate {
-    fn default() -> Self {
-        let cert = rcgen::generate_simple_self_signed(vec!["MaidSAFE.net".to_string()]).unwrap();
-
-        Self {
-            cert_der: cert.serialize_der().unwrap().into(),
-            key_der: cert.serialize_private_key_der().into(),
-        }
-    }
-}
-
 impl FromStr for SerialisableCertificate {
     type Err = Error;
 
@@ -151,14 +158,6 @@ impl FromStr for SerialisableCertificate {
         let cert = base64::decode(s)?;
         let (cert_der, key_der) = bincode::deserialize(&cert)?;
         Ok(Self { cert_der, key_der })
-    }
-}
-
-impl ToString for SerialisableCertificate {
-    /// Convert `SerialisableCertificate` into a base64-encoded string.
-    fn to_string(&self) -> String {
-        let cert = bincode::serialize(&(&self.cert_der, &self.key_der)).unwrap();
-        base64::encode(&cert)
     }
 }
 
@@ -187,18 +186,19 @@ fn config_path(user_override: Option<&Path>) -> Result<PathBuf> {
 mod tests {
     use super::*;
     use crate::test_utils::test_dirs;
-    use crate::utils;
+    use crate::{utils, Error};
 
     #[test]
-    fn config_create_read_and_write() {
+    fn config_create_read_and_write() -> Result<(), Error> {
         let dir = test_dirs();
-        let config_path = config_path(Some(&dir)).unwrap();
+        let config_path = config_path(Some(&dir))?;
 
         assert!(utils::read_from_disk::<Config>(&config_path).is_err());
 
-        let cfg = Config::read_or_construct_default(Some(&dir)).unwrap();
-        let read_cfg = utils::read_from_disk(&config_path).unwrap();
+        let cfg = Config::read_or_construct_default(Some(&dir))?;
+        let read_cfg = utils::read_from_disk(&config_path)?;
 
         assert_eq!(cfg, read_cfg);
+        Ok(())
     }
 }
