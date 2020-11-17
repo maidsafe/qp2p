@@ -254,4 +254,8 @@ impl Endpoint {
         })?;
         result
     }
+
+    pub(crate) fn bootstrap_nodes(&self) -> &[SocketAddr] {
+        &self.bootstrap_nodes
+    }
 }
