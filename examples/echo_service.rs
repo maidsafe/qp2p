@@ -9,7 +9,9 @@ async fn main() -> Result<(), Error> {
     let (bootstrap_nodes, genesis) = match &args[1][..] {
         "create" => (vec![], true),
         "connect" => {
-            let bootstrap_node = args[2].parse().expect("SocketAddr format not recognized");
+            let bootstrap_node = args[2]
+                .parse()
+                .map_err(|_| Error::Unexpected("SocketAddr format not recognized".to_string()))?;
             (vec![bootstrap_node], false)
         }
         _ => panic!("Unexpected argument"),
@@ -57,7 +59,7 @@ async fn main() -> Result<(), Error> {
             );
             println!("Enter message:");
             let input = read_from_stdin().await;
-            send.send_user_msg(Bytes::from(input)).await.unwrap();
+            send.send_user_msg(Bytes::from(input)).await?;
             bytes = recv.next().await?;
         }
     } else {

@@ -146,7 +146,7 @@ impl QuicP2p {
             .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
 
         let (key, cert) = {
-            let our_complete_cert: SerialisableCertificate = Default::default();
+            let our_complete_cert = SerialisableCertificate::new(vec!["MaidSAFE.net".to_string()])?;
             our_complete_cert.obtain_priv_key_and_cert()?
         };
 
@@ -173,7 +173,7 @@ impl QuicP2p {
         let endpoint_cfg =
             peer_config::new_our_cfg(idle_timeout_msec, keep_alive_interval_msec, cert, key)?;
 
-        let client_cfg = peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec);
+        let client_cfg = peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec)?;
 
         let upnp_lease_duration = cfg
             .upnp_lease_duration
@@ -247,7 +247,7 @@ impl QuicP2p {
         // NOTE: this error is impossible because we just created new endpoint so the connection
         // cannot be in the pool yet and thus `incoming_messages` should be `Some`. But handling it
         // anyway to avoid `unwrap`.
-        let incoming_messages = incoming_messages.ok_or(Error::BootstrapFailure)?;
+        let incoming_messages = incoming_messages.ok_or_else(|| Error::BootstrapFailure)?;
 
         Ok((endpoint, conn, incoming_messages))
     }

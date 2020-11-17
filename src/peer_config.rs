@@ -26,10 +26,11 @@ pub const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 10_000; // 10secs
 pub fn new_client_cfg(
     idle_timeout_msec: u64,
     keep_alive_interval_msec: u32,
-) -> quinn::ClientConfig {
+) -> Result<quinn::ClientConfig> {
     let mut cfg = quinn::ClientConfigBuilder::default().build();
-    let crypto_cfg =
-        Arc::get_mut(&mut cfg.crypto).expect("the crypto config should not be shared yet");
+    let crypto_cfg = Arc::get_mut(&mut cfg.crypto).ok_or_else(|| {
+        Error::Unexpected("The Crypto config should not be shared yet".to_string())
+    })?;
     crypto_cfg
         .dangerous()
         .set_certificate_verifier(SkipServerVerification::new());
@@ -37,7 +38,7 @@ pub fn new_client_cfg(
         idle_timeout_msec,
         keep_alive_interval_msec,
     ));
-    cfg
+    Ok(cfg)
 }
 
 pub fn new_our_cfg(

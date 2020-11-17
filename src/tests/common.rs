@@ -8,11 +8,11 @@ use std::{
 };
 
 /// Constructs a `QuicP2p` node with some sane defaults for testing.
-pub fn new_qp2p() -> QuicP2p {
+pub fn new_qp2p() -> Result<QuicP2p> {
     new_qp2p_with_hcc(Default::default())
 }
 
-fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> QuicP2p {
+fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> Result<QuicP2p> {
     QuicP2p::with_config(
         Some(Config {
             port: Some(0),
@@ -24,7 +24,6 @@ fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> QuicP2p {
         Default::default(),
         true,
     )
-    .expect("Error creating QuicP2p object")
 }
 
 fn random_msg() -> Bytes {
@@ -36,7 +35,7 @@ fn random_msg() -> Bytes {
 async fn successful_connection() -> Result<()> {
     utils::init_logging();
 
-    let qp2p = new_qp2p();
+    let qp2p = new_qp2p()?;
     let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
 
@@ -58,7 +57,7 @@ async fn successful_connection() -> Result<()> {
 async fn bi_directional_streams() -> Result<()> {
     utils::init_logging();
 
-    let qp2p = new_qp2p();
+    let qp2p = new_qp2p()?;
     let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
 
@@ -110,7 +109,7 @@ async fn bi_directional_streams() -> Result<()> {
 async fn uni_directional_streams() -> Result<()> {
     utils::init_logging();
 
-    let qp2p = new_qp2p();
+    let qp2p = new_qp2p()?;
     let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
     let mut incoming_conn_peer1 = peer1.listen();
@@ -169,7 +168,9 @@ async fn uni_directional_streams() -> Result<()> {
         assert_eq!(msg_from_peer1, bytes);
         assert_eq!(src, peer1_addr);
     } else {
-        panic!("Expected a unidirectional stream")
+        return Err(Error::Unexpected(
+            "Expected a unidirectional stream".to_string(),
+        ));
     }
 
     // Peer 1 dropped the connection to peer 2 after sending the message, so the incoming message
@@ -183,7 +184,7 @@ async fn uni_directional_streams() -> Result<()> {
 async fn reuse_outgoing_connection() -> Result<()> {
     utils::init_logging();
 
-    let qp2p = new_qp2p();
+    let qp2p = new_qp2p()?;
     let alice = qp2p.new_endpoint()?;
 
     let bob = qp2p.new_endpoint()?;
@@ -239,7 +240,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
 async fn reuse_incoming_connection() -> Result<()> {
     utils::init_logging();
 
-    let qp2p = new_qp2p();
+    let qp2p = new_qp2p()?;
     let alice = qp2p.new_endpoint()?;
     let alice_addr = alice.socket_addr().await?;
 
@@ -249,7 +250,8 @@ async fn reuse_incoming_connection() -> Result<()> {
 
     // Alice connects and sends a message.
     let (alice_conn, alice_incoming_messages) = alice.connect_to(&bob_addr).await?;
-    let mut alice_incoming_messages = alice_incoming_messages.expect("no incoming messages");
+    let mut alice_incoming_messages = alice_incoming_messages
+        .ok_or_else(|| Error::Unexpected("No incoming messages".to_string()))?;
     let msg0 = random_msg();
     alice_conn.send_uni(msg0.clone()).await?;
 
@@ -289,7 +291,7 @@ async fn reuse_incoming_connection() -> Result<()> {
 async fn remove_closed_connection_from_pool() -> Result<()> {
     utils::init_logging();
 
-    let qp2p = new_qp2p();
+    let qp2p = new_qp2p()?;
     let alice = qp2p.new_endpoint()?;
 
     let bob = qp2p.new_endpoint()?;
@@ -298,7 +300,8 @@ async fn remove_closed_connection_from_pool() -> Result<()> {
 
     // Alice sends a message to Bob
     let (alice_conn, alice_incoming_messages) = alice.connect_to(&bob_addr).await?;
-    let mut alice_incoming_messages = alice_incoming_messages.expect("no incoming messages");
+    let mut alice_incoming_messages = alice_incoming_messages
+        .ok_or_else(|| Error::Unexpected("No incoming messages".to_string()))?;
     let msg0 = random_msg();
     alice_conn.send_uni(msg0.clone()).await?;
 
@@ -356,7 +359,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
 
     utils::init_logging();
 
-    let qp2p = new_qp2p();
+    let qp2p = new_qp2p()?;
     let alice = qp2p.new_endpoint()?;
     let alice_addr = alice.socket_addr().await?;
     let mut alice_incoming_conns = alice.listen();
@@ -366,7 +369,8 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     let mut bob_incoming_conns = bob.listen();
 
     let (alice_conn, alice_incoming_messages0) = alice.connect_to(&bob_addr).await?;
-    let mut alice_incoming_messages0 = alice_incoming_messages0.expect("no incoming messages");
+    let mut alice_incoming_messages0 = alice_incoming_messages0
+        .ok_or_else(|| Error::Unexpected("No incoming messages".to_string()))?;
 
     let (bob_conn, bob_incoming_messages0) = bob.connect_to(&alice_addr).await?;
     assert!(bob_incoming_messages0.is_some());
@@ -433,7 +437,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
 async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     utils::init_logging();
 
-    let qp2p = new_qp2p();
+    let qp2p = new_qp2p()?;
     let alice = qp2p.new_endpoint()?;
     let alice_addr = alice.socket_addr().await?;
     let mut alice_incoming_conns = alice.listen();
