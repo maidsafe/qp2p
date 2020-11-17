@@ -226,6 +226,11 @@ impl Endpoint {
         IncomingConnections::new(self.quic_incoming.clone(), self.connection_pool.clone())
     }
 
+    /// Close all the connections of this endpoint immediately and stop accepting new connections.
+    pub fn close(&self) {
+        self.quic_endpoint.close(0u32.into(), b"")
+    }
+
     // Private helper
     async fn query_ip_echo_service(&self) -> Result<SocketAddr> {
         // Bail out early if we don't have any contacts.
