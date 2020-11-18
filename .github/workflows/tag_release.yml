@@ -20,11 +20,11 @@ jobs:
           with:
             fetch-depth: '0'
             token: ${{ secrets.BRANCH_CREATOR_TOKEN }}
-        - run: echo ::set-env name=RELEASE_VERSION::$(git log -1 --pretty=%B)
+        - run: echo "RELEASE_VERSION=$(git log -1 --pretty=%s)" >> $GITHUB_ENV
         # parse out non-tag text
-        - run: echo ::set-env name=RELEASE_VERSION::$( echo $RELEASE_VERSION | sed 's/chore(release)://' )
+        - run: echo "RELEASE_VERSION=$( echo $RELEASE_VERSION | sed 's/chore(release)://' )" >> $GITHUB_ENV
         # remove spaces, but add back in `v` to tag, which is needed for standard-version
-        - run: echo ::set-env name=RELEASE_VERSION::v$(echo $RELEASE_VERSION | tr -d '[:space:]')
+        - run: echo "RELEASE_VERSION=v$(echo $RELEASE_VERSION | tr -d '[:space:]')" >> $GITHUB_ENV
         - run: echo $RELEASE_VERSION
         - run: git tag $RELEASE_VERSION
 

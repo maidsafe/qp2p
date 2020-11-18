@@ -17,8 +17,9 @@ jobs:
         fetch-depth: '0'
 
     - name: get commit message
-      run: |
-           echo ::set-env name=commitmsg::$(git log --format=%B -n 1 ${{ github.event.pull_request.head.sha }})
+    run: |
+        commitmsg=$(git log --format=%s -n 1 ${{ github.event.pull_request.head.sha }})
+        echo "commitmsg=${commitmsg}" >> $GITHUB_ENV
     - name: show commit message
       run : echo $commitmsg
 
