@@ -1,5 +1,6 @@
 use crate::{Config, Error, Message, QuicP2p, Result};
 use bytes::Bytes;
+use futures::future;
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -416,6 +417,55 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
             .await
             .map(|msg| msg.get_message_data()),
         Some(msg2)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
+    let qp2p = new_qp2p();
+    let alice = qp2p.new_endpoint()?;
+    let alice_addr = alice.socket_addr().await?;
+    let mut alice_incoming_conns = alice.listen();
+
+    let bob = qp2p.new_endpoint()?;
+
+    // Try to establish two connections to the same peer at the same time.
+    let ((conn0, incoming_messages0), (conn1, incoming_messages1)) =
+        future::try_join(bob.connect_to(&alice_addr), bob.connect_to(&alice_addr)).await?;
+
+    // Only one of the connection should have the incoming messages stream, because the other one
+    // is just a clone of it and not a separate connection.
+    assert!(incoming_messages0.is_some() ^ incoming_messages1.is_some());
+
+    // Send two messages, one on each connections.
+    let msg0 = random_msg();
+    conn0.send_uni(msg0.clone()).await?;
+
+    let msg1 = random_msg();
+    conn1.send_uni(msg1.clone()).await?;
+
+    // Both messages are received on the same connection, proving that the two connections are
+    // actually just two handles to the same underlying connection.
+    let mut alice_incoming_messages = alice_incoming_conns
+        .next()
+        .await
+        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+
+    assert_eq!(
+        alice_incoming_messages
+            .next()
+            .await
+            .map(|msg| msg.get_message_data()),
+        Some(msg0)
+    );
+    assert_eq!(
+        alice_incoming_messages
+            .next()
+            .await
+            .map(|msg| msg.get_message_data()),
+        Some(msg1)
     );
 
     Ok(())

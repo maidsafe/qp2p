@@ -11,6 +11,7 @@ use super::error::Error;
 use super::igd::forward_port;
 use super::wire_msg::WireMsg;
 use super::{
+    connection_deduplicator::ConnectionDeduplicator,
     connection_pool::ConnectionPool,
     connections::{Connection, IncomingConnections, IncomingMessages},
     error::Result,
@@ -36,13 +37,14 @@ pub struct Endpoint {
     bootstrap_nodes: Vec<SocketAddr>,
     qp2p_config: Config,
     connection_pool: ConnectionPool,
+    connection_deduplicator: ConnectionDeduplicator,
 }
 
 impl std::fmt::Debug for Endpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
-            .field("quic_endpoint", &"<endpoint omitted>".to_string())
+            .field("quic_endpoint", &"<endpoint omitted>")
             .field("quic_incoming", &self.quic_incoming)
             .field("client_cfg", &self.client_cfg)
             .finish()
@@ -66,6 +68,7 @@ impl Endpoint {
             bootstrap_nodes,
             qp2p_config,
             connection_pool: ConnectionPool::new(),
+            connection_deduplicator: ConnectionDeduplicator::new(),
         })
     }
 
@@ -200,10 +203,37 @@ impl Endpoint {
             return Ok((Connection::new(conn, guard), None));
         }
 
-        let new_conn = self
-            .quic_endpoint
-            .connect_with(self.client_cfg.clone(), node_addr, CERT_SERVER_NAME)?
-            .await?;
+        // Check if a connect attempt to this address is already in progress.
+        match self.connection_deduplicator.query(node_addr).await {
+            Some(Ok(conn)) => return Ok((conn, None)),
+            Some(Err(error)) => return Err(error.into()),
+            None => {}
+        }
+
+        // This is the first attempt - proceed with establishing the connection now.
+        let connecting = match self.quic_endpoint.connect_with(
+            self.client_cfg.clone(),
+            node_addr,
+            CERT_SERVER_NAME,
+        ) {
+            Ok(connecting) => connecting,
+            Err(error) => {
+                self.connection_deduplicator
+                    .complete(node_addr, Err(error.clone().into()))
+                    .await;
+                return Err(error.into());
+            }
+        };
+
+        let new_conn = match connecting.await {
+            Ok(new_conn) => new_conn,
+            Err(error) => {
+                self.connection_deduplicator
+                    .complete(node_addr, Err(error.clone().into()))
+                    .await;
+                return Err(error.into());
+            }
+        };
 
         trace!("Successfully connected to peer: {}", node_addr);
 
@@ -213,6 +243,10 @@ impl Endpoint {
 
         let conn = Connection::new(new_conn.connection, guard.clone());
         let incoming_msgs = IncomingMessages::new(new_conn.uni_streams, new_conn.bi_streams, guard);
+
+        self.connection_deduplicator
+            .complete(node_addr, Ok(conn.clone()))
+            .await;
 
         Ok((conn, Some(incoming_msgs)))
     }

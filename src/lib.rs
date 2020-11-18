@@ -50,6 +50,7 @@
 mod api;
 mod bootstrap_cache;
 mod config;
+mod connection_deduplicator;
 mod connection_pool;
 mod connections;
 mod endpoint;
