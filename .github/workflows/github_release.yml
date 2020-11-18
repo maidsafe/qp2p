@@ -1,5 +1,6 @@
 name: Create GitHub Release
 
+
 on:
   push:
     tags:
@@ -19,7 +20,7 @@ jobs:
 
       - name: Set tag as env
         shell: bash
-        run: echo ::set-env name=RELEASE_VERSION::$(echo ${GITHUB_REF:10})
+        run: echo "RELEASE_VERSION=$(echo ${GITHUB_REF:10})" >> $GITHUB_ENV
 
       - name: lets check tag
         shell: bash
