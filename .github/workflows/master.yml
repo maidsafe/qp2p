@@ -41,6 +41,8 @@ jobs:
       # Cache.
       - name: Cargo cache registry, index and build
         uses: actions/cache@v2
+        # TODO: temporarily disable cache on macos due to weird issues with serde_derive crate. Needs further investigation.
+        if: matrix.os != 'macOS-latest'
         with:
           path: |
             ~/.cargo/registry
