@@ -67,6 +67,7 @@ pub use config::Config;
 pub use connections::{Connection, IncomingConnections, IncomingMessages, RecvStream, SendStream};
 pub use endpoint::Endpoint;
 pub use error::{Error, Result};
+pub use quinn::ConnectionError;
 
 #[cfg(test)]
 mod tests;
