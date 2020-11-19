@@ -1,7 +1,9 @@
-use crate::{wire_msg::WireMsg, Config, Error, QuicP2p, Result};
+use crate::{utils, wire_msg::WireMsg, Config, Error, QuicP2p, Result};
 
 #[tokio::test]
 async fn echo_service() -> Result<()> {
+    utils::init_logging();
+
     // Endpoint builder
     let qp2p = QuicP2p::with_config(
         Some(Config {
