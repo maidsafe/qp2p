@@ -1,4 +1,5 @@
 use crate::{Config, Error, Message, QuicP2p, Result};
+use assert_matches::assert_matches;
 use bytes::Bytes;
 use futures::future;
 use std::{
@@ -78,14 +79,8 @@ async fn bi_directional_streams() -> Result<()> {
 
     assert_eq!(msg, message.get_message_data());
     // Peer 1 gets the bi-directional streams along with the message
-    let (mut recv_stream1, mut send_stream1) = if let Message::BiStream { recv, send, .. } = message
-    {
-        (recv, send)
-    } else {
-        return Err(Error::Unexpected(
-            "Expected a Bidirectional stream".to_string(),
-        ));
-    };
+    let (mut recv_stream1, mut send_stream1) =
+        assert_matches!(message, Message::BiStream { recv, send, .. } => (recv, send));
 
     // Peer 2 should be able to re-use the stream to send an additional message
     let msg = random_msg();
@@ -135,13 +130,11 @@ async fn uni_directional_streams() -> Result<()> {
         .ok_or_else(|| Error::Unexpected("No incoming message".to_string()))?;
 
     // Peer 1 gets the uni-directional stream along with the message
-    let src = if let Message::UniStream { bytes, src, .. } = message {
+    let src = assert_matches!(message, Message::UniStream { bytes, src, .. } => {
         assert_eq!(msg_from_peer2, bytes);
         assert_eq!(src, peer2_addr);
         src
-    } else {
-        panic!("Expected a unidirectional stream")
-    };
+    });
 
     // Peer 2 dropped the connection to peer 1 after sending the message, so the incoming message
     // stream gets closed. Drop the stream which also removes the connection from the connection
