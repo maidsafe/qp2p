@@ -1,4 +1,4 @@
-use crate::{Config, Error, Message, QuicP2p, Result};
+use crate::{utils, Config, Error, Message, QuicP2p, Result};
 use assert_matches::assert_matches;
 use bytes::Bytes;
 use futures::future;
@@ -34,6 +34,8 @@ fn random_msg() -> Bytes {
 
 #[tokio::test]
 async fn successful_connection() -> Result<()> {
+    utils::init_logging();
+
     let qp2p = new_qp2p();
     let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
@@ -54,6 +56,8 @@ async fn successful_connection() -> Result<()> {
 
 #[tokio::test]
 async fn bi_directional_streams() -> Result<()> {
+    utils::init_logging();
+
     let qp2p = new_qp2p();
     let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
@@ -104,6 +108,8 @@ async fn bi_directional_streams() -> Result<()> {
 
 #[tokio::test]
 async fn uni_directional_streams() -> Result<()> {
+    utils::init_logging();
+
     let qp2p = new_qp2p();
     let peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
@@ -175,6 +181,8 @@ async fn uni_directional_streams() -> Result<()> {
 
 #[tokio::test]
 async fn reuse_outgoing_connection() -> Result<()> {
+    utils::init_logging();
+
     let qp2p = new_qp2p();
     let alice = qp2p.new_endpoint()?;
 
@@ -229,6 +237,8 @@ async fn reuse_outgoing_connection() -> Result<()> {
 
 #[tokio::test]
 async fn reuse_incoming_connection() -> Result<()> {
+    utils::init_logging();
+
     let qp2p = new_qp2p();
     let alice = qp2p.new_endpoint()?;
     let alice_addr = alice.socket_addr().await?;
@@ -277,6 +287,8 @@ async fn reuse_incoming_connection() -> Result<()> {
 
 #[tokio::test]
 async fn remove_closed_connection_from_pool() -> Result<()> {
+    utils::init_logging();
+
     let qp2p = new_qp2p();
     let alice = qp2p.new_endpoint()?;
 
@@ -341,6 +353,8 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     // If both peers call `connect_to` simultaneously (that is, before any of them receives the
     // others connection first), two separate connections are created. This test verifies that
     // everything still works correctly even in this case.
+
+    utils::init_logging();
 
     let qp2p = new_qp2p();
     let alice = qp2p.new_endpoint()?;
@@ -417,6 +431,8 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
 
 #[tokio::test]
 async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
+    utils::init_logging();
+
     let qp2p = new_qp2p();
     let alice = qp2p.new_endpoint()?;
     let alice_addr = alice.socket_addr().await?;

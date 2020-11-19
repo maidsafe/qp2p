@@ -8,12 +8,10 @@
 // Software.
 
 use crate::error::{Error, Result};
-use flexi_logger::{DeferredNow, Logger};
-use log::Record;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
 /// Get the project directory
@@ -93,7 +91,12 @@ where
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn init_logging() {
+    use flexi_logger::{DeferredNow, Logger};
+    use log::Record;
+    use std::io::Write;
+
     // Custom formatter for logs
     let do_format = move |writer: &mut dyn Write, clock: &mut DeferredNow, record: &Record| {
         let handle = std::thread::current();
