@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.1](https://github.com/maidsafe/qp2p/compare/v0.9.0...v0.9.1) (2020-11-19)
+
+
+### Bug Fixes
+
+* do not initialize logger in QuicP2p constructor ([4952639](https://github.com/maidsafe/qp2p/commit/495263925d3f6bb4e3c544df0fa569d5ef085665))
+
 ## [0.9.0](https://github.com/maidsafe/qp2p/compare/v0.8.9...v0.9.0) (2020-11-19)
 
 
