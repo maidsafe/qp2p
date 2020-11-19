@@ -11,7 +11,9 @@ use super::error::Error;
 use super::igd::forward_port;
 use super::wire_msg::WireMsg;
 use super::{
-    connections::{Connection, IncomingConnections},
+    connection_deduplicator::ConnectionDeduplicator,
+    connection_pool::ConnectionPool,
+    connections::{Connection, IncomingConnections, IncomingMessages},
     error::Result,
     Config,
 };
@@ -34,13 +36,15 @@ pub struct Endpoint {
     client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
     qp2p_config: Config,
+    connection_pool: ConnectionPool,
+    connection_deduplicator: ConnectionDeduplicator,
 }
 
 impl std::fmt::Debug for Endpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
-            .field("quic_endpoint", &"<endpoint omitted>".to_string())
+            .field("quic_endpoint", &"<endpoint omitted>")
             .field("quic_incoming", &self.quic_incoming)
             .field("client_cfg", &self.client_cfg)
             .finish()
@@ -63,18 +67,20 @@ impl Endpoint {
             client_cfg,
             bootstrap_nodes,
             qp2p_config,
+            connection_pool: ConnectionPool::new(),
+            connection_deduplicator: ConnectionDeduplicator::new(),
         })
     }
 
     /// Endpoint local address
-    async fn local_addr(&self) -> Result<SocketAddr> {
-        Ok(self.local_addr)
+    fn local_addr(&self) -> SocketAddr {
+        self.local_addr
     }
 
     /// Returns the socket address of the endpoint
     pub async fn socket_addr(&self) -> Result<SocketAddr> {
         if cfg!(test) || !self.qp2p_config.forward_port {
-            self.local_addr().await
+            Ok(self.local_addr())
         } else {
             self.public_addr().await
         }
@@ -151,31 +157,112 @@ impl Endpoint {
         }
     }
 
-    /// Connect to another peer
-    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<Connection> {
-        let quinn_connecting = self.quic_endpoint.connect_with(
-            self.client_cfg.clone(),
-            &node_addr,
-            CERT_SERVER_NAME,
-        )?;
+    /// Connects to another peer.
+    ///
+    /// Returns `Connection` which is a handle for sending messages to the peer and
+    /// `IncomingMessages` which is a stream of messages received from the peer.
+    /// The incoming messages stream might be `None`. See the next section for more info.
+    ///
+    /// # Connection pooling
+    ///
+    /// Connection are stored in an internal pool and reused if possible. A connection remains in
+    /// the pool while its `IncomingMessages` instances exists and while the connection is open.
+    ///
+    /// When a new connection is established, this function returns both the `Connection` instance
+    /// and the `IncomingMessages` stream. If an existing connection is retrieved from the pool,
+    /// the incoming messages will be `None`. Multiple `Connection` instances can exists
+    /// simultaneously and they all share the same underlying connection resource. On the other
+    /// hand, at most one `IncomingMessages` stream can exist per peer.
+    ///
+    /// How to handle the `IncomingMessages` depends on the networking model of the application:
+    ///
+    /// In the peer-to-peer model, where peers can arbitrarily send and receive messages to/from
+    /// other peers, it is recommended to keep the `IncomingMessages` around and listen on it for
+    /// new messages by repeatedly calling `next` and only drop it when it returns `None`.
+    /// On the other hand, there is no need to keep `Connection` around as it can be cheaply
+    /// retrieved again when needed by calling `connect_to`. When the connection gets closed by the
+    /// peer or it timeouts due to inactivity, the incoming messages stream gets closed and once
+    /// it's dropped the connection gets removed from the pool automatically. Calling `connect_to`
+    /// afterwards will open a new connection.
+    ///
+    /// In the client-server model, where only the client send requests to the server and then
+    /// listens for responses and never the other way around, it's OK to ignore (drop) the incoming
+    /// messages stream and only use bi-directional streams obtained by calling
+    /// `Connection::open_bi`. In this case the connection won't be pooled and the application is
+    /// responsible for caching it.
+    ///
+    /// When sending a message on `Connection` fails, the connection is also automatically removed
+    /// from the pool and the subsequent call to `connect_to` is guaranteed to reopen new connection
+    /// too.
+    pub async fn connect_to(
+        &self,
+        node_addr: &SocketAddr,
+    ) -> Result<(Connection, Option<IncomingMessages>)> {
+        if let Some((conn, guard)) = self.connection_pool.get(node_addr) {
+            trace!("Using cached connection to peer: {}", node_addr);
+            return Ok((Connection::new(conn, guard), None));
+        }
 
-        let quinn::NewConnection {
-            connection: quinn_conn,
-            ..
-        } = quinn_connecting.await?;
+        // Check if a connect attempt to this address is already in progress.
+        match self.connection_deduplicator.query(node_addr).await {
+            Some(Ok(conn)) => return Ok((conn, None)),
+            Some(Err(error)) => return Err(error.into()),
+            None => {}
+        }
+
+        // This is the first attempt - proceed with establishing the connection now.
+        let connecting = match self.quic_endpoint.connect_with(
+            self.client_cfg.clone(),
+            node_addr,
+            CERT_SERVER_NAME,
+        ) {
+            Ok(connecting) => connecting,
+            Err(error) => {
+                self.connection_deduplicator
+                    .complete(node_addr, Err(error.clone().into()))
+                    .await;
+                return Err(error.into());
+            }
+        };
+
+        let new_conn = match connecting.await {
+            Ok(new_conn) => new_conn,
+            Err(error) => {
+                self.connection_deduplicator
+                    .complete(node_addr, Err(error.clone().into()))
+                    .await;
+                return Err(error.into());
+            }
+        };
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        Connection::new(quinn_conn).await
+        let guard = self
+            .connection_pool
+            .insert(*node_addr, new_conn.connection.clone());
+
+        let conn = Connection::new(new_conn.connection, guard.clone());
+        let incoming_msgs = IncomingMessages::new(new_conn.uni_streams, new_conn.bi_streams, guard);
+
+        self.connection_deduplicator
+            .complete(node_addr, Ok(conn.clone()))
+            .await;
+
+        Ok((conn, Some(incoming_msgs)))
     }
 
     /// Obtain stream of incoming QUIC connections
-    pub fn listen(&self) -> Result<IncomingConnections> {
+    pub fn listen(&self) -> IncomingConnections {
         trace!(
             "Incoming connections will be received at {}",
-            self.quic_endpoint.local_addr()?
+            self.local_addr()
         );
-        IncomingConnections::new(Arc::clone(&self.quic_incoming))
+        IncomingConnections::new(self.quic_incoming.clone(), self.connection_pool.clone())
+    }
+
+    /// Close all the connections of this endpoint immediately and stop accepting new connections.
+    pub fn close(&self) {
+        self.quic_endpoint.close(0u32.into(), b"")
     }
 
     // Private helper
@@ -188,9 +275,9 @@ impl Endpoint {
         let mut tasks = Vec::default();
         for node in self.bootstrap_nodes.iter().cloned() {
             debug!("Connecting to {:?}", &node);
-            let connection = self.connect_to(&node).await?; // TODO: move into loop
+            let (connection, _) = self.connect_to(&node).await?; // TODO: move into loop
             let task_handle = tokio::spawn(async move {
-                let (mut send_stream, mut recv_stream) = connection.open_bi_stream().await?;
+                let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
                     Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
@@ -205,5 +292,9 @@ impl Endpoint {
             Error::BootstrapFailure
         })?;
         result
+    }
+
+    pub(crate) fn bootstrap_nodes(&self) -> &[SocketAddr] {
+        &self.bootstrap_nodes
     }
 }

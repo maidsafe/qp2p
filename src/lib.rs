@@ -35,8 +35,7 @@
     unused_parens,
     while_true,
     clippy::unicode_not_nfc,
-    clippy::wrong_pub_self_convention,
-    clippy::unwrap_used
+    clippy::wrong_pub_self_convention
 )]
 #![warn(
     trivial_casts,
@@ -51,6 +50,8 @@
 mod api;
 mod bootstrap_cache;
 mod config;
+mod connection_deduplicator;
+mod connection_pool;
 mod connections;
 mod endpoint;
 mod error;
@@ -66,6 +67,7 @@ pub use config::Config;
 pub use connections::{Connection, IncomingConnections, IncomingMessages, RecvStream, SendStream};
 pub use endpoint::Endpoint;
 pub use error::{Error, Result};
+pub use quinn::ConnectionError;
 
 #[cfg(test)]
 mod tests;

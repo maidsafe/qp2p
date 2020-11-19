@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::{io, sync::mpsc};
 
 /// Result used by `QuicP2p`.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, Error)]
 #[allow(missing_docs)]
@@ -51,8 +51,6 @@ pub enum Error {
     OperationNotAllowed,
     #[error(display = "Connection cancelled")]
     ConnectionCancelled,
-    #[error(display = "MPMC channel receive error")]
-    MultiChannelRecv(#[source] crossbeam_channel::RecvError),
     #[error(display = "Channel receive error")]
     ChannelRecv(#[source] mpsc::RecvError),
     #[error(display = "Could not add certificate to PKI")]

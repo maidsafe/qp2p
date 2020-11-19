@@ -19,7 +19,6 @@ use std::{
     collections::HashSet, fmt, fs, io, net::IpAddr, net::SocketAddr, path::PathBuf, str::FromStr,
 };
 use structopt::StructOpt;
-use unwrap::unwrap;
 
 /// QuicP2p configurations
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq, StructOpt)]
@@ -135,12 +134,10 @@ impl SerialisableCertificate {
 
 impl Default for SerialisableCertificate {
     fn default() -> Self {
-        let cert = unwrap!(rcgen::generate_simple_self_signed(vec![
-            "MaidSAFE.net".to_string()
-        ]));
+        let cert = rcgen::generate_simple_self_signed(vec!["MaidSAFE.net".to_string()]).unwrap();
 
         Self {
-            cert_der: unwrap!(cert.serialize_der()).into(),
+            cert_der: cert.serialize_der().unwrap().into(),
             key_der: cert.serialize_private_key_der().into(),
         }
     }
@@ -160,7 +157,7 @@ impl FromStr for SerialisableCertificate {
 impl ToString for SerialisableCertificate {
     /// Convert `SerialisableCertificate` into a base64-encoded string.
     fn to_string(&self) -> String {
-        let cert = unwrap!(bincode::serialize(&(&self.cert_der, &self.key_der)));
+        let cert = bincode::serialize(&(&self.cert_der, &self.key_der)).unwrap();
         base64::encode(&cert)
     }
 }
@@ -195,12 +192,12 @@ mod tests {
     #[test]
     fn config_create_read_and_write() {
         let dir = test_dirs();
-        let config_path = unwrap!(config_path(Some(&dir)));
+        let config_path = config_path(Some(&dir)).unwrap();
 
         assert!(utils::read_from_disk::<Config>(&config_path).is_err());
 
-        let cfg = unwrap!(Config::read_or_construct_default(Some(&dir)));
-        let read_cfg = unwrap!(utils::read_from_disk(&config_path));
+        let cfg = Config::read_or_construct_default(Some(&dir)).unwrap();
+        let read_cfg = utils::read_from_disk(&config_path).unwrap();
 
         assert_eq!(cfg, read_cfg);
     }

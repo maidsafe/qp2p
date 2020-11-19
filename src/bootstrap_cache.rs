@@ -147,7 +147,6 @@ impl BootstrapCache {
 mod tests {
     use super::*;
     use crate::test_utils::{make_node_addr, rand_node_addr, test_dirs};
-    use unwrap::unwrap;
 
     mod add_peer {
         use super::*;
@@ -155,7 +154,7 @@ mod tests {
         #[test]
         fn when_10_peers_are_added_they_are_synced_to_disk() {
             let dirs = test_dirs();
-            let mut cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs), false));
+            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs), false).unwrap();
 
             for _ in 0..10 {
                 cache.add_peer(rand_node_addr());
@@ -163,7 +162,7 @@ mod tests {
 
             assert_eq!(cache.peers.len(), 10);
 
-            let cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs), false));
+            let cache = BootstrapCache::new(Default::default(), Some(&dirs), false).unwrap();
             assert_eq!(cache.peers.len(), 10);
         }
 
@@ -189,7 +188,7 @@ mod tests {
             let dirs = test_dirs();
             let port_base = 5000;
 
-            let mut cache = unwrap!(BootstrapCache::new(Default::default(), Some(&dirs), false));
+            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs), false).unwrap();
 
             for i in 0..MAX_CACHE_SIZE {
                 cache.add_peer(make_node_addr(port_base + i as u16));

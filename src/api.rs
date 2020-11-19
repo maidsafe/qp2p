@@ -10,14 +10,14 @@
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
-    connections::{Connection, RecvStream, SendStream},
+    connections::{Connection, IncomingMessages, RecvStream, SendStream},
     endpoint::Endpoint,
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
     utils::init_logging,
 };
 use bytes::Bytes;
-use futures::future::select_ok;
+use futures::future;
 use log::{debug, error, info, trace};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
@@ -223,53 +223,35 @@ impl QuicP2p {
     ///
     ///     config.port = Some(3001);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config), &[peer_addr], true)?;
-    ///     let (endpoint, connection) = quic_p2p.bootstrap().await?;
+    ///     let (endpoint, connection, incoming_messages) = quic_p2p.bootstrap().await?;
     ///     Ok(())
     /// }
     /// ```
-    pub async fn bootstrap(&self) -> Result<(Endpoint, Connection)> {
-        // TODO: refactor bootstrap_cache so we can simply get the list of nodes
-        let bootstrap_nodes: Vec<SocketAddr> = self
-            .bootstrap_cache
-            .peers()
-            .iter()
-            .rev()
-            .chain(self.bootstrap_cache.hard_coded_contacts().iter())
-            .cloned()
-            .collect();
+    pub async fn bootstrap(&self) -> Result<(Endpoint, Connection, IncomingMessages)> {
+        let endpoint = self.new_endpoint()?;
 
-        trace!("Bootstrapping with nodes {:?}", bootstrap_nodes);
+        trace!("Bootstrapping with nodes {:?}", endpoint.bootstrap_nodes());
+
         // Attempt to connect to all nodes and return the first one to succeed
-        let mut tasks = Vec::default();
-        for node_addr in bootstrap_nodes.iter().cloned() {
-            let qp2p_config = self.qp2p_config.clone();
-            let nodes = bootstrap_nodes.clone();
-            let endpoint_cfg = self.endpoint_cfg.clone();
-            let client_cfg = self.client_cfg.clone();
-            let local_addr = self.local_addr;
-            let allow_random_port = self.allow_random_port;
-            let task_handle = tokio::spawn(async move {
-                new_connection_to(
-                    &node_addr,
-                    endpoint_cfg,
-                    client_cfg,
-                    local_addr,
-                    allow_random_port,
-                    nodes,
-                    qp2p_config,
-                )
-                .await
-            });
-            tasks.push(task_handle);
-        }
+        let tasks = endpoint
+            .bootstrap_nodes()
+            .iter()
+            .map(|addr| Box::pin(endpoint.connect_to(addr)));
 
-        let (result, _) = select_ok(tasks).await.map_err(|err| {
-            error!("Failed to botstrap to the network: {}", err);
-            Error::BootstrapFailure
-        })?;
+        let (conn, incoming_messages) = future::select_ok(tasks)
+            .await
+            .map_err(|err| {
+                error!("Failed to bootstrap to the network: {}", err);
+                Error::BootstrapFailure
+            })?
+            .0;
 
-        let (endpoint, connection) = result?;
-        Ok((endpoint, connection))
+        // NOTE: this error is impossible because we just created new endpoint so the connection
+        // cannot be in the pool yet and thus `incoming_messages` should be `Some`. But handling it
+        // anyway to avoid `unwrap`.
+        let incoming_messages = incoming_messages.ok_or(Error::BootstrapFailure)?;
+
+        Ok((endpoint, conn, incoming_messages))
     }
 
     /// Connect to the given peer and return the `Endpoint` created along with the `Connection`
@@ -295,25 +277,10 @@ impl QuicP2p {
     /// }
     /// ```
     pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
-        let bootstrap_nodes: Vec<SocketAddr> = self
-            .bootstrap_cache
-            .peers()
-            .iter()
-            .rev()
-            .chain(self.bootstrap_cache.hard_coded_contacts().iter())
-            .cloned()
-            .collect();
+        let endpoint = self.new_endpoint()?;
+        let (conn, _) = endpoint.connect_to(node_addr).await?;
 
-        new_connection_to(
-            node_addr,
-            self.endpoint_cfg.clone(),
-            self.client_cfg.clone(),
-            self.local_addr,
-            self.allow_random_port,
-            bootstrap_nodes,
-            self.qp2p_config.clone(),
-        )
-        .await
+        Ok((endpoint, conn))
     }
 
     /// Create a new `Endpoint`  which can be used to connect to peers and send
@@ -367,34 +334,6 @@ impl QuicP2p {
 }
 
 // Private helpers
-
-// Creates a new Connection
-async fn new_connection_to(
-    node_addr: &SocketAddr,
-    endpoint_cfg: quinn::ServerConfig,
-    client_cfg: quinn::ClientConfig,
-    local_addr: SocketAddr,
-    allow_random_port: bool,
-    bootstrap_nodes: Vec<SocketAddr>,
-    qp2p_config: Config,
-) -> Result<(Endpoint, Connection)> {
-    trace!("Attempting to connect to peer: {}", node_addr);
-
-    let (quinn_endpoint, quinn_incoming) = bind(endpoint_cfg, local_addr, allow_random_port)?;
-
-    trace!("Bound connection to local address: {}", local_addr);
-
-    let endpoint = Endpoint::new(
-        quinn_endpoint,
-        quinn_incoming,
-        client_cfg,
-        bootstrap_nodes,
-        qp2p_config,
-    )?;
-    let connection = endpoint.connect_to(node_addr).await?;
-
-    Ok((endpoint, connection))
-}
 
 // Bind a new socket with a local address
 fn bind(

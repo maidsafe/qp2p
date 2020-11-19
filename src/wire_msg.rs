@@ -15,7 +15,6 @@ use bytes::Bytes;
 use log::trace;
 use serde::{Deserialize, Serialize};
 use std::{fmt, net::SocketAddr};
-use unwrap::unwrap;
 
 const MSG_HEADER_LEN: usize = 9;
 const MSG_PROTOCOL_VERSION: u16 = 0x0001;
@@ -63,7 +62,7 @@ impl WireMsg {
         let (msg_bytes, msg_flag) = match self {
             WireMsg::UserMsg(ref m) => (m.clone(), USER_MSG_FLAG),
             _ => (
-                From::from(unwrap!(bincode::serialize(&self))),
+                From::from(bincode::serialize(&self).unwrap()),
                 ECHO_SRVC_MSG_FLAG,
             ),
         };
