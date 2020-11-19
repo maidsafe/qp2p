@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.9.0](https://github.com/maidsafe/qp2p/compare/v0.8.9...v0.9.0) (2020-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* `QuicP2p::bootstrap` return type changed from `Result<(Endpoint, Connection)>` to `Result<(Endpoint, Connection, IncomingMessages)>`.
+* Dropping `Connection` while some send/recv streams are still in scope no longer closes the connection. All those streams must be dropped too before the connection is closed.
+*     - `Endpoint::connect_to` now returns pair or `(Connection, Option<IncomingMessages>)` (previously it returned only `Connection`).
+    - `Connection::open_bi_stream` renamed to `open_bi` (same as in quinn)
+    - `Connection::send` renamed to `send_bi` for consistency
+    - `Endpoint::listen` no longer returns `Result`
+
+### Features
+
+* add Endpoint::close ([2cedb77](https://github.com/maidsafe/qp2p/commit/2cedb77f417c8e66fadf162b8e73aa04c71f5845))
+* do not close `quinn::Connection` on `Connection` drop ([1e5ee89](https://github.com/maidsafe/qp2p/commit/1e5ee8988d29c90fb2080ad63342b35d3a5c6e3c))
+* implement Clone for Connection ([51de4c8](https://github.com/maidsafe/qp2p/commit/51de4c865a5d0bdaf22d28c1886f011c39500476))
+* implement connection deduplication ([175c563](https://github.com/maidsafe/qp2p/commit/175c5635db935b60bdf590ce99b23e196f6c0d0b))
+* implement connection pooling ([6edb290](https://github.com/maidsafe/qp2p/commit/6edb29049a7ef13cd39ba0289a6983c165d7bafa))
+* re-export quinn::ConnectionError ([c10895d](https://github.com/maidsafe/qp2p/commit/c10895da0042110b7d231483c6dcd2bf00adcb0e))
+* remove connection from the pool when manually closed ([815eb11](https://github.com/maidsafe/qp2p/commit/815eb110f59e1511f61b251975016fd25073df8b))
+* return also IncomingMessages from QuicP2p::bootstrap ([cd18837](https://github.com/maidsafe/qp2p/commit/cd18837e81033b5753d926bd475a2289ab29c997))
+
 ### [0.8.9](https://github.com/maidsafe/qp2p/compare/v0.8.8...v0.8.9) (2020-11-18)
 
 ### [0.8.8](https://github.com/maidsafe/qp2p/compare/v0.8.7...v0.8.8) (2020-11-10)
