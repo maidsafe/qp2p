@@ -66,8 +66,6 @@ impl BootstrapCache {
             Default::default()
         };
 
-        println!("Bootstrap cache contents: {:?}", &peers); // TODO: remove after review
-
         Ok(BootstrapCache {
             peers,
             cache_path,
