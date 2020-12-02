@@ -11,6 +11,7 @@ use super::error::Error;
 use super::igd::forward_port;
 use super::wire_msg::WireMsg;
 use super::{
+    api::DEFAULT_UPNP_LEASE_DURATION_SEC,
     connection_deduplicator::ConnectionDeduplicator,
     connection_pool::ConnectionPool,
     connections::{Connection, IncomingConnections, IncomingMessages},
@@ -106,9 +107,9 @@ impl Endpoint {
             Duration::from_secs(30),
             forward_port(
                 self.local_addr,
-                self.qp2p_config.upnp_lease_duration.ok_or_else(|| {
-                    Error::Unexpected("Missing UPnP config parameter".to_string())
-                })?,
+                self.qp2p_config
+                    .upnp_lease_duration
+                    .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC),
             ),
         )
         .await
@@ -151,9 +152,7 @@ impl Endpoint {
         if let Some(socket_addr) = addr {
             Ok(socket_addr)
         } else {
-            Err(Error::Unexpected(
-                "No response from echo service".to_string(),
-            ))
+            Err(Error::NoEchoServiceResponse)
         }
     }
 
@@ -281,7 +280,7 @@ impl Endpoint {
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
                     Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
-                    Ok(_) => Err(Error::Unexpected("Unexpected message".to_string())),
+                    Ok(_) => Err(Error::UnexpectedMessageType),
                     Err(err) => Err(err),
                 }
             });

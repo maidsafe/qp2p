@@ -22,10 +22,7 @@ async fn echo_service() -> Result<()> {
     // Listen for messages / connections at peer 1
     let handle1 = tokio::spawn(async move {
         let mut incoming = peer1.listen();
-        let mut inbound_messages = incoming
-            .next()
-            .await
-            .ok_or_else(|| Error::Unexpected("No incoming messages".to_string()))?;
+        let mut inbound_messages = incoming.next().await.ok_or(Error::NoIncomingMessage)?;
         let _message = inbound_messages.next().await;
         Ok::<_, Error>(inbound_messages) // Return this object to prevent the connection from being dropped
     });

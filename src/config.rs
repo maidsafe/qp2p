@@ -120,18 +120,9 @@ pub(crate) struct SerialisableCertificate {
 impl SerialisableCertificate {
     /// Returns a new Certificate that is valid for the list of domain names provided
     pub fn new(domains: impl Into<Vec<String>>) -> Result<Self> {
-        let cert = rcgen::generate_simple_self_signed(domains)
-            .map_err(|_| Error::Unexpected("Error generating certificate".to_string()))?;
-
+        let cert = rcgen::generate_simple_self_signed(domains)?;
         Ok(Self {
-            cert_der: cert
-                .serialize_der()
-                .map_err(|_| {
-                    Error::Unexpected(
-                        "Error serializing certificate into binary DER format".to_string(),
-                    )
-                })?
-                .into(),
+            cert_der: cert.serialize_der()?.into(),
             key_der: cert.serialize_private_key_der().into(),
         })
     }
