@@ -27,18 +27,16 @@ pub fn new_client_cfg(
     idle_timeout_msec: u64,
     keep_alive_interval_msec: u32,
 ) -> Result<quinn::ClientConfig> {
-    let mut cfg = quinn::ClientConfigBuilder::default().build();
-    let crypto_cfg = Arc::get_mut(&mut cfg.crypto).ok_or_else(|| {
-        Error::Unexpected("The Crypto config should not be shared yet".to_string())
-    })?;
+    let mut config = quinn::ClientConfig::default();
+    let crypto_cfg = Arc::make_mut(&mut config.crypto);
     crypto_cfg
         .dangerous()
         .set_certificate_verifier(SkipServerVerification::new());
-    cfg.transport = Arc::new(new_transport_cfg(
+    config.transport = Arc::new(new_transport_cfg(
         idle_timeout_msec,
         keep_alive_interval_msec,
     ));
-    Ok(cfg)
+    Ok(config)
 }
 
 pub fn new_our_cfg(

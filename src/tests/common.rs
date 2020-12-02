@@ -43,10 +43,7 @@ async fn successful_connection() -> Result<()> {
     let _connection = peer2.connect_to(&peer1_addr).await?;
 
     let mut incoming_conn = peer1.listen();
-    let incoming_messages = incoming_conn
-        .next()
-        .await
-        .ok_or_else(|| Error::Unexpected("No incoming connection".to_string()))?;
+    let incoming_messages = incoming_conn.next().await.ok_or(Error::NoIncomingMessage)?;
 
     assert_eq!(incoming_messages.remote_addr(), peer2.socket_addr().await?);
 
@@ -73,12 +70,12 @@ async fn bi_directional_streams() -> Result<()> {
     let mut incoming_messages = incoming_conn
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("No incoming connection".to_string()))?;
+        .ok_or(Error::NoIncomingConnection)?;
 
     let message = incoming_messages
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("No incoming message".to_string()))?;
+        .ok_or(Error::NoIncomingMessage)?;
 
     assert_eq!(msg, message.get_message_data());
     // Peer 1 gets the bi-directional streams along with the message
@@ -128,11 +125,11 @@ async fn uni_directional_streams() -> Result<()> {
     let mut incoming_messages = incoming_conn_peer1
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("No incoming connection".to_string()))?;
+        .ok_or(Error::NoIncomingConnection)?;
     let message = incoming_messages
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("No incoming message".to_string()))?;
+        .ok_or(Error::NoIncomingMessage)?;
 
     // Peer 1 gets the uni-directional stream along with the message
     let src = assert_matches!(message, Message::UniStream { bytes, src, .. } => {
@@ -157,21 +154,17 @@ async fn uni_directional_streams() -> Result<()> {
     let mut incoming_messages = incoming_conn_peer2
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("No incoming connection".to_string()))?;
+        .ok_or(Error::NoIncomingConnection)?;
     let message = incoming_messages
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("No incoming message".to_string()))?;
+        .ok_or(Error::NoIncomingMessage)?;
 
     // Peer 1 gets the uni-directional stream along with the message
-    if let Message::UniStream { bytes, src, .. } = message {
+    assert_matches!(message, Message::UniStream { bytes, src, .. } => {
         assert_eq!(msg_from_peer1, bytes);
         assert_eq!(src, peer1_addr);
-    } else {
-        return Err(Error::Unexpected(
-            "Expected a unidirectional stream".to_string(),
-        ));
-    }
+    });
 
     // Peer 1 dropped the connection to peer 2 after sending the message, so the incoming message
     // stream gets closed.
@@ -209,7 +202,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
     let mut bob_incoming_messages = bob_incoming_conns
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+        .ok_or(Error::NoIncomingConnection)?;
 
     assert_eq!(
         bob_incoming_messages
@@ -250,8 +243,7 @@ async fn reuse_incoming_connection() -> Result<()> {
 
     // Alice connects and sends a message.
     let (alice_conn, alice_incoming_messages) = alice.connect_to(&bob_addr).await?;
-    let mut alice_incoming_messages = alice_incoming_messages
-        .ok_or_else(|| Error::Unexpected("No incoming messages".to_string()))?;
+    let mut alice_incoming_messages = alice_incoming_messages.ok_or(Error::NoIncomingMessage)?;
     let msg0 = random_msg();
     alice_conn.send_uni(msg0.clone()).await?;
 
@@ -259,7 +251,7 @@ async fn reuse_incoming_connection() -> Result<()> {
     let mut bob_incoming_messages0 = bob_incoming_conns
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+        .ok_or(Error::NoIncomingConnection)?;
     assert_eq!(
         bob_incoming_messages0
             .next()
@@ -300,8 +292,7 @@ async fn remove_closed_connection_from_pool() -> Result<()> {
 
     // Alice sends a message to Bob
     let (alice_conn, alice_incoming_messages) = alice.connect_to(&bob_addr).await?;
-    let mut alice_incoming_messages = alice_incoming_messages
-        .ok_or_else(|| Error::Unexpected("No incoming messages".to_string()))?;
+    let mut alice_incoming_messages = alice_incoming_messages.ok_or(Error::NoIncomingMessage)?;
     let msg0 = random_msg();
     alice_conn.send_uni(msg0.clone()).await?;
 
@@ -309,7 +300,7 @@ async fn remove_closed_connection_from_pool() -> Result<()> {
     let mut bob_incoming_messages = bob_incoming_conns
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+        .ok_or(Error::NoIncomingConnection)?;
     assert_eq!(
         bob_incoming_messages
             .next()
@@ -339,7 +330,7 @@ async fn remove_closed_connection_from_pool() -> Result<()> {
     let mut bob_incoming_messages = bob_incoming_conns
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+        .ok_or(Error::NoIncomingConnection)?;
     assert_eq!(
         bob_incoming_messages
             .next()
@@ -369,8 +360,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     let mut bob_incoming_conns = bob.listen();
 
     let (alice_conn, alice_incoming_messages0) = alice.connect_to(&bob_addr).await?;
-    let mut alice_incoming_messages0 = alice_incoming_messages0
-        .ok_or_else(|| Error::Unexpected("No incoming messages".to_string()))?;
+    let mut alice_incoming_messages0 = alice_incoming_messages0.ok_or(Error::NoIncomingMessage)?;
 
     let (bob_conn, bob_incoming_messages0) = bob.connect_to(&alice_addr).await?;
     assert!(bob_incoming_messages0.is_some());
@@ -378,12 +368,12 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     let mut alice_incoming_messages1 = alice_incoming_conns
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+        .ok_or(Error::NoIncomingConnection)?;
 
     let mut bob_incoming_messages1 = bob_incoming_conns
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+        .ok_or(Error::NoIncomingConnection)?;
 
     let msg0 = random_msg();
     alice_conn.send_uni(msg0.clone()).await?;
@@ -464,7 +454,7 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     let mut alice_incoming_messages = alice_incoming_conns
         .next()
         .await
-        .ok_or_else(|| Error::Unexpected("no incoming connection".to_string()))?;
+        .ok_or(Error::NoIncomingConnection)?;
 
     assert_eq!(
         alice_incoming_messages

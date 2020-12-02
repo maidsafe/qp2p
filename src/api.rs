@@ -28,6 +28,8 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
 /// Default duration of a UPnP lease, in seconds.
 pub const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
 
+const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
+
 /// Message received from a peer
 #[derive(Debug)]
 pub enum Message {
@@ -146,7 +148,8 @@ impl QuicP2p {
             .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
 
         let (key, cert) = {
-            let our_complete_cert = SerialisableCertificate::new(vec!["MaidSAFE.net".to_string()])?;
+            let our_complete_cert =
+                SerialisableCertificate::new(vec![MAIDSAFE_DOMAIN.to_string()])?;
             our_complete_cert.obtain_priv_key_and_cert()?
         };
 
@@ -247,7 +250,7 @@ impl QuicP2p {
         // NOTE: this error is impossible because we just created new endpoint so the connection
         // cannot be in the pool yet and thus `incoming_messages` should be `Some`. But handling it
         // anyway to avoid `unwrap`.
-        let incoming_messages = incoming_messages.ok_or_else(|| Error::BootstrapFailure)?;
+        let incoming_messages = incoming_messages.ok_or(Error::BootstrapFailure)?;
 
         Ok((endpoint, conn, incoming_messages))
     }
@@ -300,7 +303,7 @@ impl QuicP2p {
     /// }
     /// ```
     pub fn new_endpoint(&self) -> Result<Endpoint> {
-        trace!("Creating a new enpoint");
+        trace!("Creating a new endpoint");
 
         let bootstrap_nodes: Vec<SocketAddr> = self
             .bootstrap_cache

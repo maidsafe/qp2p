@@ -35,8 +35,10 @@ pub enum Error {
     CertificateParseError,
     #[error(display = "Already connected {}", 0)]
     DuplicateConnectionToPeer(SocketAddr),
-    #[error(display = "Could not find enpoint server")]
+    #[error(display = "Could not find endpoint server")]
     NoEndpointEchoServerFound,
+    #[error(display = "No response from echo service")]
+    NoEchoServiceResponse,
     #[error(display = "Oneshot receiver")]
     OneShotRx(#[source] tokio::sync::oneshot::error::RecvError),
     #[error(display = "TLS Error ")]
@@ -73,6 +75,8 @@ pub enum Error {
     IgdSearch(#[source] igd::SearchError),
     #[error(display = "JoinError")]
     JoinError(#[source] tokio::task::JoinError),
+    #[error(display = "RcGen error: {}", 0)]
+    RcGen(#[source] rcgen::RcgenError),
     #[error(display = "IGD is not supported")]
     IgdNotSupported,
     #[error(display = "Empty response message received from peer")]
@@ -81,6 +85,10 @@ pub enum Error {
     UnexpectedMessageType,
     #[error(display = "Maximum data length exceeded")]
     MaxLengthExceeded,
+    #[error(display = "Mo incoming connection")]
+    NoIncomingConnection,
+    #[error(display = "No incoming message")]
+    NoIncomingMessage,
     #[error(display = "Unexpected: {}", 0)]
     Unexpected(String),
 }

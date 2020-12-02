@@ -286,10 +286,7 @@ impl RecvStream {
     pub async fn next(&mut self) -> Result<Bytes> {
         match read_bytes(&mut self.quinn_recv_stream).await {
             Ok(WireMsg::UserMsg(bytes)) => Ok(bytes),
-            Ok(msg) => Err(Error::Unexpected(format!(
-                "Unexpected message type: {:?}",
-                msg
-            ))),
+            Ok(_) => Err(Error::UnexpectedMessageType),
             Err(error) => Err(error),
         }
     }
