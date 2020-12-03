@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.3](https://github.com/maidsafe/qp2p/compare/v0.9.2...v0.9.3) (2020-12-03)
+
+
+### Bug Fixes
+
+* proper error on empty bootstrap ([db61592](https://github.com/maidsafe/qp2p/commit/db6159250d3c035a1fab5ac4d6d55cc155cb6e9e))
+
 ### [0.9.2](https://github.com/maidsafe/qp2p/compare/v0.9.1...v0.9.2) (2020-11-24)
 
 ### [0.9.1](https://github.com/maidsafe/qp2p/compare/v0.9.0...v0.9.1) (2020-11-19)
