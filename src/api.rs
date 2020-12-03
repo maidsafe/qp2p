@@ -229,6 +229,11 @@ impl QuicP2p {
         let endpoint = self.new_endpoint()?;
 
         trace!("Bootstrapping with nodes {:?}", endpoint.bootstrap_nodes());
+        if endpoint.bootstrap_nodes().is_empty() {
+            return Err(Error::Unexpected(
+                "No nodes for bootstrapping found".to_string(),
+            ));
+        }
 
         // Attempt to connect to all nodes and return the first one to succeed
         let tasks = endpoint
