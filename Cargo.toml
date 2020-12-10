@@ -44,9 +44,9 @@ webpki = "~0.21.3"
   features = [ "derive" ]
 
   [dependencies.tokio]
-  version = "~0.3.5"
+  version = "~0.2.24"
   features = [
-  "rt-multi-thread",
+  "rt-core",
   "sync",
   "time",
   "macros",
