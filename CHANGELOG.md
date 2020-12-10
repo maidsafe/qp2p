@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.4](https://github.com/maidsafe/qp2p/compare/v0.9.3...v0.9.4) (2020-12-10)
+
+
+### Features
+
+* **api:** add more error variants and use them instead of ([bb56857](https://github.com/maidsafe/qp2p/commit/bb56857054d214e2e5cac34f568c5b218c353fd5))
+
+
+### Bug Fixes
+
+* **example:** remove panics from the example ([20dfe02](https://github.com/maidsafe/qp2p/commit/20dfe02a603f5a2f9e33f5171fddebbbf3daabb9))
+
 ### [0.9.3](https://github.com/maidsafe/qp2p/compare/v0.9.2...v0.9.3) (2020-12-03)
 
 
