@@ -9,12 +9,17 @@ async fn main() -> Result<(), Error> {
     let (bootstrap_nodes, genesis) = match &args[1][..] {
         "create" => (vec![], true),
         "connect" => {
-            let bootstrap_node = args[2]
-                .parse()
-                .map_err(|_| Error::Unexpected("SocketAddr format not recognized".to_string()))?;
+            let bootstrap_node = args[2].parse().map_err(|_| {
+                Error::Configuration("SocketAddr format not recognized".to_string())
+            })?;
             (vec![bootstrap_node], false)
         }
-        _ => panic!("Unexpected argument"),
+        other => {
+            return Err(Error::Configuration(format!(
+                "Unexpected argument: {}",
+                other
+            )));
+        }
     };
     let qp2p = QuicP2p::with_config(
         Some(Config {
@@ -43,7 +48,8 @@ async fn main() -> Result<(), Error> {
         {
             (bytes, send, recv)
         } else {
-            panic!("This example only supports bi-streams");
+            println!("Only bidirectional streams are supported in this example");
+            return Err(Error::OperationNotAllowed);
         };
         loop {
             println!(
