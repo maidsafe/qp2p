@@ -286,6 +286,12 @@ impl Endpoint {
             });
             tasks.push(task_handle);
         }
+        if tasks.is_empty() {
+            return Err(Error::Unexpected(
+                "No tasks for echo service connection".to_string(),
+            ));
+        }
+
         let (result, _) = futures::future::select_ok(tasks).await.map_err(|err| {
             log::error!("Failed to contact echo service: {}", err);
             Error::BootstrapFailure
