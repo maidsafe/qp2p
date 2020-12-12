@@ -3,6 +3,7 @@ on: [pull_request]
 
 jobs:
   lint:
+    if: ${{ github.repository_owner == 'maidsafe' }}
     runs-on: ubuntu-latest
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

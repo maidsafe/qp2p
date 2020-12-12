@@ -11,6 +11,7 @@ env:
 
 jobs:
   update_changelog:
+    if: ${{ github.repository_owner == 'maidsafe' }}
     runs-on: ubuntu-20.04
     # Dont run if we're on a release commit
     if: "!startsWith(github.event.head_commit.message, 'chore(release):')"

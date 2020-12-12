@@ -12,26 +12,27 @@ env:
 
 jobs:
   tag:
-      runs-on: ubuntu-latest
-      # Only run on a release commit
-      if: "startsWith(github.event.head_commit.message, 'chore(release):')"
-      steps:
-        - uses: actions/checkout@v2
-          with:
-            fetch-depth: '0'
-            token: ${{ secrets.BRANCH_CREATOR_TOKEN }}
-        - run: echo "RELEASE_VERSION=$(git log -1 --pretty=%s)" >> $GITHUB_ENV
-        # parse out non-tag text
-        - run: echo "RELEASE_VERSION=$( echo $RELEASE_VERSION | sed 's/chore(release)://' )" >> $GITHUB_ENV
-        # remove spaces, but add back in `v` to tag, which is needed for standard-version
-        - run: echo "RELEASE_VERSION=v$(echo $RELEASE_VERSION | tr -d '[:space:]')" >> $GITHUB_ENV
-        - run: echo $RELEASE_VERSION
-        - run: git tag $RELEASE_VERSION
+    if: ${{ github.repository_owner == 'maidsafe' }}
+    runs-on: ubuntu-latest
+    # Only run on a release commit
+    if: "startsWith(github.event.head_commit.message, 'chore(release):')"
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: '0'
+          token: ${{ secrets.BRANCH_CREATOR_TOKEN }}
+      - run: echo "RELEASE_VERSION=$(git log -1 --pretty=%s)" >> $GITHUB_ENV
+      # parse out non-tag text
+      - run: echo "RELEASE_VERSION=$( echo $RELEASE_VERSION | sed 's/chore(release)://' )" >> $GITHUB_ENV
+      # remove spaces, but add back in `v` to tag, which is needed for standard-version
+      - run: echo "RELEASE_VERSION=v$(echo $RELEASE_VERSION | tr -d '[:space:]')" >> $GITHUB_ENV
+      - run: echo $RELEASE_VERSION
+      - run: git tag $RELEASE_VERSION
 
-        - name: Setup git for push
-          run: |
-            git remote add github "$REPO"
-            git config --local user.email "action@github.com"
-            git config --local user.name "GitHub Action"
-        - name: Push tags to master
-          run: git push "https://$GITHUB_ACTOR:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY" HEAD:master --tags
+      - name: Setup git for push
+        run: |
+          git remote add github "$REPO"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+      - name: Push tags to master
+        run: git push "https://$GITHUB_ACTOR:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY" HEAD:master --tags

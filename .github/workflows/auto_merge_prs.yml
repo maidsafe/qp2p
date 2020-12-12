@@ -10,6 +10,7 @@ on: pull_request
 
 jobs:
   merge:
+    if: ${{ github.repository_owner == 'maidsafe' }}
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2

@@ -16,6 +16,7 @@ env:
 
 jobs:
   checks:
+    if: ${{ github.repository_owner == 'maidsafe' }}
     name: Clippy & fmt
     runs-on: ubuntu-latest
     steps:
@@ -52,6 +53,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features
 
   coverage:
+    if: ${{ github.repository_owner == 'maidsafe' }}
     name: Code coverage check
     runs-on: ubuntu-latest
     steps:
@@ -95,6 +97,7 @@ jobs:
           parallel-finished: true
 
   cargo-udeps:
+    if: ${{ github.repository_owner == 'maidsafe' }}
     name: Unused dependency check
     runs-on: ubuntu-latest
     steps:
@@ -113,6 +116,7 @@ jobs:
           cargo +nightly udeps --all-targets
 
   test:
+    if: ${{ github.repository_owner == 'maidsafe' }}
     name: Test
     runs-on: ${{ matrix.os }}
     strategy:
@@ -148,6 +152,7 @@ jobs:
 
   # Test publish using --dry-run.
   test-publish:
+    if: ${{ github.repository_owner == 'maidsafe' }}
     name: Test Publish
     runs-on: ubuntu-latest
     steps:

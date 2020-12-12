@@ -8,6 +8,7 @@ on:
 
 jobs:
   release:
+    if: ${{ github.repository_owner == 'maidsafe' }}
     # only if we have a tag
     name: Release
     runs-on: ubuntu-20.04
