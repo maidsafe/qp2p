@@ -233,9 +233,7 @@ impl QuicP2p {
 
         trace!("Bootstrapping with nodes {:?}", endpoint.bootstrap_nodes());
         if endpoint.bootstrap_nodes().is_empty() {
-            return Err(Error::Unexpected(
-                "No nodes for bootstrapping found".to_string(),
-            ));
+            return Err(Error::EmptyBootstrapNodesList);
         }
 
         // Attempt to connect to all nodes and return the first one to succeed

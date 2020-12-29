@@ -96,8 +96,8 @@ impl Connection {
     pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
         let mut send_stream = self.handle_error(self.quic_conn.open_uni().await)?;
         self.handle_error(send_msg(&mut send_stream, msg).await)?;
-        self.handle_error(send_stream.finish().await)
-            .map_err(Error::from)
+        self.handle_error(send_stream.finish().await)?;
+        Ok(())
     }
 
     /// Gracefully close connection immediatelly
@@ -286,7 +286,7 @@ impl RecvStream {
     pub async fn next(&mut self) -> Result<Bytes> {
         match read_bytes(&mut self.quinn_recv_stream).await {
             Ok(WireMsg::UserMsg(bytes)) => Ok(bytes),
-            Ok(_) => Err(Error::UnexpectedMessageType),
+            Ok(msg) => Err(Error::UnexpectedMessageType(msg)),
             Err(error) => Err(error),
         }
     }
@@ -317,9 +317,11 @@ impl SendStream {
     pub async fn send(&mut self, msg: WireMsg) -> Result<()> {
         msg.write_to_stream(&mut self.quinn_send_stream).await
     }
+
     /// Gracefully finish current stream
     pub async fn finish(mut self) -> Result<()> {
-        self.quinn_send_stream.finish().await.map_err(Error::from)
+        self.quinn_send_stream.finish().await?;
+        Ok(())
     }
 }
 

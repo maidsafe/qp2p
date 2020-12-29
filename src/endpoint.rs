@@ -268,7 +268,7 @@ impl Endpoint {
     async fn query_ip_echo_service(&self) -> Result<SocketAddr> {
         // Bail out early if we don't have any contacts.
         if self.bootstrap_nodes.is_empty() {
-            return Err(Error::NoEndpointEchoServerFound);
+            return Err(Error::NoEchoServerEndpointDefined);
         }
 
         let mut tasks = Vec::default();
@@ -280,21 +280,16 @@ impl Endpoint {
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
                     Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
-                    Ok(_) => Err(Error::UnexpectedMessageType),
+                    Ok(msg) => Err(Error::UnexpectedMessageType(msg)),
                     Err(err) => Err(err),
                 }
             });
             tasks.push(task_handle);
         }
-        if tasks.is_empty() {
-            return Err(Error::Unexpected(
-                "No tasks for echo service connection".to_string(),
-            ));
-        }
 
         let (result, _) = futures::future::select_ok(tasks).await.map_err(|err| {
             log::error!("Failed to contact echo service: {}", err);
-            Error::BootstrapFailure
+            Error::EchoServiceFailure(err.to_string())
         })?;
         result
     }

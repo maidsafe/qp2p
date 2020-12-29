@@ -1,4 +1,5 @@
-use crate::{utils, wire_msg::WireMsg, Config, Error, QuicP2p, Result};
+use crate::{utils, wire_msg::WireMsg, Config, QuicP2p};
+use anyhow::{anyhow, Error, Result};
 
 #[tokio::test]
 async fn echo_service() -> Result<()> {
@@ -22,7 +23,10 @@ async fn echo_service() -> Result<()> {
     // Listen for messages / connections at peer 1
     let handle1 = tokio::spawn(async move {
         let mut incoming = peer1.listen();
-        let mut inbound_messages = incoming.next().await.ok_or(Error::NoIncomingMessage)?;
+        let mut inbound_messages = incoming
+            .next()
+            .await
+            .ok_or_else(|| anyhow!("Missing expected incoming message"))?;
         let _message = inbound_messages.next().await;
         Ok::<_, Error>(inbound_messages) // Return this object to prevent the connection from being dropped
     });
@@ -43,10 +47,7 @@ async fn echo_service() -> Result<()> {
                 assert_eq!(socket_addr, result);
                 Ok::<(), Error>(())
             }
-            res => Err(Error::Unexpected(format!(
-                "Unexpected response after echo service request: {}",
-                res
-            ))),
+            res => Err(anyhow!("Unexpected message type: {}", res)),
         }
     });
     let (res1, res2) = futures::join!(handle1, handle2);
