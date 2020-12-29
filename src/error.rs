@@ -7,88 +7,103 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use err_derive::Error;
-use std::net::SocketAddr;
-use std::{io, sync::mpsc};
+use super::wire_msg::WireMsg;
+use std::io;
+use thiserror::Error;
 
 /// Result used by `QuicP2p`.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// Error types returned by the qp2p public API.
 #[derive(Debug, Error)]
-#[allow(missing_docs)]
+#[non_exhaustive]
 pub enum Error {
-    #[error(display = "Network bootstrap failed")]
+    /// Error occurred when attempting to connect to any
+    /// of the peers provided as a list of contacts.
+    #[error("Network bootstrap failed")]
     BootstrapFailure,
-    #[error(display = "I/O Error")]
-    Io(#[source] io::Error),
-    #[error(display = "quinn read")]
-    Read(#[source] quinn::ReadError),
-    #[error(display = "Bi-directional stream attempted by peer {}", 0)]
-    BiDirectionalStreamAttempted(SocketAddr),
-    #[error(display = "Establishing connection")]
-    Connect(#[source] quinn::ConnectError),
-    #[error(display = "Connection lost")]
-    Connection(#[source] quinn::ConnectionError),
-    #[error(display = "Creating endpoint")]
-    Endpoint(#[source] quinn::EndpointError),
-    #[error(display = "Cannot parse certificate ")]
-    CertificateParseError,
-    #[error(display = "Already connected {}", 0)]
-    DuplicateConnectionToPeer(SocketAddr),
-    #[error(display = "Could not find endpoint server")]
-    NoEndpointEchoServerFound,
-    #[error(display = "No response from echo service")]
+    /// No peers/contects found in the bootstrap nodes list.
+    #[error("No nodes/peers found defined for bootstrapping")]
+    EmptyBootstrapNodesList,
+    /// The path provided is not valid for the operation.
+    #[error("Provided path is invalid: {0}")]
+    InvalidPath(String),
+    /// The user's home directory couldn't be determined.
+    #[error("Couldn't determine user's home directory")]
+    UserHomeDir,
+    /// I/O failure when attempting to access a local resource.
+    #[error("I/O Error")]
+    Io(#[from] io::Error),
+    /// Failure encountered when establishing a connection with another peer.
+    #[error("Establishing connection")]
+    Connect(#[from] quinn::ConnectError),
+    /// An existing connection with another peer has been lost.
+    #[error("Connection lost")]
+    Connection(#[from] quinn::ConnectionError),
+    /// Failed to create a new endpoint.
+    #[error("Creating endpoint")]
+    Endpoint(#[from] quinn::EndpointError),
+    /// Certificate for secure communication couldn't be parsed.
+    #[error("Cannot parse certificate ")]
+    CertificateParse,
+    /// The certificate's private key for secure communication couldn't be parsed.
+    #[error("Cannot parse certificate's private key")]
+    CertificatePkParse,
+    /// The contacts list was found empty when attempting
+    /// to contact peers for the echo service.
+    #[error("No peers found in the contacts list to send the echo request to")]
+    NoEchoServerEndpointDefined,
+    /// Timeout occurred when awaiting for a response from
+    /// any of the peers contacted for the echo service.
+    #[error("No response reeived from echo services")]
     NoEchoServiceResponse,
-    #[error(display = "Oneshot receiver")]
-    OneShotRx(#[source] tokio::sync::oneshot::error::RecvError),
-    #[error(display = "TLS Error ")]
-    TLS(#[source] rustls::TLSError),
-    #[error(display = "Bincode serialisation")]
-    Bincode(#[source] bincode::Error),
-    #[error(display = "Base64 decode ")]
-    Base64(#[source] base64::DecodeError),
-    #[error(display = "Configuration {}", 0)]
+    /// Failure occurred when sending an echo request.
+    #[error("{0}")]
+    EchoServiceFailure(String),
+    /// TLS error
+    #[error("TLS Error ")]
+    TLS(#[from] rustls::TLSError),
+    /// Serialisation error, which can happen on different type of data.
+    #[error("Serialisation error")]
+    Serialisation(#[from] bincode::Error),
+    /// Failed to decode a base64-encoded string.
+    #[error("Base64 decode")]
+    Base64Decode(#[from] base64::DecodeError),
+    /// An error occurred which could be resolved by changing some config value.
+    #[error("Configuration {}", 0)]
     Configuration(String),
-    #[error(display = "Operation not allowed")]
-    OperationNotAllowed,
-    #[error(display = "Connection cancelled")]
-    ConnectionCancelled,
-    #[error(display = "Channel receive error")]
-    ChannelRecv(#[source] mpsc::RecvError),
-    #[error(display = "Could not add certificate to PKI")]
-    WebPki,
-    #[error(display = "Invalid wire message.")]
-    InvalidWireMsgFlag,
-    #[error(display = "Stream write error")]
-    WriteError(#[source] quinn::WriteError),
-    #[error(display = "Read to end error: {}", 0)]
-    ReadToEndError(#[source] quinn::ReadToEndError),
-    #[error(display = "Read exact error: {}", 0)]
-    ReadExactError(#[source] quinn::ReadExactError),
-    #[error(display = "Could not add certificate")]
-    AddCertificateError(#[source] quinn::ParseError),
-    #[error(display = "Could not use IGD for automatic port forwarding")]
-    IgdAddPort(#[source] igd::AddAnyPortError),
-    #[error(display = "Could not renew port mapping using IGD")]
-    IgdRenewPort(#[source] igd::AddPortError),
-    #[error(display = "Could not find the gateway device for IGD")]
-    IgdSearch(#[source] igd::SearchError),
-    #[error(display = "JoinError")]
-    JoinError(#[source] tokio::task::JoinError),
-    #[error(display = "RcGen error: {}", 0)]
-    RcGen(#[source] rcgen::RcgenError),
-    #[error(display = "IGD is not supported")]
+    /// The message type flag decoded in an incoming stream is invalid/unsupported.
+    #[error("Invalid message type flag found in message's header: {0}")]
+    InvalidMsgFlag(u8),
+    /// Error occurred when trying to write on a currently opened message stream.
+    #[error("Stream write error")]
+    StreamWrite(#[from] quinn::WriteError),
+    /// The expected amount of message bytes couldn't be read from the stream.
+    #[error("Failed to read expected nummber of message bytes: {}", 0)]
+    StreamRead(#[from] quinn::ReadExactError),
+    /// Failure when trying to map a new port using IGD for automatic port forwarding.
+    #[error("Could not use IGD for automatic port forwarding")]
+    IgdAddPort(#[from] igd::AddAnyPortError),
+    /// Failure when trying to renew leasing of a port mapped using IGD.
+    #[error("Could not renew port mapping using IGD")]
+    IgdRenewPort(#[from] igd::AddPortError),
+    /// IGD gateway deice was not found.
+    #[error("Could not find the gateway device for IGD")]
+    IgdSearch(#[from] igd::SearchError),
+    /// IGD is not supported on IPv6
+    #[error("IGD is not supported on IPv6")]
     IgdNotSupported,
-    #[error(display = "Empty response message received from peer")]
+    /// An error was encountered when trying to either generate
+    /// or serialise a self-signed certificate.
+    #[error("Self-signed certificate generation error: {}", 0)]
+    CertificateGen(#[from] rcgen::RcgenError),
+    /// Response message received contains an empty payload.
+    #[error("Empty response message received from peer")]
     EmptyResponse,
-    #[error(display = "Type of the message received was not the expected one")]
-    UnexpectedMessageType,
-    #[error(display = "Maximum data length exceeded")]
-    MaxLengthExceeded,
-    #[error(display = "Mo incoming connection")]
-    NoIncomingConnection,
-    #[error(display = "No incoming message")]
-    NoIncomingMessage,
-    #[error(display = "Unexpected: {}", 0)]
-    Unexpected(String),
+    /// The type of message received is not the expected one.
+    #[error("Type of the message received was not the expected one: {0}")]
+    UnexpectedMessageType(WireMsg),
+    /// The message exceeds the maximum message length allowed.
+    #[error("Maximum data length exceeded, lengh: {0}")]
+    MaxLengthExceeded(usize),
 }

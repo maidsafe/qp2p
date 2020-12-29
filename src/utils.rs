@@ -8,11 +8,14 @@
 // Software.
 
 use crate::error::{Error, Result};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-use std::path::{Path, PathBuf};
+use bincode::{deserialize_from, serialize_into};
+use dirs_next::home_dir;
+use serde::{de::DeserializeOwned, Serialize};
+use std::{
+    fs::File,
+    io::{BufReader, BufWriter},
+    path::{Path, PathBuf},
+};
 
 /// Get the project directory
 #[cfg(any(
@@ -24,8 +27,7 @@ use std::path::{Path, PathBuf};
 ))]
 #[inline]
 pub fn project_dir() -> Result<PathBuf> {
-    let dirs =
-        dirs_next::home_dir().ok_or_else(|| Error::Io(::std::io::ErrorKind::NotFound.into()))?;
+    let dirs = home_dir().ok_or(Error::UserHomeDir)?;
     let project_dir = dirs.join(".safe").join("qp2p");
     Ok(project_dir)
 }
@@ -75,7 +77,7 @@ where
     Ok(File::open(file_path)
         .map_err(Into::into)
         .map(BufReader::new)
-        .and_then(|mut rdr| bincode::deserialize_from(&mut rdr))?)
+        .and_then(|mut rdr| deserialize_from(&mut rdr))?)
 }
 
 /// Try writing the given structure to the disk.
@@ -86,7 +88,7 @@ where
     File::create(file_path)
         .map_err(Into::into)
         .map(BufWriter::new)
-        .and_then(|mut rdr| bincode::serialize_into(&mut rdr, s))?;
+        .and_then(|mut rdr| serialize_into(&mut rdr, s))?;
 
     Ok(())
 }

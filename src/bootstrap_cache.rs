@@ -11,7 +11,7 @@
 
 use crate::utils;
 use crate::{Error, Result};
-use log::info;
+use log::{info, warn};
 use std::{
     collections::{HashSet, VecDeque},
     fs, io,
@@ -58,12 +58,15 @@ impl BootstrapCache {
                 utils::read_from_disk(&cache_path)?
             }
         } else {
-            let cache_dir = cache_path
-                .parent()
-                .ok_or_else(|| io::ErrorKind::NotFound.into())
-                .map_err(Error::Io)?;
+            let cache_dir = cache_path.parent().ok_or_else(|| {
+                Error::InvalidPath(format!(
+                    "Failed to get parent directory of '{}'",
+                    cache_path.display().to_string()
+                ))
+            })?;
             fs::create_dir_all(&cache_dir)?;
-            Default::default()
+
+            VecDeque::new()
         };
 
         Ok(BootstrapCache {
@@ -133,7 +136,7 @@ impl BootstrapCache {
     fn try_sync_to_disk(&mut self) {
         if self.add_count > 9 {
             if let Err(e) = utils::write_to_disk(&self.cache_path, &self.peers) {
-                info!("Failed to write bootstrap cache to disk: {}", e);
+                warn!("Failed to write bootstrap cache to disk: {}", e);
             }
             self.add_count = 0;
         }
