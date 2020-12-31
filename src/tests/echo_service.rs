@@ -11,7 +11,7 @@ async fn echo_service() -> Result<()> {
             port: None,
             ip: None,
             forward_port: true,
-            ..Default::default()
+            ..Config::default()
         }),
         Default::default(),
         false,
@@ -51,7 +51,7 @@ async fn echo_service() -> Result<()> {
         }
     });
     let (res1, res2) = futures::join!(handle1, handle2);
-    let _ = res1??;
+    let _fix_me = res1??;
     res2??;
     Ok(())
 }

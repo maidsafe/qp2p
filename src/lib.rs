@@ -15,7 +15,6 @@
     mutable_transmutes,
     no_mangle_const_items,
     unknown_crate_types,
-    warnings
 )]
 #![deny(
     bad_style,

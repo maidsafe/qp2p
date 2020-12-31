@@ -10,7 +10,7 @@ use std::{
 
 /// Constructs a `QuicP2p` node with some sane defaults for testing.
 pub fn new_qp2p() -> Result<QuicP2p> {
-    new_qp2p_with_hcc(Default::default())
+    new_qp2p_with_hcc(HashSet::default())
 }
 
 fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> Result<QuicP2p> {
@@ -19,7 +19,7 @@ fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> Result<QuicP2p
             port: Some(0),
             ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             hard_coded_contacts,
-            ..Default::default()
+            ..Config::default()
         }),
         // Make sure we start with an empty cache. Otherwise, we might get into unexpected state.
         Default::default(),
