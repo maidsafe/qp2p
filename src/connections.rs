@@ -111,7 +111,7 @@ impl Connection {
 
     /// Gracefully close connection immediatelly
     pub fn close(&self) {
-        self.quic_conn.close(0u32.into(), b"");
+        self.quic_conn.close(0_u32.into(), b"");
         self.remover.remove();
     }
 
@@ -185,6 +185,7 @@ impl IncomingMessages {
     }
 
     /// Returns the address of the peer who initiated the connection
+    #[must_use]
     pub fn remote_addr(&self) -> SocketAddr {
         *self.remover.remote_addr()
     }

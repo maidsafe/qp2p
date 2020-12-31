@@ -72,7 +72,7 @@ impl BootstrapCache {
         Ok(BootstrapCache {
             peers,
             cache_path,
-            add_count: 0u8,
+            add_count: 0_u8,
             hard_coded_contacts,
         })
     }
