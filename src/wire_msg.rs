@@ -19,7 +19,7 @@ use std::{fmt, net::SocketAddr};
 const MSG_HEADER_LEN: usize = 9;
 const MSG_PROTOCOL_VERSION: u16 = 0x0001;
 
-/// Final type serialised and sent on the wire by QuicP2p
+/// Final type serialised and sent on the wire by `QuicP2p`
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WireMsg {
     EndpointEchoReq,
@@ -92,7 +92,7 @@ impl fmt::Display for WireMsg {
 
 /// Message Header that is sent over the wire
 /// Format of the message header is as follows
-/// | version | message length | usr_msg_flag | reserved |
+/// | version | message length | `usr_msg_flag` | reserved |
 /// | 2 bytes |     4 bytes    |    1 byte    | 2 bytes  |
 #[derive(Debug)]
 struct MsgHeader {

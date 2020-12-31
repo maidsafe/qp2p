@@ -149,11 +149,10 @@ impl Endpoint {
             },
             Err(e) => info!("Echo service timed out: {:?}", e),
         }
-        if let Some(socket_addr) = addr {
+
+        addr.map_or(Err(Error::NoEchoServiceResponse), |socket_addr| {
             Ok(socket_addr)
-        } else {
-            Err(Error::NoEchoServiceResponse)
-        }
+        })
     }
 
     /// Get an existing connection for the peer address.
@@ -271,7 +270,7 @@ impl Endpoint {
 
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
     pub fn close(&self) {
-        self.quic_endpoint.close(0u32.into(), b"")
+        self.quic_endpoint.close(0_u32.into(), b"")
     }
 
     // Private helper

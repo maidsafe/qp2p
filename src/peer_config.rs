@@ -69,7 +69,7 @@ fn new_transport_cfg(
     let mut transport_config = quinn::TransportConfig::default();
     let _ = transport_config
         .max_idle_timeout(Some(Duration::from_millis(idle_timeout_msec)))
-        .unwrap_or(&mut Default::default());
+        .unwrap_or(&mut quinn::TransportConfig::default());
     let _ = transport_config
         .keep_alive_interval(Some(Duration::from_millis(keep_alive_interval_msec.into())));
     transport_config
