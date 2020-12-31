@@ -45,7 +45,7 @@ pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result
 
 /// Attempts to map an external port to a local address.
 ///
-/// `local_port` is the local listener's port that all requests will be redirected to.
+/// `local_addr` is the local listener's address that all requests will be redirected to.
 /// An external port is chosen randomly and returned as a result.
 ///
 /// `lease_duration` is the life time of a port mapping (in seconds). If it is 0, the
@@ -53,9 +53,9 @@ pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result
 pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> Result<SocketAddrV4> {
     let gateway = igd::aio::search_gateway(Default::default()).await?;
 
-    debug!("Found IGD gateway: {:?}", gateway);
+    debug!("IGD gateway found: {:?}", gateway);
 
-    debug!("Our local address: {:?}", local_addr);
+    debug!("Our local address is: {:?}", local_addr);
 
     if let SocketAddr::V4(socket_addr) = local_addr {
         let ext_addr = gateway
@@ -67,7 +67,7 @@ pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> Res
             )
             .await?;
 
-        debug!("Our external port no. is {:?}", ext_addr.port());
+        debug!("Our external port number is: {}", ext_addr.port());
 
         Ok(ext_addr)
     } else {
@@ -93,8 +93,7 @@ pub(crate) async fn renew_port(
                 lease_duration,
                 "MaidSafe.net",
             )
-            .await
-            .map_err(Error::IgdRenewPort)?;
+            .await?;
 
         debug!("Successfully renewed the port mapping");
 

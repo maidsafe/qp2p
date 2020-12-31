@@ -8,11 +8,11 @@
 // Software.
 
 use super::connections::Connection;
-use err_derive::Error;
 use std::{
     collections::{hash_map::Entry, HashMap},
     net::SocketAddr,
 };
+use thiserror::Error;
 use tokio::sync::{broadcast, Mutex};
 
 type Result<T = Connection, E = Error> = std::result::Result<T, E>;
@@ -70,10 +70,10 @@ impl ConnectionDeduplicator {
 
 #[derive(Clone, Error, Debug)]
 pub(crate) enum Error {
-    #[error(display = "Connect error")]
-    Connect(#[source] quinn::ConnectError),
-    #[error(display = "Connection error")]
-    Connection(#[source] quinn::ConnectionError),
+    #[error("Connect error")]
+    Connect(#[from] quinn::ConnectError),
+    #[error("Connection error")]
+    Connection(#[from] quinn::ConnectionError),
 }
 
 impl From<Error> for crate::error::Error {

@@ -38,7 +38,7 @@ impl WireMsg {
         recv.read_exact(&mut header_bytes).await?;
 
         let msg_header = MsgHeader::from_bytes(header_bytes);
-        log::debug!("reading data: {}", msg_header.data_len());
+        log::debug!("reading data of length: {}", msg_header.data_len());
         let mut data: Vec<u8> = vec![0; msg_header.data_len()];
         let msg_flag = msg_header.usr_msg_flag();
 
@@ -52,7 +52,7 @@ impl WireMsg {
         } else if msg_flag == ECHO_SRVC_MSG_FLAG {
             Ok(bincode::deserialize(&data)?)
         } else {
-            Err(Error::InvalidWireMsgFlag)
+            Err(Error::InvalidMsgFlag(msg_flag))
         }
     }
 
@@ -107,7 +107,7 @@ impl MsgHeader {
     pub fn new(msg: &Bytes, usr_msg_flag: u8) -> Result<Self> {
         let data_len = msg.len();
         if data_len > u32::MAX as usize {
-            return Err(Error::MaxLengthExceeded);
+            return Err(Error::MaxLengthExceeded(data_len));
         }
         Ok(Self {
             version: MSG_PROTOCOL_VERSION,
