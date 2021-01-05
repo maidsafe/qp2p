@@ -96,7 +96,7 @@ impl Endpoint {
     /// such an address cannot be reached and hence not useful.
     async fn public_addr(&self) -> Result<SocketAddr> {
         // Skip port forwarding
-        if self.local_addr.ip().is_loopback() || !self.local_addr.ip().is_unspecified() {
+        if self.local_addr.ip().is_loopback() {
             return Ok(self.local_addr);
         }
 
@@ -150,7 +150,9 @@ impl Endpoint {
             Err(e) => info!("Echo service timed out: {:?}", e),
         }
 
-       addr.map_or(Err(Error::NoEchoServiceResponse), |socket_addr| Ok(socket_addr))
+        addr.map_or(Err(Error::NoEchoServiceResponse), |socket_addr| {
+            Ok(socket_addr)
+        })
     }
 
     /// Connects to another peer.
