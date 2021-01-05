@@ -26,8 +26,9 @@ async fn main() -> Result<(), Error> {
 
     let qp2p = QuicP2p::with_config(
         Some(Config {
-            ip: Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            ip: None,
             port: Some(0),
+            forward_port: true,
             ..Default::default()
         }),
         &bootstrap_nodes,
