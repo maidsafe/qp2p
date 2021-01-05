@@ -176,7 +176,8 @@ impl IncomingMessages {
     }
 
     /// Returns the address of the peer who initiated the connection
-    #[must_use] pub fn remote_addr(&self) -> SocketAddr {
+    #[must_use]
+    pub fn remote_addr(&self) -> SocketAddr {
         *self.remover.remote_addr()
     }
 

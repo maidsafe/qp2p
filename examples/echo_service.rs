@@ -1,10 +1,7 @@
 use anyhow::{anyhow, bail, Error, Result};
 use bytes::Bytes;
 use qp2p::{Config, Message, QuicP2p};
-use std::{
-    env,
-    net::{IpAddr, Ipv4Addr},
-};
+use std::env;
 use tokio::io::AsyncBufReadExt;
 
 #[tokio::main]
