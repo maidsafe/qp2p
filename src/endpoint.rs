@@ -96,7 +96,7 @@ impl Endpoint {
     /// such an address cannot be reached and hence not useful.
     async fn public_addr(&self) -> Result<SocketAddr> {
         // Skip port forwarding
-        if self.local_addr.ip().is_loopback() || !self.local_addr.ip().is_unspecified() {
+        if self.local_addr.ip().is_loopback() {
             return Ok(self.local_addr);
         }
 
@@ -153,16 +153,6 @@ impl Endpoint {
         addr.map_or(Err(Error::NoEchoServiceResponse), |socket_addr| {
             Ok(socket_addr)
         })
-    }
-
-    /// Get an existing connection for the peer address.
-    pub fn get_connection(&self, peer_addr: &SocketAddr) -> Option<Connection> {
-        if let Some((conn, guard)) = self.connection_pool.get(peer_addr) {
-            trace!("Using cached connection to peer: {}", peer_addr);
-            Some(Connection::new(conn, guard))
-        } else {
-            None
-        }
     }
 
     /// Connects to another peer.
