@@ -219,7 +219,7 @@ impl QuicP2p {
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     config.port = Some(3000);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let endpoint = quic_p2p.new_endpoint()?;
+    ///     let mut endpoint = quic_p2p.new_endpoint()?;
     ///     let peer_addr = endpoint.socket_addr().await?;
     ///
     ///     config.port = Some(3001);
@@ -273,7 +273,7 @@ impl QuicP2p {
     ///     let mut config = Config::default();
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let peer_1 = quic_p2p.new_endpoint()?;
+    ///     let mut peer_1 = quic_p2p.new_endpoint()?;
     ///     let peer1_addr = peer_1.socket_addr().await?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
@@ -372,7 +372,7 @@ fn bind(
 
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
     let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
-    if cfg.ip.is_none() && cfg.forward_port {
+    if cfg.ip.is_none() {
         cfg.ip = crate::igd::get_local_ip().ok();
     };
     if cfg.clean {

@@ -39,10 +39,10 @@ async fn successful_connection() -> Result<()> {
     utils::init_logging();
 
     let qp2p = new_qp2p()?;
-    let peer1 = qp2p.new_endpoint()?;
+    let mut peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
 
-    let peer2 = qp2p.new_endpoint()?;
+    let mut peer2 = qp2p.new_endpoint()?;
     let _connection = peer2.connect_to(&peer1_addr).await?;
 
     let mut incoming_conn = peer1.listen();
@@ -61,7 +61,7 @@ async fn bi_directional_streams() -> Result<()> {
     utils::init_logging();
 
     let qp2p = new_qp2p()?;
-    let peer1 = qp2p.new_endpoint()?;
+    let mut peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
 
     let peer2 = qp2p.new_endpoint()?;
@@ -113,11 +113,11 @@ async fn uni_directional_streams() -> Result<()> {
     utils::init_logging();
 
     let qp2p = new_qp2p()?;
-    let peer1 = qp2p.new_endpoint()?;
+    let mut peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
     let mut incoming_conn_peer1 = peer1.listen();
 
-    let peer2 = qp2p.new_endpoint()?;
+    let mut peer2 = qp2p.new_endpoint()?;
     let peer2_addr = peer2.socket_addr().await?;
     let mut incoming_conn_peer2 = peer2.listen();
 
@@ -186,7 +186,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
     let qp2p = new_qp2p()?;
     let alice = qp2p.new_endpoint()?;
 
-    let bob = qp2p.new_endpoint()?;
+    let mut bob = qp2p.new_endpoint()?;
     let bob_addr = bob.socket_addr().await?;
     let mut bob_incoming_conns = bob.listen();
 
@@ -240,10 +240,10 @@ async fn reuse_incoming_connection() -> Result<()> {
     utils::init_logging();
 
     let qp2p = new_qp2p()?;
-    let alice = qp2p.new_endpoint()?;
+    let mut alice = qp2p.new_endpoint()?;
     let alice_addr = alice.socket_addr().await?;
 
-    let bob = qp2p.new_endpoint()?;
+    let mut bob = qp2p.new_endpoint()?;
     let bob_addr = bob.socket_addr().await?;
     let mut bob_incoming_conns = bob.listen();
 
@@ -293,7 +293,7 @@ async fn remove_closed_connection_from_pool() -> Result<()> {
     let qp2p = new_qp2p()?;
     let alice = qp2p.new_endpoint()?;
 
-    let bob = qp2p.new_endpoint()?;
+    let mut bob = qp2p.new_endpoint()?;
     let bob_addr = bob.socket_addr().await?;
     let mut bob_incoming_conns = bob.listen();
 
@@ -359,11 +359,11 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     utils::init_logging();
 
     let qp2p = new_qp2p()?;
-    let alice = qp2p.new_endpoint()?;
+    let mut alice = qp2p.new_endpoint()?;
     let alice_addr = alice.socket_addr().await?;
     let mut alice_incoming_conns = alice.listen();
 
-    let bob = qp2p.new_endpoint()?;
+    let mut bob = qp2p.new_endpoint()?;
     let bob_addr = bob.socket_addr().await?;
     let mut bob_incoming_conns = bob.listen();
 
@@ -437,7 +437,7 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     utils::init_logging();
 
     let qp2p = new_qp2p()?;
-    let alice = qp2p.new_endpoint()?;
+    let mut alice = qp2p.new_endpoint()?;
     let alice_addr = alice.socket_addr().await?;
     let mut alice_incoming_conns = alice.listen();
 

@@ -17,7 +17,7 @@ async fn echo_service() -> Result<()> {
         false,
     )?;
     // Create Endpoint
-    let peer1 = qp2p.new_endpoint()?;
+    let mut peer1 = qp2p.new_endpoint()?;
     let peer1_addr = peer1.socket_addr().await?;
 
     // Listen for messages / connections at peer 1
@@ -33,7 +33,7 @@ async fn echo_service() -> Result<()> {
 
     // In parallel create another endpoint and send an EchoServiceReq
     let handle2 = tokio::spawn(async move {
-        let peer2 = qp2p.new_endpoint()?;
+        let mut peer2 = qp2p.new_endpoint()?;
         let socket_addr = peer2.socket_addr().await?;
         let (connection, _) = peer2.connect_to(&peer1_addr).await?;
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;

@@ -32,6 +32,7 @@ const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 /// and listen to incoming messages from other peers.
 pub struct Endpoint {
     local_addr: SocketAddr,
+    public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
     quic_incoming: Arc<Mutex<quinn::Incoming>>,
     client_cfg: quinn::ClientConfig,
@@ -63,6 +64,7 @@ impl Endpoint {
         let local_addr = quic_endpoint.local_addr()?;
         Ok(Self {
             local_addr,
+            public_addr: None,
             quic_endpoint,
             quic_incoming: Arc::new(Mutex::new(quic_incoming)),
             client_cfg,
@@ -74,12 +76,12 @@ impl Endpoint {
     }
 
     /// Endpoint local address
-    fn local_addr(&self) -> SocketAddr {
+    pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
     }
 
     /// Returns the socket address of the endpoint
-    pub async fn socket_addr(&self) -> Result<SocketAddr> {
+    pub async fn socket_addr(&mut self) -> Result<SocketAddr> {
         if cfg!(test) || !self.qp2p_config.forward_port {
             Ok(self.local_addr())
         } else {
@@ -94,41 +96,47 @@ impl Endpoint {
     /// simply build our connection info by querying the underlying bound socket for our address.
     /// Note that if such an obtained address is of unspecified category we will ignore that as
     /// such an address cannot be reached and hence not useful.
-    async fn public_addr(&self) -> Result<SocketAddr> {
+    pub async fn public_addr(&mut self) -> Result<SocketAddr> {
         // Skip port forwarding
         if self.local_addr.ip().is_loopback() {
             return Ok(self.local_addr);
         }
 
+        if let Some(socket_addr) = self.public_addr {
+            return Ok(socket_addr);
+        }
+
         let mut addr = None;
 
-        // Attempt to use IGD for port forwarding
-        match timeout(
-            Duration::from_secs(30),
-            forward_port(
-                self.local_addr,
-                self.qp2p_config
+        if self.qp2p_config.forward_port {
+            // Attempt to use IGD for port forwarding
+            match timeout(
+                Duration::from_secs(30),
+                forward_port(
+                    self.local_addr,
+                    self.qp2p_config
                     .upnp_lease_duration
                     .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC),
-            ),
-        )
-        .await
-        {
-            Ok(res) => {
-                match res {
-                    Ok(public_sa) => {
-                        debug!("IGD success: {:?}", SocketAddr::V4(public_sa));
-                        addr = Some(SocketAddr::V4(public_sa));
-                    }
-                    Err(e) => {
-                        info!("IGD request failed: {} - {:?}", e, e);
-                        // return Err(Error::IgdNotSupported);
+                ),
+            )
+            .await
+            {
+                Ok(res) => {
+                    match res {
+                        Ok(public_sa) => {
+                            debug!("IGD success: {:?}", SocketAddr::V4(public_sa));
+                            addr = Some(SocketAddr::V4(public_sa));
+                        }
+                        Err(e) => {
+                            info!("IGD request failed: {} - {:?}", e, e);
+                            return Err(Error::IgdNotSupported);
+                        }
                     }
                 }
-            }
-            Err(e) => {
-                info!("IGD request timeout: {:?}", e);
-                // return Err(Error::IgdNotSupported);
+                Err(e) => {
+                    info!("IGD request timeout: {:?}", e);
+                    return Err(Error::IgdNotSupported);
+                }
             }
         }
 
@@ -151,6 +159,7 @@ impl Endpoint {
         }
 
         addr.map_or(Err(Error::NoEchoServiceResponse), |socket_addr| {
+            self.public_addr = Some(socket_addr);
             Ok(socket_addr)
         })
     }
