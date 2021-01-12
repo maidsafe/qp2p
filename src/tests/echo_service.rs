@@ -8,8 +8,8 @@ async fn echo_service() -> Result<()> {
     // Endpoint builder
     let qp2p = QuicP2p::with_config(
         Some(Config {
-            port: None,
-            ip: None,
+            local_port: None,
+            local_ip: None,
             forward_port: true,
             ..Config::default()
         }),
@@ -17,7 +17,7 @@ async fn echo_service() -> Result<()> {
         false,
     )?;
     // Create Endpoint
-    let mut peer1 = qp2p.new_endpoint()?;
+    let mut peer1 = qp2p.new_endpoint().await?;
     let peer1_addr = peer1.socket_addr().await?;
 
     // Listen for messages / connections at peer 1
@@ -33,7 +33,7 @@ async fn echo_service() -> Result<()> {
 
     // In parallel create another endpoint and send an EchoServiceReq
     let handle2 = tokio::spawn(async move {
-        let mut peer2 = qp2p.new_endpoint()?;
+        let mut peer2 = qp2p.new_endpoint().await?;
         let socket_addr = peer2.socket_addr().await?;
         let (connection, _) = peer2.connect_to(&peer1_addr).await?;
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;

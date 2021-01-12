@@ -114,15 +114,16 @@ impl QuicP2p {
         bootstrap_nodes: &[SocketAddr],
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
+        crate::utils::init_logging();
         let cfg = unwrap_config_or_default(cfg)?;
         debug!("Config passed in to qp2p: {:?}", cfg);
 
         let (port, allow_random_port) = cfg
-            .port
+            .local_port
             .map(|p| (p, false))
             .unwrap_or((DEFAULT_PORT_TO_TRY, true));
 
-        let ip = cfg.ip.unwrap_or_else(|| {
+        let ip = cfg.local_ip.unwrap_or_else(|| {
             let mut our_ip = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
             // check hard coded contacts for being local (aka loopback)
@@ -182,8 +183,8 @@ impl QuicP2p {
             .upnp_lease_duration
             .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC);
 
-        qp2p_config.ip = Some(ip);
-        qp2p_config.port = Some(port);
+        qp2p_config.local_ip = Some(ip);
+        qp2p_config.local_port = Some(port);
         qp2p_config.keep_alive_interval_msec = Some(keep_alive_interval_msec);
         qp2p_config.idle_timeout_msec = Some(idle_timeout_msec);
         qp2p_config.upnp_lease_duration = Some(upnp_lease_duration);
@@ -219,7 +220,7 @@ impl QuicP2p {
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     config.port = Some(3000);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut endpoint = quic_p2p.new_endpoint()?;
+    ///     let mut endpoint = quic_p2p.new_endpoint().await?;
     ///     let peer_addr = endpoint.socket_addr().await?;
     ///
     ///     config.port = Some(3001);
@@ -229,7 +230,7 @@ impl QuicP2p {
     /// }
     /// ```
     pub async fn bootstrap(&self) -> Result<(Endpoint, Connection, IncomingMessages)> {
-        let endpoint = self.new_endpoint()?;
+        let endpoint = self.new_endpoint().await?;
 
         trace!("Bootstrapping with nodes {:?}", endpoint.bootstrap_nodes());
         if endpoint.bootstrap_nodes().is_empty() {
@@ -273,7 +274,7 @@ impl QuicP2p {
     ///     let mut config = Config::default();
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut peer_1 = quic_p2p.new_endpoint()?;
+    ///     let mut peer_1 = quic_p2p.new_endpoint().await?;
     ///     let peer1_addr = peer_1.socket_addr().await?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
@@ -281,7 +282,7 @@ impl QuicP2p {
     /// }
     /// ```
     pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
-        let endpoint = self.new_endpoint()?;
+        let endpoint = self.new_endpoint().await?;
         let (conn, _) = endpoint.connect_to(node_addr).await?;
 
         Ok((endpoint, conn))
@@ -301,11 +302,11 @@ impl QuicP2p {
     ///     let mut config = Config::default();
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let endpoint = quic_p2p.new_endpoint()?;
+    ///     let endpoint = quic_p2p.new_endpoint().await?;
     ///     Ok(())
     /// }
     /// ```
-    pub fn new_endpoint(&self) -> Result<Endpoint> {
+    pub async fn new_endpoint(&self) -> Result<Endpoint> {
         trace!("Creating a new endpoint");
 
         let bootstrap_nodes: Vec<SocketAddr> = self
@@ -331,7 +332,7 @@ impl QuicP2p {
             self.client_cfg.clone(),
             bootstrap_nodes,
             self.qp2p_config.clone(),
-        )?;
+        ).await?;
 
         Ok(endpoint)
     }
@@ -372,8 +373,8 @@ fn bind(
 
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
     let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
-    if cfg.ip.is_none() {
-        cfg.ip = crate::igd::get_local_ip().ok();
+    if cfg.local_ip.is_none() {
+        cfg.local_ip = Some(crate::igd::get_local_ip()?);
     };
     if cfg.clean {
         Config::clear_config_from_disk(None)?;

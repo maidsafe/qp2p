@@ -19,8 +19,7 @@ use super::{
     Config,
 };
 use futures::lock::Mutex;
-use log::trace;
-use log::{debug, info};
+use log::{debug, info, warn, trace, error};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::time::timeout;
 
@@ -54,7 +53,7 @@ impl std::fmt::Debug for Endpoint {
 }
 
 impl Endpoint {
-    pub(crate) fn new(
+    pub(crate) async fn new(
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,
         client_cfg: quinn::ClientConfig,
@@ -62,9 +61,13 @@ impl Endpoint {
         qp2p_config: Config,
     ) -> Result<Self> {
         let local_addr = quic_endpoint.local_addr()?;
-        Ok(Self {
+        let public_addr = match (qp2p_config.external_ip, qp2p_config.external_port) {
+            (Some(ip), Some(port)) => Some(SocketAddr::new(ip, port)),
+            _ => None
+        };
+        let endpoint = Self {
             local_addr,
-            public_addr: None,
+            public_addr,
             quic_endpoint,
             quic_incoming: Arc::new(Mutex::new(quic_incoming)),
             client_cfg,
@@ -72,7 +75,39 @@ impl Endpoint {
             qp2p_config,
             connection_pool: ConnectionPool::new(),
             connection_deduplicator: ConnectionDeduplicator::new(),
-        })
+        };
+        if let Some(addr) = endpoint.public_addr {
+            // External IP and port number is provided
+            // This means that the user has performed manual port-forwarding
+            // Verify that the given socket address is reachable
+            if let Some(contact) = endpoint.bootstrap_nodes.iter().next() {
+                info!("Verifying provided public IP address");
+                let (connection, _incoming) = endpoint.connect_to(contact).await?;
+                let (mut send, mut recv) = connection.open_bi().await?;
+                send.send(WireMsg::EndpointVerificationReq(addr)).await?;
+                let response = WireMsg::read_from_stream(&mut recv.quinn_recv_stream).await?;
+                match response {
+                    WireMsg::EndpointVerficationResp(valid) => {
+                        if valid {
+                            info!("Endpoint verification successful! {} is reachable.", addr);
+                            Ok(endpoint)
+                        } else {
+                            error!("Endpoint verification failed! {} is not reachable.", addr);
+                            Err(Error::IncorrectPublicAddress)
+                        }
+                    },
+                    other => {
+                        error!("Unexpected message when verifying public endpoint: {}", other);
+                        Err(Error::UnexpectedMessageType(other))
+                    }
+                }
+            } else {
+                warn!("Public IP address not verified since bootstrap contacts are empty");
+                Ok(endpoint)
+            }
+        } else {
+            Ok(endpoint)
+        }
     }
 
     /// Endpoint local address
