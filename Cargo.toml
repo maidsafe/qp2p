@@ -21,6 +21,7 @@ serde_json = "1.0.59"
 structopt = "~0.3.15"
 thiserror = "1.0.23"
 webpki = "~0.21.3"
+flexi_logger = "~0.16.1"
 
   [dependencies.bytes]
   version = "1.0.1"
@@ -50,7 +51,6 @@ webpki = "~0.21.3"
 [dev-dependencies]
 anyhow = "1.0.36"
 assert_matches = "1.3"
-flexi_logger = "~0.16.1"
 rand = "~0.7.3"
 
 [target."cfg(any(all(unix, not(any(target_os = \"android\", target_os = \"androideabi\", target_os = \"ios\"))), windows))".dependencies]

@@ -104,6 +104,9 @@ pub enum Error {
     #[error("Type of the message received was not the expected one: {0}")]
     UnexpectedMessageType(WireMsg),
     /// The message exceeds the maximum message length allowed.
-    #[error("Maximum data length exceeded, lengh: {0}")]
+    #[error("Maximum data length exceeded, length: {0}")]
     MaxLengthExceeded(usize),
+    /// Incorrect Public Address provided
+    #[error("Incorrect Public Address provided")]
+    IncorrectPublicAddress,
 }

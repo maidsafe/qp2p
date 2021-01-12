@@ -33,11 +33,28 @@ pub struct Config {
     )]
     pub hard_coded_contacts: HashSet<SocketAddr>,
     /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
+    /// If external port is provided it means that the user is carrying out manual port forwarding and this field is mandatory.
+    /// This will be the internal port number mapped to the process
     #[structopt(short, long)]
-    pub port: Option<u16>,
-    /// IP address for the listener. If none supplied we'll use the default address (0.0.0.0).
+    pub local_port: Option<u16>,
+    /// IP address for the listener. If none is supplied and `forward_port` is enabled, we will use IGD to realize the
+    /// local IP address of the machine. If IGD fails the application will exit.
+    #[structopt(short, long)]
+    pub local_ip: Option<IpAddr>,
+    /// Specify if port forwarding via UPnP should be done or not. This can be set to false if the network
+    /// is run locally on the network loopback or on a local area network.
     #[structopt(long)]
-    pub ip: Option<IpAddr>,
+    pub forward_port: bool,
+    /// External port number assigned to the socket address of the program. 
+    /// If this is provided, QP2p considers that the local port provided has been mapped to the
+    /// provided external port number and automatic port forwarding will be skipped.
+    #[structopt(short, long)]
+    pub external_port: Option<u16>,
+    /// External IP address of the computer on the WAN. This field is mandatory if the node is the genesis node and 
+    /// port forwarding is not available. In case of non-genesis nodes, the external IP address will be resolved
+    /// using the Echo service.
+    #[structopt(short, long)]
+    pub external_ip: Option<IpAddr>,
     /// This is the maximum message size we'll allow the peer to send to us. Any bigger message and
     /// we'll error out probably shutting down the connection to the peer. If none supplied we'll
     /// default to the documented constant.
@@ -62,9 +79,6 @@ pub struct Config {
     /// Duration of a UPnP port mapping.
     #[structopt(long)]
     pub upnp_lease_duration: Option<u32>,
-    /// Specify if port forwarding via UPnP should be done or not
-    #[structopt(long)]
-    pub forward_port: bool,
     /// Use a fresh config without re-using any config available on disk
     #[structopt(long)]
     pub fresh: bool,

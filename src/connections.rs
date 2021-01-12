@@ -45,7 +45,7 @@ impl Connection {
     ///     let mut config = Config::default();
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut peer_1 = quic_p2p.new_endpoint()?;
+    ///     let mut peer_1 = quic_p2p.new_endpoint().await?;
     ///     let peer1_addr = peer_1.socket_addr().await?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
@@ -71,7 +71,7 @@ impl Connection {
     ///     let mut config = Config::default();
     ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut peer_1 = quic_p2p.new_endpoint()?;
+    ///     let mut peer_1 = quic_p2p.new_endpoint().await?;
     ///     let peer1_addr = peer_1.socket_addr().await?;
     ///
     ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
@@ -259,10 +259,19 @@ impl IncomingMessages {
             Some(Ok((mut send, mut recv))) => match read_bytes(&mut recv).await {
                 Ok(WireMsg::UserMsg(bytes)) => Some((bytes, send, recv)),
                 Ok(WireMsg::EndpointEchoReq) => {
+                    trace!("Received Echo Request");
                     let message = WireMsg::EndpointEchoResp(peer_addr);
                     message.write_to_stream(&mut send).await.ok()?;
+                    trace!("Responded to Echo request");
                     Some((Bytes::new(), send, recv))
                 }
+                Ok(WireMsg::EndpointVerificationReq(address_sent)) => {
+                    trace!("Received Endpoint verification request {:?} from {:?}", address_sent, peer_addr);
+                    let message = WireMsg::EndpointVerficationResp(address_sent == peer_addr);
+                    message.write_to_stream(&mut send).await.ok()?;
+                    trace!("Responded to Endpoint verification request");
+                    Some((Bytes::new(), send, recv))
+                },
                 Ok(msg) => {
                     error!("Unexpected message type: {:?}", msg);
                     Some((Bytes::new(), send, recv))
