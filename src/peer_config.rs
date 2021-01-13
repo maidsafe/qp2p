@@ -45,6 +45,7 @@ pub fn new_our_cfg(
     our_cert: quinn::Certificate,
     our_key: quinn::PrivateKey,
 ) -> Result<quinn::ServerConfig> {
+    #[allow(clippy::field_reassign_with_default)]
     let mut our_cfg_builder = {
         let mut our_cfg = quinn::ServerConfig::default();
         our_cfg.transport = Arc::new(new_transport_cfg(
