@@ -130,7 +130,7 @@ impl SerialisableCertificate {
     /// Parses DER encoded binary key material to a format that can be used by Quinn
     ///
     /// # Errors
-    /// Returns [CertificateParseError](enum.Error.html#variant.CertificateParseError) if the inputs
+    /// Returns [CertificateParseError](Error::CertificateParseError) if the inputs
     /// cannot be parsed
     pub fn obtain_priv_key_and_cert(&self) -> Result<(quinn::PrivateKey, quinn::Certificate)> {
         Ok((
