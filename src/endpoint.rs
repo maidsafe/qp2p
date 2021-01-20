@@ -156,6 +156,16 @@ impl Endpoint {
         }
     }
 
+    /// Get an existing connection for the peer address.
+    pub fn get_connection(&self, peer_addr: &SocketAddr) -> Option<Connection> {
+        if let Some((conn, guard)) = self.connection_pool.get(peer_addr) {
+            trace!("Using cached connection to peer: {}", peer_addr);
+            Some(Connection::new(conn, guard))
+        } else {
+            None
+        }
+    }
+
     /// Connects to another peer.
     ///
     /// Returns `Connection` which is a handle for sending messages to the peer and
