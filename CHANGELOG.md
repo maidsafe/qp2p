@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.10](https://github.com/maidsafe/qp2p/compare/v0.9.9...v0.9.10) (2021-01-20)
+
+
+### Features
+
+* get peer's cached connection ([1d8f4ab](https://github.com/maidsafe/qp2p/commit/1d8f4abda9bb8b7485a94e0bed7e5f9c4ea76c1e))
+
 ### [0.9.9](https://github.com/maidsafe/qp2p/compare/v0.9.8...v0.9.9) (2021-01-14)
 
 ### [0.9.8](https://github.com/maidsafe/qp2p/compare/v0.9.7...v0.9.8) (2021-01-13)
