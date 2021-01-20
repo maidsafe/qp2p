@@ -12,10 +12,11 @@ env:
 
 jobs:
   tag:
-    if: ${{ github.repository_owner == 'maidsafe' }}
     runs-on: ubuntu-latest
     # Only run on a release commit
-    if: "startsWith(github.event.head_commit.message, 'chore(release):')"
+    if: |
+      github.repository_owner == 'maidsafe' &&
+      startsWith(github.event.head_commit.message, 'chore(release):')
     steps:
       - uses: actions/checkout@v2
         with:
