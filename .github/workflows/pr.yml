@@ -16,6 +16,7 @@ env:
 
 jobs:
   checks:
+    if: github.repository_owner == 'maidsafe'
     name: Clippy & fmt
     runs-on: ubuntu-latest
     steps:
@@ -28,10 +29,6 @@ jobs:
           toolchain: stable
           override: true
           components: rustfmt, clippy
-
-        # Generate Cargo.lock, needed for the cache.
-      - name: Generate lockfile
-        run: cargo generate-lockfile
 
       # Cache.
       - name: Cargo cache registry, index and build
@@ -52,6 +49,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features
 
   coverage:
+    if: github.repository_owner == 'maidsafe'
     name: Code coverage check
     runs-on: ubuntu-latest
     steps:
@@ -62,10 +60,6 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-
-      # Generate Cargo.lock, needed for the cache.
-      - name: Generate Cargo.lock
-        run: cargo generate-lockfile
 
       # Cache.
       - name: Cargo cache registry, index and build
@@ -95,6 +89,7 @@ jobs:
           parallel-finished: true
 
   cargo-udeps:
+    if: github.repository_owner == 'maidsafe'
     name: Unused dependency check
     runs-on: ubuntu-latest
     steps:
@@ -113,6 +108,7 @@ jobs:
           cargo +nightly udeps --all-targets
 
   cargo-deny:
+    if: github.repository_owner == 'maidsafe'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
@@ -124,6 +120,7 @@ jobs:
     - uses: EmbarkStudios/cargo-deny-action@v1
 
   test:
+    if: github.repository_owner == 'maidsafe'
     name: Test
     runs-on: ${{ matrix.os }}
     strategy:
@@ -138,10 +135,6 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-
-      # Generate Cargo.lock, needed for the cache.
-      - name: Generate lockfile
-        run: cargo generate-lockfile
 
       # Cache.
       - name: Cargo cache registry, index and build
@@ -159,6 +152,7 @@ jobs:
 
   # Test publish using --dry-run.
   test-publish:
+    if: github.repository_owner == 'maidsafe'
     name: Test Publish
     runs-on: ubuntu-latest
     steps:

@@ -13,7 +13,9 @@ jobs:
   update_changelog:
     runs-on: ubuntu-20.04
     # Dont run if we're on a release commit
-    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    if: |
+      github.repository_owner == 'maidsafe' &&
+      !startsWith(github.event.head_commit.message, 'chore(release):')
     steps:
       - uses: actions/checkout@v2
         with:

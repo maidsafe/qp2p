@@ -4,6 +4,7 @@ on:
     - cron: '0 0 * * *'
 jobs:
   audit:
+    if: github.repository_owner == 'maidsafe'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
