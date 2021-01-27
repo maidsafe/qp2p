@@ -96,8 +96,17 @@ impl Connection {
     pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
         let mut send_stream = self.handle_error(self.quic_conn.open_uni().await)?;
         self.handle_error(send_msg(&mut send_stream, msg).await)?;
-        self.handle_error(send_stream.finish().await)?;
-        Ok(())
+
+        // We try to make sure the stream is gracefully closed and the bytes get sent,
+        // but if it was already closed (perhaps by the peer) then we
+        // don't remove the connection from the pool.
+        match send_stream.finish().await {
+            Ok(()) | Err(quinn::WriteError::Stopped(_)) => Ok(()),
+            Err(err) => {
+                self.handle_error(Err(err))?;
+                Ok(())
+            }
+        }
     }
 
     /// Gracefully close connection immediatelly
