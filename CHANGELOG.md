@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.13](https://github.com/maidsafe/qp2p/compare/v0.9.12...v0.9.13) (2021-01-27)
+
+
+### Bug Fixes
+
+* **connections:** when gracefully finishing uni-stream upon sending bytes, do not remove conn from the pool if an error thrown was caused due to being already closed ([e6c5a2a](https://github.com/maidsafe/qp2p/commit/e6c5a2a08e41191e59684d7b055d37e624ef624c))
+
 ### [0.9.12](https://github.com/maidsafe/qp2p/compare/v0.9.11...v0.9.12) (2021-01-21)
 
 ### [0.9.11](https://github.com/maidsafe/qp2p/compare/v0.9.10...v0.9.11) (2021-01-20)
