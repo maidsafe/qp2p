@@ -48,6 +48,45 @@ jobs:
       - name: Clippy checks
         run: cargo clippy --workspace --all-targets --all-features
 
+  pr_size:
+    name: Check total lines changed <= 200
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: '0'
+
+    - name: Get additions & deletions
+      run: |
+        additions=${{ github.event.pull_request.additions }}
+        echo "additions=${additions}" >> $GITHUB_ENV
+        deletions=${{ github.event.pull_request.deletions }}
+        echo "deletions=${deletions}" >> $GITHUB_ENV
+
+    - name: Show additions & deletions
+      run : |
+        echo "Additions: "
+        echo $additions
+        echo ""
+        echo "Deletions: "
+        echo $deletions
+
+    - name: Calculate total lines changed
+      run: |
+        size=$(($additions + $deletions))
+        echo "size=${size}" >> $GITHUB_ENV
+        echo "Total lines changed: "
+        echo $size
+
+    - name: Fail if > 200
+      run: |
+        if [[ $size -gt 200 ]]
+        then
+          echo "Warning - total lines changed is greater than 200."
+          echo "Please consider breaking this PR down."
+          exit 1
+        fi
+  
   coverage:
     if: github.repository_owner == 'maidsafe'
     name: Code coverage check
