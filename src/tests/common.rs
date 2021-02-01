@@ -53,6 +53,20 @@ async fn get_incoming_connection(listening_peer: &mut Endpoint) -> Option<Socket
     }
 }
 
+async fn get_disconnection_event(listening_peer: &mut Endpoint) -> Option<SocketAddr> {
+    let mut attempts = 0;
+    loop {
+        if let Some(connecting_peer) = listening_peer.next_disconnected_peer().await {
+            return Some(connecting_peer);
+        }
+        thread::sleep(Duration::from_secs(2));
+        attempts += 1;
+        if attempts > 2 {
+            return None;
+        }
+    }
+}
+
 // Helper function that listens for incoming messages
 // After 3 attemps if no message has arrived it returns None.
 async fn get_incoming_message(listening_peer: &mut Endpoint) -> Option<(SocketAddr, Bytes)> {
@@ -224,71 +238,54 @@ async fn reuse_incoming_connection() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn remove_closed_connection_from_pool() -> Result<()> {
+#[tokio::test(core_threads = 10)]
+async fn disconnection() -> Result<()> {
     utils::init_logging();
 
-    // let qp2p = new_qp2p()?;
-    // let alice = qp2p.new_endpoint().await?;
+    let qp2p = new_qp2p()?;
+    let mut alice = qp2p.new_endpoint().await?;
+    let alice_addr = alice.socket_addr().await?;
 
-    // let mut bob = qp2p.new_endpoint().await?;
-    // let bob_addr = bob.socket_addr().await?;
-    // let mut bob_incoming_conns = bob.listen();
+    let mut bob = qp2p.new_endpoint().await?;
+    let bob_addr = bob.socket_addr().await?;
 
-    // // Alice sends a message to Bob
-    // let (alice_conn, alice_incoming_messages) = alice.connect_to(&bob_addr).await?;
-    // let mut alice_incoming_messages =
-    //     alice_incoming_messages.ok_or_else(|| anyhow!("Missing expected incmoing message"))?;
-    // let msg0 = random_msg();
-    // alice_conn.send_uni(msg0.clone()).await?;
+    // Alice connects to Bob who should receive an incoming connection.
+    alice.connect_to(&bob_addr).await?;
 
-    // // Bob receives the connection...
-    // let mut bob_incoming_messages = bob_incoming_conns
-    //     .next()
-    //     .await
-    //     .ok_or_else(|| anyhow!("Missing expected incoming connection"))?;
-    // assert_eq!(
-    //     bob_incoming_messages
-    //         .next()
-    //         .await
-    //         .map(|msg| msg.get_message_data()),
-    //     Some(msg0)
-    // );
-    // // ..and closes the stream. This removes the connection from Bob's pool and closes it.
-    // drop(bob_incoming_messages);
+    if let Some(connecting_peer) = get_incoming_connection(&mut bob).await {
+        assert_eq!(connecting_peer, alice_addr);
+    } else {
+        anyhow!("No incoming connection");
+    }
 
-    // // ...which closes it on Alice's side too.
-    // assert!(alice_incoming_messages.next().await.is_none());
+    // After Alice disconnects from Bob both peers should receive the disconnected event.
+    alice.disconnect_from(&bob_addr)?;
 
-    // // Any attempt to send on the connection now fails.
-    // let msg1 = random_msg();
-    // assert!(alice_conn.send_uni(msg1).await.is_err());
+    if let Some(disconnected_peer) = get_disconnection_event(&mut alice).await {
+        assert_eq!(disconnected_peer, bob_addr);
+    } else {
+        anyhow!("Missing disconnection event");
+    }
 
-    // // Alice reconnects to Bob which creates new connection.
-    // let (alice_conn, alice_incoming_messages) = alice.connect_to(&bob_addr).await?;
-    // assert!(alice_incoming_messages.is_some());
+    if let Some(disconnected_peer) = get_disconnection_event(&mut bob).await {
+        assert_eq!(disconnected_peer, alice_addr);
+    } else {
+        anyhow!("Missing disconnection event");
+    }
 
-    // // Alice sends another message...
-    // let msg2 = random_msg();
-    // alice_conn.send_uni(msg2.clone()).await?;
+    // This time bob connects to Alice. Since this is a *new connection*, Alice should get the connection event
+    bob.connect_to(&alice_addr).await?;
 
-    // // ...which Bob receives on new connection.
-    // let mut bob_incoming_messages = bob_incoming_conns
-    //     .next()
-    //     .await
-    //     .ok_or_else(|| anyhow!("Missing expected incoming connection"))?;
-    // assert_eq!(
-    //     bob_incoming_messages
-    //         .next()
-    //         .await
-    //         .map(|msg| msg.get_message_data()),
-    //     Some(msg2)
-    // );
+    if let Some(connected_peer) = get_incoming_connection(&mut alice).await {
+        assert_eq!(connected_peer, bob_addr);
+    } else {
+        anyhow!("Missing incoming connection");
+    }
 
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(core_threads = 10)]
 async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     // If both peers call `connect_to` simultaneously (that is, before any of them receives the
     // others connection first), two separate connections are created. This test verifies that
@@ -296,76 +293,72 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
 
     utils::init_logging();
 
-    // let qp2p = new_qp2p()?;
-    // let mut alice = qp2p.new_endpoint().await?;
-    // let alice_addr = alice.socket_addr().await?;
-    // let mut alice_incoming_conns = alice.listen();
+    let qp2p = new_qp2p()?;
+    let mut alice = qp2p.new_endpoint().await?;
+    let alice_addr = alice.socket_addr().await?;
 
-    // let mut bob = qp2p.new_endpoint().await?;
-    // let bob_addr = bob.socket_addr().await?;
-    // let mut bob_incoming_conns = bob.listen();
+    let mut bob = qp2p.new_endpoint().await?;
+    let bob_addr = bob.socket_addr().await?;
 
-    // let (alice_conn, alice_incoming_messages0) = alice.connect_to(&bob_addr).await?;
-    // let mut alice_incoming_messages0 =
-    //     alice_incoming_messages0.ok_or_else(|| anyhow!("Missing expected incmoing message"))?;
+    future::try_join(alice.connect_to(&bob_addr), bob.connect_to(&alice_addr)).await?;
 
-    // let (bob_conn, bob_incoming_messages0) = bob.connect_to(&alice_addr).await?;
-    // assert!(bob_incoming_messages0.is_some());
+    if let Some(connecting_peer) = get_incoming_connection(&mut alice).await {
+        assert_eq!(connecting_peer, bob_addr);
+    } else {
+        anyhow!("No incoming connection from Bob");
+    }
 
-    // let mut alice_incoming_messages1 = alice_incoming_conns
-    //     .next()
-    //     .await
-    //     .ok_or_else(|| anyhow!("Missing expected incoming connection"))?;
+    if let Some(connecting_peer) = get_incoming_connection(&mut bob).await {
+        assert_eq!(connecting_peer, alice_addr);
+    } else {
+        anyhow!("No incoming connectino from Alice");
+    }
 
-    // let mut bob_incoming_messages1 = bob_incoming_conns
-    //     .next()
-    //     .await
-    //     .ok_or_else(|| anyhow!("Missing expected incoming connection"))?;
+    let msg0 = random_msg();
+    alice.send_message(msg0.clone(), &bob_addr).await?;
 
-    // let msg0 = random_msg();
-    // alice_conn.send_uni(msg0.clone()).await?;
+    let msg1 = random_msg();
+    bob.send_message(msg1.clone(), &alice_addr).await?;
 
-    // let msg1 = random_msg();
-    // bob_conn.send_uni(msg1.clone()).await?;
+    if let Some((src, message)) = get_incoming_message(&mut alice).await {
+        assert_eq!(src, bob_addr);
+        assert_eq!(message, msg1);
+    } else {
+        anyhow!("Missing incoming message");
+    }
 
-    // assert_eq!(
-    //     bob_incoming_messages1
-    //         .next()
-    //         .await
-    //         .map(|msg| msg.get_message_data()),
-    //     Some(msg0)
-    // );
+    if let Some((src, message)) = get_incoming_message(&mut bob).await {
+        assert_eq!(src, alice_addr);
+        assert_eq!(message, msg0);
+    } else {
+        anyhow!("Missing incoming message");
+    }
 
-    // assert_eq!(
-    //     alice_incoming_messages1
-    //         .next()
-    //         .await
-    //         .map(|msg| msg.get_message_data()),
-    //     Some(msg1)
-    // );
+    // Drop the connection initiated by Bob.
+    bob.disconnect_from(&alice_addr)?;
 
-    // // Drop the connection initiated by Bob.
-    // drop(bob_conn);
-    // drop(bob_incoming_messages0);
+    // It should be closed on Alice's side too.
+    if let Some(disconnected_peer) = get_disconnection_event(&mut alice).await {
+        assert_eq!(disconnected_peer, bob_addr);
+    } else {
+        anyhow!("Missing disconnection event");
+    }
 
-    // // It should be closed on Alice's side too.
-    // assert!(alice_incoming_messages1.next().await.is_none());
+    // Bob connects to Alice again. This does not open a new connection but returns the connection
+    // previously initiated by Alice from the pool.
+    bob.connect_to(&alice_addr).await?;
 
-    // // Bob connects to Alice again. This does not open a new connection but returns the connection
-    // // previously initiated by Alice from the pool.
-    // let (bob_conn, bob_incoming_messages2) = bob.connect_to(&alice_addr).await?;
-    // assert!(bob_incoming_messages2.is_none());
+    if let Some(connecting_peer) = get_incoming_connection(&mut alice).await {
+        anyhow!("Unexpected incoming connection from {}", connecting_peer);
+    }
 
-    // let msg2 = random_msg();
-    // bob_conn.send_uni(msg2.clone()).await?;
+    let msg2 = random_msg();
+    bob.send_message(msg2.clone(), &alice_addr).await?;
 
-    // assert_eq!(
-    //     alice_incoming_messages0
-    //         .next()
-    //         .await
-    //         .map(|msg| msg.get_message_data()),
-    //     Some(msg2)
-    // );
+    if let Some((src, message)) = get_incoming_message(&mut alice).await {
+        assert_eq!(src, bob_addr);
+        assert_eq!(message, msg2);
+    }
 
     Ok(())
 }
@@ -374,49 +367,49 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
 async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     utils::init_logging();
 
-    // let qp2p = new_qp2p()?;
-    // let mut alice = qp2p.new_endpoint().await?;
-    // let alice_addr = alice.socket_addr().await?;
-    // let mut alice_incoming_conns = alice.listen();
+    let qp2p = new_qp2p()?;
+    let mut alice = qp2p.new_endpoint().await?;
+    let alice_addr = alice.socket_addr().await?;
 
-    // let bob = qp2p.new_endpoint().await?;
+    let mut bob = qp2p.new_endpoint().await?;
+    let bob_addr = bob.socket_addr().await?;
 
-    // // Try to establish two connections to the same peer at the same time.
-    // let ((conn0, incoming_messages0), (conn1, incoming_messages1)) =
-    //     future::try_join(bob.connect_to(&alice_addr), bob.connect_to(&alice_addr)).await?;
+    // Try to establish two connections to the same peer at the same time.
+    let ((), ()) =
+        future::try_join(bob.connect_to(&alice_addr), bob.connect_to(&alice_addr)).await?;
 
-    // // Only one of the connection should have the incoming messages stream, because the other one
-    // // is just a clone of it and not a separate connection.
-    // assert!(incoming_messages0.is_some() ^ incoming_messages1.is_some());
+    // Alice get only one incoming connection
+    if let Some(connecting_peer) = get_incoming_connection(&mut alice).await {
+        assert_eq!(connecting_peer, alice_addr);
+    } else {
+        anyhow!("Missing incoming connection");
+    }
 
-    // // Send two messages, one on each connections.
-    // let msg0 = random_msg();
-    // conn0.send_uni(msg0.clone()).await?;
+    if let Some(connecting_peer) = get_incoming_connection(&mut alice).await {
+        anyhow!("Unexpected incoming connection from {}", connecting_peer);
+    }
 
-    // let msg1 = random_msg();
-    // conn1.send_uni(msg1.clone()).await?;
+    // Send two messages, one from each end
+    let msg0 = random_msg();
+    alice.send_message(msg0.clone(), &bob_addr).await?;
 
-    // // Both messages are received on the same connection, proving that the two connections are
-    // // actually just two handles to the same underlying connection.
-    // let mut alice_incoming_messages = alice_incoming_conns
-    //     .next()
-    //     .await
-    //     .ok_or_else(|| anyhow!("Missing expected incoming connection"))?;
+    let msg1 = random_msg();
+    bob.send_message(msg1.clone(), &alice_addr).await?;
 
-    // assert_eq!(
-    //     alice_incoming_messages
-    //         .next()
-    //         .await
-    //         .map(|msg| msg.get_message_data()),
-    //     Some(msg0)
-    // );
-    // assert_eq!(
-    //     alice_incoming_messages
-    //         .next()
-    //         .await
-    //         .map(|msg| msg.get_message_data()),
-    //     Some(msg1)
-    // );
+    // Both messages are received  at the other end
+    if let Some((src, message)) = get_incoming_message(&mut alice).await {
+        assert_eq!(src, bob_addr);
+        assert_eq!(message, msg1);
+    } else {
+        anyhow!("No message received from Bob");
+    }
+
+    if let Some((src, message)) = get_incoming_message(&mut bob).await {
+        assert_eq!(src, alice_addr);
+        assert_eq!(message, msg0);
+    } else {
+        anyhow!("No message from alice");
+    }
 
     Ok(())
 }

@@ -53,6 +53,24 @@ impl ConnectionPool {
             .is_some()
     }
 
+    pub fn remove(&mut self, addr: &SocketAddr) -> Option<(quinn::Connection, ConnectionRemover)> {
+        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+
+        let key = store
+            .map
+            .range_mut(Key::min(*addr)..=Key::max(*addr))
+            .next()
+            .map(|(key, _)| key.clone())?;
+
+        let conn = store.map.remove(&key)?;
+        let remover = ConnectionRemover {
+            store: self.store.clone(),
+            key,
+        };
+
+        Some((conn, remover))
+    }
+
     pub fn get(&self, addr: &SocketAddr) -> Option<(quinn::Connection, ConnectionRemover)> {
         let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
 

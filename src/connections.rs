@@ -204,6 +204,7 @@ pub(super) fn listen_for_incoming_connections(
     connection_pool: ConnectionPool,
     message_tx: UnboundedSender<(SocketAddr, Bytes)>,
     connection_tx: UnboundedSender<SocketAddr>,
+    disconnection_tx: UnboundedSender<SocketAddr>,
 ) {
     let _ = tokio::spawn(async move {
         loop {
@@ -217,21 +218,28 @@ pub(super) fn listen_for_incoming_connections(
                     }) => {
                         let peer_address = connection.remote_address();
                         let pool_handle = connection_pool.insert(peer_address, connection);
-                        connection_tx.send(peer_address).unwrap();
+                        connection_tx
+                            .send(peer_address)
+                            .map_err(|err| Error::MpscChannelSend(err.to_string()))?;
                         listen_for_incoming_messages(
                             uni_streams,
                             bi_streams,
                             pool_handle,
                             message_tx.clone(),
+                            disconnection_tx.clone(),
                         );
                     }
                     Err(err) => {
                         error!("An incoming connection failed because of an error: {}", err);
                     }
                 },
-                None => log::info!("Got nothing"),
+                None => {
+                    trace!("quinn::Incoming::next() returned None. There will be no more incoming connections");
+                    break;
+                }
             }
         }
+        Ok::<_, Error>(())
     });
 }
 
@@ -240,6 +248,7 @@ pub(super) fn listen_for_incoming_messages(
     mut bi_streams: quinn::IncomingBiStreams,
     remover: ConnectionRemover,
     message_tx: UnboundedSender<(SocketAddr, Bytes)>,
+    disconnection_tx: UnboundedSender<SocketAddr>,
 ) {
     let src = *remover.remote_addr();
     let _ = tokio::spawn(async move {
@@ -261,15 +270,19 @@ pub(super) fn listen_for_incoming_messages(
                 }),
             };
             if let Some(message) = message {
-                log::info!("Got a message. Will listen for something else now");
-                message_tx.send((src, message.get_message_data())).unwrap();
+                message_tx
+                    .send((src, message.get_message_data()))
+                    .map_err(|err| Error::MpscChannelSend(err.to_string()))?;
             } else {
-                log::info!("Got nothing. Bye bye");
-                // Hmm
+                log::trace!("The connection has been terminated.");
+                disconnection_tx
+                    .send(*remover.remote_addr())
+                    .map_err(|err| Error::MpscChannelSend(err.to_string()))?;
                 remover.remove();
                 break;
             }
         }
+        Ok::<_, Error>(())
     });
 }
 

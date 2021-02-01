@@ -19,7 +19,7 @@ use super::{
     Config,
 };
 use bytes::Bytes;
-use futures::lock::Mutex;
+use futures::lock::{Mutex, MutexGuard};
 use log::{debug, error, info, trace, warn};
 use std::collections::VecDeque;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -40,6 +40,8 @@ pub struct Endpoint {
     message_queue: Arc<Mutex<VecDeque<(SocketAddr, Bytes)>>>,
     message_tx: UnboundedSender<(SocketAddr, Bytes)>,
     connection_queue: Arc<Mutex<VecDeque<SocketAddr>>>,
+    disconnection_queue: Arc<Mutex<VecDeque<SocketAddr>>>,
+    disconnection_tx: UnboundedSender<SocketAddr>,
     client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
     qp2p_config: Config,
@@ -71,11 +73,15 @@ impl Endpoint {
             _ => None,
         };
         let connection_pool = ConnectionPool::new();
-        // Should we bound these
+        // Channel and queue for messages
         let (message_tx, mut message_rx) = mpsc::unbounded_channel();
         let messages = Arc::new(Mutex::new(VecDeque::new()));
+        // For incoming connections
         let (connection_tx, mut connection_rx) = mpsc::unbounded_channel();
         let connections = Arc::new(Mutex::new(VecDeque::new()));
+        // For incoming disconnection events
+        let (disconnection_tx, mut disconnection_rx) = mpsc::unbounded_channel();
+        let disconnections = Arc::new(Mutex::new(VecDeque::new()));
         let endpoint = Self {
             local_addr,
             public_addr,
@@ -83,6 +89,8 @@ impl Endpoint {
             message_queue: messages.clone(),
             message_tx: message_tx.clone(),
             connection_queue: connections.clone(),
+            disconnection_queue: disconnections.clone(),
+            disconnection_tx: disconnection_tx.clone(),
             client_cfg,
             bootstrap_nodes,
             qp2p_config,
@@ -124,7 +132,14 @@ impl Endpoint {
                 warn!("Public IP address not verified since bootstrap contacts are empty");
             }
         }
-        listen_for_incoming_connections(quic_incoming, connection_pool, message_tx, connection_tx);
+        listen_for_incoming_connections(
+            quic_incoming,
+            connection_pool,
+            message_tx,
+            connection_tx,
+            disconnection_tx,
+        );
+        // These two threads will be automatically terminated when the endpoint is dropped
         let _ = tokio::spawn(async move {
             while let Some((source, message)) = message_rx.recv().await {
                 let mut message_queue = messages.lock().await;
@@ -135,6 +150,12 @@ impl Endpoint {
             while let Some(new_peer) = connection_rx.recv().await {
                 let mut connection_queue = connections.lock().await;
                 connection_queue.push_back(new_peer);
+            }
+        });
+        let _ = tokio::spawn(async move {
+            while let Some(disconnected_peer) = disconnection_rx.recv().await {
+                let mut disconnection_queue = disconnections.lock().await;
+                disconnection_queue.push_back(disconnected_peer);
             }
         });
         Ok(endpoint)
@@ -227,6 +248,17 @@ impl Endpoint {
         })
     }
 
+    /// Disconnects from a peer
+    pub fn disconnect_from(&mut self, peer_addr: &SocketAddr) -> Result<()> {
+        if let Some((conn, remover)) = self.connection_pool.remove(peer_addr) {
+            conn.close(0u8.into(), b"User Disconnected");
+            remover.remove();
+        } else {
+            log::info!("We are not connected to this peer. Doing nothing");
+        }
+        Ok(())
+    }
+
     /// Connects to another peer.
     ///
     /// Returns `Connection` which is a handle for sending messages to the peer and
@@ -312,6 +344,7 @@ impl Endpoint {
             new_conn.bi_streams,
             guard,
             self.message_tx.clone(),
+            self.disconnection_tx.clone(),
         );
 
         self.connection_deduplicator
@@ -393,5 +426,11 @@ impl Endpoint {
     /// Returns a message received from another peer along with the source address
     pub async fn next_incoming_message(&mut self) -> Option<(SocketAddr, Bytes)> {
         self.message_queue.lock().await.pop_front()
+    }
+
+    /// Returns the address of the peer that has been disconnected from us
+    /// If no disconnections occurred this returns `None`
+    pub async fn next_disconnected_peer(&mut self) -> Option<SocketAddr> {
+        self.disconnection_queue.lock().await.pop_front()
     }
 }
