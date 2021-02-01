@@ -45,12 +45,12 @@ pub struct Config {
     /// is run locally on the network loopback or on a local area network.
     #[structopt(long)]
     pub forward_port: bool,
-    /// External port number assigned to the socket address of the program. 
+    /// External port number assigned to the socket address of the program.
     /// If this is provided, QP2p considers that the local port provided has been mapped to the
     /// provided external port number and automatic port forwarding will be skipped.
     #[structopt(short, long)]
     pub external_port: Option<u16>,
-    /// External IP address of the computer on the WAN. This field is mandatory if the node is the genesis node and 
+    /// External IP address of the computer on the WAN. This field is mandatory if the node is the genesis node and
     /// port forwarding is not available. In case of non-genesis nodes, the external IP address will be resolved
     /// using the Echo service.
     #[structopt(short, long)]

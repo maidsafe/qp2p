@@ -42,6 +42,17 @@ impl ConnectionPool {
         }
     }
 
+    pub fn has(&self, addr: &SocketAddr) -> bool {
+        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+
+        // Efficiently fetch the first entry whose key is equal to `key` and check if it exists
+        store
+            .map
+            .range_mut(Key::min(*addr)..=Key::max(*addr))
+            .next()
+            .is_some()
+    }
+
     pub fn get(&self, addr: &SocketAddr) -> Option<(quinn::Connection, ConnectionRemover)> {
         let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
 

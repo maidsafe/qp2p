@@ -7,7 +7,6 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use super::connections::Connection;
 use std::{
     collections::{hash_map::Entry, HashMap},
     net::SocketAddr,
@@ -15,7 +14,7 @@ use std::{
 use thiserror::Error;
 use tokio::sync::{broadcast, Mutex};
 
-type Result<T = Connection, E = Error> = std::result::Result<T, E>;
+type Result<T = (), E = Error> = std::result::Result<T, E>;
 
 // Deduplicate multiple concurrent connect attempts to the same peer - they all will yield the
 // same `Connection` instead of opening a separate connection each.

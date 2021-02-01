@@ -109,4 +109,7 @@ pub enum Error {
     /// Incorrect Public Address provided
     #[error("Incorrect Public Address provided")]
     IncorrectPublicAddress,
+    /// Missing connection
+    #[error("No connection to the dest peer")]
+    MissingConnection,
 }
