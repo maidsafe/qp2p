@@ -254,35 +254,6 @@ impl QuicP2p {
         Ok(endpoint)
     }
 
-    // /// Connect to the given peer and return the `Endpoint` created along with the `Connection`
-    // /// object if it succeeds, which can then be used to send messages to the connected peer.
-    // ///
-    // /// # Example
-    // ///
-    // /// ```
-    // /// use qp2p::{QuicP2p, Config, Error};
-    // /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    // ///
-    // /// #[tokio::main]
-    // /// async fn main() -> Result<(), Error> {
-    // ///
-    // ///     let mut config = Config::default();
-    // ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    // ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    // ///     let mut peer_1 = quic_p2p.new_endpoint().await?;
-    // ///     let peer1_addr = peer_1.socket_addr().await?;
-    // ///
-    // ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
-    // ///     Ok(())
-    // /// }
-    // /// ```
-    // pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
-    //     let endpoint = self.new_endpoint().await?;
-    //     let (conn, _) = endpoint.connect_to(node_addr).await?;
-
-    //     Ok((endpoint, conn))
-    // }
-
     /// Create a new `Endpoint`  which can be used to connect to peers and send
     /// messages to them, as well as listen to messages incoming from other peers.
     ///
