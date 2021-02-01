@@ -10,7 +10,7 @@
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
-    connections::{Connection, IncomingMessages, RecvStream, SendStream},
+    connections::{RecvStream, SendStream},
     endpoint::Endpoint,
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
@@ -32,7 +32,7 @@ const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 
 /// Message received from a peer
 #[derive(Debug)]
-pub enum Message {
+pub(crate) enum Message {
     /// A message sent by peer on a uni-directional stream
     UniStream {
         /// Message's bytes
@@ -229,7 +229,7 @@ impl QuicP2p {
     ///     Ok(())
     /// }
     /// ```
-    pub async fn bootstrap(&self) -> Result<(Endpoint, Connection, IncomingMessages)> {
+    pub async fn bootstrap(&self) -> Result<Endpoint> {
         let endpoint = self.new_endpoint().await?;
 
         trace!("Bootstrapping with nodes {:?}", endpoint.bootstrap_nodes());
@@ -243,7 +243,7 @@ impl QuicP2p {
             .iter()
             .map(|addr| Box::pin(endpoint.connect_to(addr)));
 
-        let (conn, incoming_messages) = future::select_ok(tasks)
+        future::select_ok(tasks)
             .await
             .map_err(|err| {
                 error!("Failed to bootstrap to the network: {}", err);
@@ -251,42 +251,37 @@ impl QuicP2p {
             })?
             .0;
 
-        // NOTE: this error is impossible because we just created new endpoint so the connection
-        // cannot be in the pool yet and thus `incoming_messages` should be `Some`. But handling it
-        // anyway to avoid `unwrap`.
-        let incoming_messages = incoming_messages.ok_or(Error::BootstrapFailure)?;
-
-        Ok((endpoint, conn, incoming_messages))
+        Ok(endpoint)
     }
 
-    /// Connect to the given peer and return the `Endpoint` created along with the `Connection`
-    /// object if it succeeds, which can then be used to send messages to the connected peer.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use qp2p::{QuicP2p, Config, Error};
-    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Error> {
-    ///
-    ///     let mut config = Config::default();
-    ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut peer_1 = quic_p2p.new_endpoint().await?;
-    ///     let peer1_addr = peer_1.socket_addr().await?;
-    ///
-    ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
-        let endpoint = self.new_endpoint().await?;
-        let (conn, _) = endpoint.connect_to(node_addr).await?;
+    // /// Connect to the given peer and return the `Endpoint` created along with the `Connection`
+    // /// object if it succeeds, which can then be used to send messages to the connected peer.
+    // ///
+    // /// # Example
+    // ///
+    // /// ```
+    // /// use qp2p::{QuicP2p, Config, Error};
+    // /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    // ///
+    // /// #[tokio::main]
+    // /// async fn main() -> Result<(), Error> {
+    // ///
+    // ///     let mut config = Config::default();
+    // ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    // ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
+    // ///     let mut peer_1 = quic_p2p.new_endpoint().await?;
+    // ///     let peer1_addr = peer_1.socket_addr().await?;
+    // ///
+    // ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
+    // ///     Ok(())
+    // /// }
+    // /// ```
+    // pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(Endpoint, Connection)> {
+    //     let endpoint = self.new_endpoint().await?;
+    //     let (conn, _) = endpoint.connect_to(node_addr).await?;
 
-        Ok((endpoint, conn))
-    }
+    //     Ok((endpoint, conn))
+    // }
 
     /// Create a new `Endpoint`  which can be used to connect to peers and send
     /// messages to them, as well as listen to messages incoming from other peers.
@@ -324,7 +319,10 @@ impl QuicP2p {
             self.allow_random_port,
         )?;
 
-        trace!("Bound endpoint to local address: {}", self.local_addr);
+        trace!(
+            "Bound endpoint to local address: {}",
+            quinn_endpoint.local_addr()?
+        );
 
         let endpoint = Endpoint::new(
             quinn_endpoint,
@@ -332,7 +330,8 @@ impl QuicP2p {
             self.client_cfg.clone(),
             bootstrap_nodes,
             self.qp2p_config.clone(),
-        ).await?;
+        )
+        .await?;
 
         Ok(endpoint)
     }

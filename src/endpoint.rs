@@ -14,13 +14,17 @@ use super::{
     api::DEFAULT_UPNP_LEASE_DURATION_SEC,
     connection_deduplicator::ConnectionDeduplicator,
     connection_pool::ConnectionPool,
-    connections::{Connection, IncomingConnections, IncomingMessages},
+    connections::{listen_for_incoming_connections, listen_for_incoming_messages, Connection},
     error::Result,
     Config,
 };
+use bytes::Bytes;
 use futures::lock::Mutex;
-use log::{debug, info, warn, trace, error};
+use log::{debug, error, info, trace, warn};
+use std::collections::VecDeque;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::timeout;
 
 /// Host name of the Quic communication certificate used by peers
@@ -33,7 +37,9 @@ pub struct Endpoint {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
-    quic_incoming: Arc<Mutex<quinn::Incoming>>,
+    message_queue: Arc<Mutex<VecDeque<(SocketAddr, Bytes)>>>,
+    message_tx: UnboundedSender<(SocketAddr, Bytes)>,
+    connection_queue: Arc<Mutex<VecDeque<SocketAddr>>>,
     client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
     qp2p_config: Config,
@@ -46,7 +52,6 @@ impl std::fmt::Debug for Endpoint {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
             .field("quic_endpoint", &"<endpoint omitted>")
-            .field("quic_incoming", &self.quic_incoming)
             .field("client_cfg", &self.client_cfg)
             .finish()
     }
@@ -63,17 +68,25 @@ impl Endpoint {
         let local_addr = quic_endpoint.local_addr()?;
         let public_addr = match (qp2p_config.external_ip, qp2p_config.external_port) {
             (Some(ip), Some(port)) => Some(SocketAddr::new(ip, port)),
-            _ => None
+            _ => None,
         };
+        let connection_pool = ConnectionPool::new();
+        // Should we bound these
+        let (message_tx, mut message_rx) = mpsc::unbounded_channel();
+        let messages = Arc::new(Mutex::new(VecDeque::new()));
+        let (connection_tx, mut connection_rx) = mpsc::unbounded_channel();
+        let connections = Arc::new(Mutex::new(VecDeque::new()));
         let endpoint = Self {
             local_addr,
             public_addr,
             quic_endpoint,
-            quic_incoming: Arc::new(Mutex::new(quic_incoming)),
+            message_queue: messages.clone(),
+            message_tx: message_tx.clone(),
+            connection_queue: connections.clone(),
             client_cfg,
             bootstrap_nodes,
             qp2p_config,
-            connection_pool: ConnectionPool::new(),
+            connection_pool: connection_pool.clone(),
             connection_deduplicator: ConnectionDeduplicator::new(),
         };
         if let Some(addr) = endpoint.public_addr {
@@ -82,7 +95,10 @@ impl Endpoint {
             // Verify that the given socket address is reachable
             if let Some(contact) = endpoint.bootstrap_nodes.iter().next() {
                 info!("Verifying provided public IP address");
-                let (connection, _incoming) = endpoint.connect_to(contact).await?;
+                endpoint.connect_to(contact).await?;
+                let connection = endpoint
+                    .get_connection(&contact)
+                    .ok_or_else(|| Error::BootstrapFailure)?; //FIXME
                 let (mut send, mut recv) = connection.open_bi().await?;
                 send.send(WireMsg::EndpointVerificationReq(addr)).await?;
                 let response = WireMsg::read_from_stream(&mut recv.quinn_recv_stream).await?;
@@ -90,24 +106,38 @@ impl Endpoint {
                     WireMsg::EndpointVerficationResp(valid) => {
                         if valid {
                             info!("Endpoint verification successful! {} is reachable.", addr);
-                            Ok(endpoint)
+                        // Ok(endpoint)
                         } else {
                             error!("Endpoint verification failed! {} is not reachable.", addr);
-                            Err(Error::IncorrectPublicAddress)
+                            return Err(Error::IncorrectPublicAddress);
                         }
-                    },
+                    }
                     other => {
-                        error!("Unexpected message when verifying public endpoint: {}", other);
-                        Err(Error::UnexpectedMessageType(other))
+                        error!(
+                            "Unexpected message when verifying public endpoint: {}",
+                            other
+                        );
+                        return Err(Error::UnexpectedMessageType(other));
                     }
                 }
             } else {
                 warn!("Public IP address not verified since bootstrap contacts are empty");
-                Ok(endpoint)
             }
-        } else {
-            Ok(endpoint)
         }
+        listen_for_incoming_connections(quic_incoming, connection_pool, message_tx, connection_tx);
+        let _ = tokio::spawn(async move {
+            while let Some((source, message)) = message_rx.recv().await {
+                let mut message_queue = messages.lock().await;
+                message_queue.push_back((source, message));
+            }
+        });
+        let _ = tokio::spawn(async move {
+            while let Some(new_peer) = connection_rx.recv().await {
+                let mut connection_queue = connections.lock().await;
+                connection_queue.push_back(new_peer);
+            }
+        });
+        Ok(endpoint)
     }
 
     /// Endpoint local address
@@ -150,24 +180,22 @@ impl Endpoint {
                 forward_port(
                     self.local_addr,
                     self.qp2p_config
-                    .upnp_lease_duration
-                    .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC),
+                        .upnp_lease_duration
+                        .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC),
                 ),
             )
             .await
             {
-                Ok(res) => {
-                    match res {
-                        Ok(public_sa) => {
-                            debug!("IGD success: {:?}", SocketAddr::V4(public_sa));
-                            addr = Some(SocketAddr::V4(public_sa));
-                        }
-                        Err(e) => {
-                            info!("IGD request failed: {} - {:?}", e, e);
-                            return Err(Error::IgdNotSupported);
-                        }
+                Ok(res) => match res {
+                    Ok(public_sa) => {
+                        debug!("IGD success: {:?}", SocketAddr::V4(public_sa));
+                        addr = Some(SocketAddr::V4(public_sa));
                     }
-                }
+                    Err(e) => {
+                        info!("IGD request failed: {} - {:?}", e, e);
+                        return Err(Error::IgdNotSupported);
+                    }
+                },
                 Err(e) => {
                     info!("IGD request timeout: {:?}", e);
                     return Err(Error::IgdNotSupported);
@@ -236,18 +264,14 @@ impl Endpoint {
     /// When sending a message on `Connection` fails, the connection is also automatically removed
     /// from the pool and the subsequent call to `connect_to` is guaranteed to reopen new connection
     /// too.
-    pub async fn connect_to(
-        &self,
-        node_addr: &SocketAddr,
-    ) -> Result<(Connection, Option<IncomingMessages>)> {
-        if let Some((conn, guard)) = self.connection_pool.get(node_addr) {
-            trace!("Using cached connection to peer: {}", node_addr);
-            return Ok((Connection::new(conn, guard), None));
+    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<()> {
+        if self.connection_pool.has(node_addr) {
+            trace!("We are already connected to this peer: {}", node_addr);
         }
 
         // Check if a connect attempt to this address is already in progress.
         match self.connection_deduplicator.query(node_addr).await {
-            Some(Ok(conn)) => return Ok((conn, None)),
+            Some(Ok(())) => return Ok(()),
             Some(Err(error)) => return Err(error.into()),
             None => {}
         }
@@ -283,23 +307,40 @@ impl Endpoint {
             .connection_pool
             .insert(*node_addr, new_conn.connection.clone());
 
-        let conn = Connection::new(new_conn.connection, guard.clone());
-        let incoming_msgs = IncomingMessages::new(new_conn.uni_streams, new_conn.bi_streams, guard);
+        listen_for_incoming_messages(
+            new_conn.uni_streams,
+            new_conn.bi_streams,
+            guard,
+            self.message_tx.clone(),
+        );
 
         self.connection_deduplicator
-            .complete(node_addr, Ok(conn.clone()))
+            .complete(node_addr, Ok(()))
             .await;
 
-        Ok((conn, Some(incoming_msgs)))
+        Ok(())
     }
 
-    /// Obtain stream of incoming QUIC connections
-    pub fn listen(&self) -> IncomingConnections {
-        trace!(
-            "Incoming connections will be received at {}",
-            self.local_addr()
-        );
-        IncomingConnections::new(self.quic_incoming.clone(), self.connection_pool.clone())
+    /// Get an existing connection for the peer address.
+    fn get_connection(&self, peer_addr: &SocketAddr) -> Option<Connection> {
+        if let Some((conn, guard)) = self.connection_pool.get(peer_addr) {
+            trace!("Using cached connection to peer: {}", peer_addr);
+            Some(Connection::new(conn, guard))
+        } else {
+            None
+        }
+    }
+
+    /// Sends a message to a peer. This will attempt to re-use any existing connections
+    /// with the said peer. If a connection doesn't exist already, a new connection will be created.
+    pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
+        self.connect_to(dest).await?;
+
+        let connection = self
+            .get_connection(dest)
+            .ok_or_else(|| Error::MissingConnection)?; // will never be None
+        connection.send_uni(msg).await?;
+        Ok(())
     }
 
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
@@ -317,7 +358,10 @@ impl Endpoint {
         let mut tasks = Vec::default();
         for node in self.bootstrap_nodes.iter().cloned() {
             debug!("Connecting to {:?}", &node);
-            let (connection, _) = self.connect_to(&node).await?; // TODO: move into loop
+            self.connect_to(&node).await?;
+            let connection = self
+                .get_connection(&node)
+                .ok_or_else(|| Error::MissingConnection)?;
             let task_handle = tokio::spawn(async move {
                 let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
@@ -339,5 +383,15 @@ impl Endpoint {
 
     pub(crate) fn bootstrap_nodes(&self) -> &[SocketAddr] {
         &self.bootstrap_nodes
+    }
+
+    /// Returns the socket address of a peer that has connected to us
+    pub async fn next_incoming_connection(&mut self) -> Option<SocketAddr> {
+        self.connection_queue.lock().await.pop_front()
+    }
+
+    /// Returns a message received from another peer along with the source address
+    pub async fn next_incoming_message(&mut self) -> Option<(SocketAddr, Bytes)> {
+        self.message_queue.lock().await.pop_front()
     }
 }

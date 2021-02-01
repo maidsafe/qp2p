@@ -18,10 +18,11 @@ use futures::{lock::Mutex, stream::StreamExt};
 use log::{error, trace};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::select;
+use tokio::sync::mpsc::UnboundedSender;
 
 /// Connection instance to a node which can be used to send messages to it
 #[derive(Clone)]
-pub struct Connection {
+pub(crate) struct Connection {
     quic_conn: quinn::Connection,
     remover: ConnectionRemover,
 }
@@ -124,175 +125,8 @@ impl Connection {
     }
 }
 
-/// Stream of incoming QUIC connections
-pub struct IncomingConnections {
-    quinn_incoming: Arc<Mutex<quinn::Incoming>>,
-    connection_pool: ConnectionPool,
-}
-
-impl IncomingConnections {
-    pub(crate) fn new(
-        quinn_incoming: Arc<Mutex<quinn::Incoming>>,
-        connection_pool: ConnectionPool,
-    ) -> Self {
-        Self {
-            quinn_incoming,
-            connection_pool,
-        }
-    }
-
-    /// Returns next QUIC connection established by a peer
-    pub async fn next(&mut self) -> Option<IncomingMessages> {
-        match self.quinn_incoming.lock().await.next().await {
-            Some(quinn_conn) => match quinn_conn.await {
-                Ok(quinn::NewConnection {
-                    connection,
-                    uni_streams,
-                    bi_streams,
-                    ..
-                }) => {
-                    let pool_handle = self
-                        .connection_pool
-                        .insert(connection.remote_address(), connection);
-
-                    Some(IncomingMessages::new(uni_streams, bi_streams, pool_handle))
-                }
-                Err(_err) => None,
-            },
-            None => None,
-        }
-    }
-}
-
-/// Stream of incoming QUIC messages
-pub struct IncomingMessages {
-    uni_streams: quinn::IncomingUniStreams,
-    bi_streams: quinn::IncomingBiStreams,
-    remover: ConnectionRemover,
-}
-
-impl IncomingMessages {
-    pub(crate) fn new(
-        uni_streams: quinn::IncomingUniStreams,
-        bi_streams: quinn::IncomingBiStreams,
-        remover: ConnectionRemover,
-    ) -> Self {
-        Self {
-            uni_streams,
-            bi_streams,
-            remover,
-        }
-    }
-
-    /// Returns the address of the peer who initiated the connection
-    #[must_use]
-    pub fn remote_addr(&self) -> SocketAddr {
-        *self.remover.remote_addr()
-    }
-
-    /// Returns next message sent by the peer on current QUIC connection,
-    /// either received through a bi-directional or uni-directional stream.
-    pub async fn next(&mut self) -> Option<Message> {
-        // Each stream initiated by the remote peer constitutes a new message.
-        // Read the next message available in any of the two type of streams.
-        let src = self.remote_addr();
-        select! {
-            next_uni = Self::next_on_uni_streams(&mut self.uni_streams) =>
-                next_uni.map(|(bytes, recv)| Message::UniStream {
-                    bytes,
-                    src,
-                    recv: RecvStream::new(recv)
-                }),
-            next_bi = Self::next_on_bi_streams(&mut self.bi_streams, src) =>
-                next_bi.map(|(bytes, send, recv)| Message::BiStream {
-                    bytes,
-                    src,
-                    send: SendStream::new(send),
-                    recv: RecvStream::new(recv)
-                }),
-        }
-    }
-
-    // Returns next message sent by peer in an unidirectional stream.
-    async fn next_on_uni_streams(
-        uni_streams: &mut quinn::IncomingUniStreams,
-    ) -> Option<(Bytes, quinn::RecvStream)> {
-        match uni_streams.next().await {
-            None => None,
-            Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
-                trace!("Connection terminated by peer.");
-                None
-            }
-            Some(Err(err)) => {
-                error!("Failed to read incoming message on uni-stream: {}", err);
-                None
-            }
-            Some(Ok(mut recv)) => match read_bytes(&mut recv).await {
-                Ok(WireMsg::UserMsg(bytes)) => Some((bytes, recv)),
-                Ok(msg) => {
-                    error!("Unexpected message type: {:?}", msg);
-                    Some((Bytes::new(), recv))
-                }
-                Err(err) => {
-                    error!("{}", err);
-                    Some((Bytes::new(), recv))
-                }
-            },
-        }
-    }
-
-    // Returns next message sent by peer in a bidirectional stream.
-    async fn next_on_bi_streams(
-        bi_streams: &mut quinn::IncomingBiStreams,
-        peer_addr: SocketAddr,
-    ) -> Option<(Bytes, quinn::SendStream, quinn::RecvStream)> {
-        match bi_streams.next().await {
-            None => None,
-            Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
-                trace!("Connection terminated by peer.");
-                None
-            }
-            Some(Err(err)) => {
-                error!("Failed to read incoming message on bi-stream: {}", err);
-                None
-            }
-            Some(Ok((mut send, mut recv))) => match read_bytes(&mut recv).await {
-                Ok(WireMsg::UserMsg(bytes)) => Some((bytes, send, recv)),
-                Ok(WireMsg::EndpointEchoReq) => {
-                    trace!("Received Echo Request");
-                    let message = WireMsg::EndpointEchoResp(peer_addr);
-                    message.write_to_stream(&mut send).await.ok()?;
-                    trace!("Responded to Echo request");
-                    Some((Bytes::new(), send, recv))
-                }
-                Ok(WireMsg::EndpointVerificationReq(address_sent)) => {
-                    trace!("Received Endpoint verification request {:?} from {:?}", address_sent, peer_addr);
-                    let message = WireMsg::EndpointVerficationResp(address_sent == peer_addr);
-                    message.write_to_stream(&mut send).await.ok()?;
-                    trace!("Responded to Endpoint verification request");
-                    Some((Bytes::new(), send, recv))
-                },
-                Ok(msg) => {
-                    error!("Unexpected message type: {:?}", msg);
-                    Some((Bytes::new(), send, recv))
-                }
-                Err(err) => {
-                    error!("{}", err);
-                    Some((Bytes::new(), send, recv))
-                }
-            },
-        }
-    }
-}
-
-impl Drop for IncomingMessages {
-    fn drop(&mut self) {
-        self.remover.remove()
-    }
-}
-
 /// Stream to receive multiple messages
-pub struct RecvStream {
+pub(crate) struct RecvStream {
     pub(crate) quinn_recv_stream: quinn::RecvStream,
 }
 
@@ -318,7 +152,7 @@ impl std::fmt::Debug for RecvStream {
 }
 
 /// Stream of outgoing messages
-pub struct SendStream {
+pub(crate) struct SendStream {
     pub(crate) quinn_send_stream: quinn::SendStream,
 }
 
@@ -351,16 +185,165 @@ impl std::fmt::Debug for SendStream {
 }
 
 // Helper to read the message's bytes from the provided stream
-async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg> {
+pub async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg> {
     WireMsg::read_from_stream(recv).await
 }
 
 // Helper to send bytes to peer using the provided stream.
-async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()> {
+pub async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()> {
     let wire_msg = WireMsg::UserMsg(msg);
     wire_msg.write_to_stream(&mut send_stream).await?;
 
     trace!("Message was sent to remote peer");
 
     Ok(())
+}
+
+pub(super) fn listen_for_incoming_connections(
+    mut quinn_incoming: quinn::Incoming,
+    connection_pool: ConnectionPool,
+    message_tx: UnboundedSender<(SocketAddr, Bytes)>,
+    connection_tx: UnboundedSender<SocketAddr>,
+) {
+    let _ = tokio::spawn(async move {
+        loop {
+            match quinn_incoming.next().await {
+                Some(quinn_conn) => match quinn_conn.await {
+                    Ok(quinn::NewConnection {
+                        connection,
+                        uni_streams,
+                        bi_streams,
+                        ..
+                    }) => {
+                        let peer_address = connection.remote_address();
+                        let pool_handle = connection_pool.insert(peer_address, connection);
+                        connection_tx.send(peer_address).unwrap();
+                        listen_for_incoming_messages(
+                            uni_streams,
+                            bi_streams,
+                            pool_handle,
+                            message_tx.clone(),
+                        );
+                    }
+                    Err(err) => {
+                        error!("An incoming connection failed because of an error: {}", err);
+                    }
+                },
+                None => log::info!("Got nothing"),
+            }
+        }
+    });
+}
+
+pub(super) fn listen_for_incoming_messages(
+    mut uni_streams: quinn::IncomingUniStreams,
+    mut bi_streams: quinn::IncomingBiStreams,
+    remover: ConnectionRemover,
+    message_tx: UnboundedSender<(SocketAddr, Bytes)>,
+) {
+    let src = *remover.remote_addr();
+    let _ = tokio::spawn(async move {
+        loop {
+            log::info!("Listening for new messages on new thread");
+            let message: Option<Message> = select! {
+                next_uni = next_on_uni_streams(&mut uni_streams) =>
+                next_uni.map(|(bytes, recv)| Message::UniStream {
+                    bytes,
+                    src,
+                    recv: RecvStream::new(recv)
+                }),
+                next_bi = next_on_bi_streams(&mut bi_streams, src) =>
+                next_bi.map(|(bytes, send, recv)| Message::BiStream {
+                    bytes,
+                    src,
+                    send: SendStream::new(send),
+                    recv: RecvStream::new(recv)
+                }),
+            };
+            if let Some(message) = message {
+                log::info!("Got a message. Will listen for something else now");
+                message_tx.send((src, message.get_message_data())).unwrap();
+            } else {
+                log::info!("Got nothing. Bye bye");
+                // Hmm
+                remover.remove();
+                break;
+            }
+        }
+    });
+}
+
+// Returns next message sent by peer in an unidirectional stream.
+async fn next_on_uni_streams(
+    uni_streams: &mut quinn::IncomingUniStreams,
+) -> Option<(Bytes, quinn::RecvStream)> {
+    match uni_streams.next().await {
+        None => None,
+        Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
+            trace!("Connection terminated by peer.");
+            None
+        }
+        Some(Err(err)) => {
+            error!("Failed to read incoming message on uni-stream: {}", err);
+            None
+        }
+        Some(Ok(mut recv)) => match read_bytes(&mut recv).await {
+            Ok(WireMsg::UserMsg(bytes)) => Some((bytes, recv)),
+            Ok(msg) => {
+                error!("Unexpected message type: {:?}", msg);
+                Some((Bytes::new(), recv))
+            }
+            Err(err) => {
+                error!("{}", err);
+                Some((Bytes::new(), recv))
+            }
+        },
+    }
+}
+
+// Returns next message sent by peer in a bidirectional stream.
+async fn next_on_bi_streams(
+    bi_streams: &mut quinn::IncomingBiStreams,
+    peer_addr: SocketAddr,
+) -> Option<(Bytes, quinn::SendStream, quinn::RecvStream)> {
+    match bi_streams.next().await {
+        None => None,
+        Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
+            trace!("Connection terminated by peer.");
+            None
+        }
+        Some(Err(err)) => {
+            error!("Failed to read incoming message on bi-stream: {}", err);
+            None
+        }
+        Some(Ok((mut send, mut recv))) => match read_bytes(&mut recv).await {
+            Ok(WireMsg::UserMsg(bytes)) => Some((bytes, send, recv)),
+            Ok(WireMsg::EndpointEchoReq) => {
+                trace!("Received Echo Request");
+                let message = WireMsg::EndpointEchoResp(peer_addr);
+                message.write_to_stream(&mut send).await.ok()?;
+                trace!("Responded to Echo request");
+                Some((Bytes::new(), send, recv))
+            }
+            Ok(WireMsg::EndpointVerificationReq(address_sent)) => {
+                trace!(
+                    "Received Endpoint verification request {:?} from {:?}",
+                    address_sent,
+                    peer_addr
+                );
+                let message = WireMsg::EndpointVerficationResp(address_sent == peer_addr);
+                message.write_to_stream(&mut send).await.ok()?;
+                trace!("Responded to Endpoint verification request");
+                Some((Bytes::new(), send, recv))
+            }
+            Ok(msg) => {
+                error!("Unexpected message type: {:?}", msg);
+                Some((Bytes::new(), send, recv))
+            }
+            Err(err) => {
+                error!("{}", err);
+                Some((Bytes::new(), send, recv))
+            }
+        },
+    }
 }

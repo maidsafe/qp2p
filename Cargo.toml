@@ -46,7 +46,7 @@ flexi_logger = "~0.16.1"
 
   [dependencies.tokio]
   version = "~0.2.24"
-  features = [ "rt-core", "sync", "time", "macros", "io-std", "io-util" ]
+  features = [ "rt-threaded", "sync", "time", "macros", "io-std", "io-util" ]
 
 [dev-dependencies]
 anyhow = "1.0.36"

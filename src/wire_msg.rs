@@ -88,8 +88,14 @@ impl fmt::Display for WireMsg {
             }
             WireMsg::EndpointEchoReq => write!(f, "WireMsg::EndpointEchoReq"),
             WireMsg::EndpointEchoResp(ref sa) => write!(f, "WireMsg::EndpointEchoResp({})", sa),
-            WireMsg::EndpointVerificationReq(ref sa) => write!(f, "WireMsg::EndpointVerificationReq({})", sa),
-            WireMsg::EndpointVerficationResp(valid) => write!(f, "WireMsg::EndpointEchoResp({})", if valid { "Valid" } else { "Invalid" }),
+            WireMsg::EndpointVerificationReq(ref sa) => {
+                write!(f, "WireMsg::EndpointVerificationReq({})", sa)
+            }
+            WireMsg::EndpointVerficationResp(valid) => write!(
+                f,
+                "WireMsg::EndpointEchoResp({})",
+                if valid { "Valid" } else { "Invalid" }
+            ),
         }
     }
 }
