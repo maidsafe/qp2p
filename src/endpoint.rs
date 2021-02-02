@@ -14,7 +14,10 @@ use super::{
     api::DEFAULT_UPNP_LEASE_DURATION_SEC,
     connection_deduplicator::ConnectionDeduplicator,
     connection_pool::ConnectionPool,
-    connections::{listen_for_incoming_connections, listen_for_incoming_messages, Connection, RecvStream, SendStream},
+    connections::{
+        listen_for_incoming_connections, listen_for_incoming_messages, Connection, RecvStream,
+        SendStream,
+    },
     error::Result,
     Config,
 };
@@ -124,12 +127,12 @@ impl Endpoint {
             // External IP and port number is provided
             // This means that the user has performed manual port-forwarding
             // Verify that the given socket address is reachable
-            if let Some(contact) = endpoint.bootstrap_nodes.iter().next() {
+            if let Some(contact) = endpoint.bootstrap_nodes.get(0) {
                 info!("Verifying provided public IP address");
                 endpoint.connect_to(contact).await?;
                 let connection = endpoint
                     .get_connection(&contact)
-                    .ok_or_else(|| Error::BootstrapFailure)?; //FIXME
+                    .ok_or(Error::MissingConnection)?;
                 let (mut send, mut recv) = connection.open_bi().await?;
                 send.send(WireMsg::EndpointVerificationReq(addr)).await?;
                 let response = WireMsg::read_from_stream(&mut recv.quinn_recv_stream).await?;
@@ -374,11 +377,14 @@ impl Endpoint {
     }
 
     /// Open a bi-directional peer with a given peer
-    pub async fn open_bidirectional_stream(&self, peer_addr: &SocketAddr) -> Result<(SendStream, RecvStream)> {
+    pub async fn open_bidirectional_stream(
+        &self,
+        peer_addr: &SocketAddr,
+    ) -> Result<(SendStream, RecvStream)> {
         self.connect_to(peer_addr).await?;
         let connection = self
             .get_connection(peer_addr)
-            .ok_or_else(|| Error::MissingConnection)?; // will never be None
+            .ok_or(Error::MissingConnection)?;
         connection.open_bi().await
     }
 
@@ -387,9 +393,7 @@ impl Endpoint {
     pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
         self.connect_to(dest).await?;
 
-        let connection = self
-            .get_connection(dest)
-            .ok_or_else(|| Error::MissingConnection)?; // will never be None
+        let connection = self.get_connection(dest).ok_or(Error::MissingConnection)?;
         connection.send_uni(msg).await?;
         Ok(())
     }
@@ -410,9 +414,7 @@ impl Endpoint {
         for node in self.bootstrap_nodes.iter().cloned() {
             debug!("Connecting to {:?}", &node);
             self.connect_to(&node).await?;
-            let connection = self
-                .get_connection(&node)
-                .ok_or_else(|| Error::MissingConnection)?;
+            let connection = self.get_connection(&node).ok_or(Error::MissingConnection)?;
             let task_handle = tokio::spawn(async move {
                 let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;

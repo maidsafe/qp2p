@@ -65,7 +65,6 @@ impl QuicP2p {
         bootstrap_nodes: &[SocketAddr],
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
-        crate::utils::init_logging();
         let cfg = unwrap_config_or_default(cfg)?;
         debug!("Config passed in to qp2p: {:?}", cfg);
 
@@ -202,13 +201,10 @@ impl QuicP2p {
             .iter()
             .map(|addr| Box::pin(endpoint.connect_to(addr)));
 
-        future::select_ok(tasks)
-            .await
-            .map_err(|err| {
-                error!("Failed to bootstrap to the network: {}", err);
-                Error::BootstrapFailure
-            })?
-            .0;
+        future::select_ok(tasks).await.map_err(|err| {
+            error!("Failed to bootstrap to the network: {}", err);
+            Error::BootstrapFailure
+        })?;
 
         Ok((
             endpoint,

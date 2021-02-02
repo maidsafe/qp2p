@@ -93,7 +93,7 @@ where
     Ok(())
 }
 
-// #[cfg(test)]
+#[cfg(test)]
 pub(crate) fn init_logging() {
     use flexi_logger::{DeferredNow, Logger};
     use log::Record;

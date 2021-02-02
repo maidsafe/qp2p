@@ -60,7 +60,7 @@ impl ConnectionPool {
             .map
             .range_mut(Key::min(*addr)..=Key::max(*addr))
             .into_iter()
-            .map(|(key, _)| key.clone())
+            .map(|(key, _)| *key)
             .collect::<Vec<_>>();
 
         keys_to_remove
