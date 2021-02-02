@@ -14,9 +14,9 @@ use super::{
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
-use futures::{lock::Mutex, stream::StreamExt};
+use futures::stream::StreamExt;
 use log::{error, trace};
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
 use tokio::select;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -32,65 +32,9 @@ impl Connection {
         Self { quic_conn, remover }
     }
 
-    /// Returns the address of the connected peer.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use qp2p::{QuicP2p, Config, Error};
-    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Error> {
-    ///
-    ///     let mut config = Config::default();
-    ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut peer_1 = quic_p2p.new_endpoint().await?;
-    ///     let peer1_addr = peer_1.socket_addr().await?;
-    ///
-    ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
-    ///     assert_eq!(connection.remote_address(), peer1_addr);
-    ///     Ok(())
-    /// }
-    /// ```
-    pub fn remote_address(&self) -> SocketAddr {
-        self.quic_conn.remote_address()
-    }
-
-    /// Get connection streams for reading/writing
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use qp2p::{QuicP2p, Config, Error};
-    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Error> {
-    ///
-    ///     let mut config = Config::default();
-    ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut peer_1 = quic_p2p.new_endpoint().await?;
-    ///     let peer1_addr = peer_1.socket_addr().await?;
-    ///
-    ///     let (peer_2, connection) = quic_p2p.connect_to(&peer1_addr).await?;
-    ///     let (send_stream, recv_stream) = connection.open_bi().await?;
-    ///     Ok(())
-    /// }
-    /// ```
     pub async fn open_bi(&self) -> Result<(SendStream, RecvStream)> {
         let (send_stream, recv_stream) = self.handle_error(self.quic_conn.open_bi().await)?;
         Ok((SendStream::new(send_stream), RecvStream::new(recv_stream)))
-    }
-
-    /// Send message to the connected peer via a bi-directional stream.
-    /// This returns the streams to send additional messages / read responses sent using the same stream.
-    pub async fn send_bi(&self, msg: Bytes) -> Result<(SendStream, RecvStream)> {
-        let (mut send_stream, recv_stream) = self.open_bi().await?;
-        self.handle_error(send_stream.send_user_msg(msg).await)?;
-        Ok((send_stream, recv_stream))
     }
 
     /// Send message to peer using a uni-directional stream.
@@ -110,12 +54,6 @@ impl Connection {
         }
     }
 
-    /// Gracefully close connection immediatelly
-    pub fn close(&self) {
-        self.quic_conn.close(0_u32.into(), b"");
-        self.remover.remove();
-    }
-
     fn handle_error<T, E>(&self, result: Result<T, E>) -> Result<T, E> {
         if result.is_err() {
             self.remover.remove()
@@ -126,7 +64,7 @@ impl Connection {
 }
 
 /// Stream to receive multiple messages
-pub(crate) struct RecvStream {
+pub struct RecvStream {
     pub(crate) quinn_recv_stream: quinn::RecvStream,
 }
 
@@ -152,7 +90,7 @@ impl std::fmt::Debug for RecvStream {
 }
 
 /// Stream of outgoing messages
-pub(crate) struct SendStream {
+pub struct SendStream {
     pub(crate) quinn_send_stream: quinn::SendStream,
 }
 
@@ -364,11 +302,11 @@ async fn next_on_bi_streams(
 mod tests {
     use anyhow::anyhow;
 
-    use crate::{Error, config::Config, tests::get_incoming_connection, wire_msg::WireMsg};
     use crate::api::QuicP2p;
+    use crate::{config::Config, wire_msg::WireMsg, Error};
     use std::net::{IpAddr, Ipv4Addr};
 
-    #[tokio::test]
+    #[tokio::test(core_threads = 10)]
     async fn echo_service() -> Result<(), Error> {
         let qp2p = QuicP2p::with_config(
             Some(Config {
@@ -379,24 +317,28 @@ mod tests {
             Default::default(),
             false,
         )?;
-    
+
         // Create Endpoint
-        let mut peer1 = qp2p.new_endpoint().await?;
+        let (mut peer1, mut peer1_connections, _, _) = qp2p.new_endpoint().await?;
         let peer1_addr = peer1.socket_addr().await?;
-    
-        let mut peer2 = qp2p.new_endpoint().await?;
+
+        let (mut peer2, _, _, _) = qp2p.new_endpoint().await?;
         let peer2_addr = peer2.socket_addr().await?;
 
         peer2.connect_to(&peer1_addr).await?;
 
-        if let Some(connecting_peer) = get_incoming_connection(&mut peer1).await {
+        if let Some(connecting_peer) = peer1_connections.next().await {
             assert_eq!(connecting_peer, peer2_addr);
         }
-        
-        let connection = peer1.get_connection(&peer2_addr).ok_or_else(|| Error::MissingConnection)?;
+
+        let connection = peer1
+            .get_connection(&peer2_addr)
+            .ok_or_else(|| Error::MissingConnection)?;
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
         let message = WireMsg::EndpointEchoReq;
-        message.write_to_stream(&mut send_stream.quinn_send_stream).await?;
+        message
+            .write_to_stream(&mut send_stream.quinn_send_stream)
+            .await?;
         let message = WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await?;
         if let WireMsg::EndpointEchoResp(addr) = message {
             assert_eq!(addr, peer1_addr);

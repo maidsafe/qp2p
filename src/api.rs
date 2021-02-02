@@ -11,7 +11,7 @@ use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
     connections::{RecvStream, SendStream},
-    endpoint::Endpoint,
+    endpoint::{DisconnectionEvents, Endpoint, IncomingConnections, IncomingMessages},
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
@@ -76,19 +76,6 @@ pub struct QuicP2p {
 }
 
 impl QuicP2p {
-    /// Construct `QuicP2p` with the default config and bootstrap cache enabled
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use qp2p::QuicP2p;
-    ///
-    /// let quic_p2p = QuicP2p::new().expect("Error initializing QuicP2p");
-    /// ```
-    pub fn new() -> Result<Self> {
-        Self::with_config(None, Default::default(), true)
-    }
-
     /// Construct `QuicP2p` with supplied parameters, ready to be used.
     /// If config is not specified it'll call `Config::read_or_construct_default()`
     ///
@@ -104,8 +91,8 @@ impl QuicP2p {
     /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     ///
     /// let mut config = Config::default();
-    /// config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    /// config.port = Some(3000);
+    /// config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    /// config.local_port = Some(3000);
     /// let hcc = &["127.0.0.1:8080".parse().unwrap()];
     /// let quic_p2p = QuicP2p::with_config(Some(config), hcc, true).expect("Error initializing QuicP2p");
     /// ```
@@ -217,20 +204,28 @@ impl QuicP2p {
     /// async fn main() -> Result<(), Error> {
     ///
     ///     let mut config = Config::default();
-    ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    ///     config.port = Some(3000);
+    ///     config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    ///     config.local_port = Some(3000);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let mut endpoint = quic_p2p.new_endpoint().await?;
+    ///     let (mut endpoint, _, _, _) = quic_p2p.new_endpoint().await?;
     ///     let peer_addr = endpoint.socket_addr().await?;
     ///
-    ///     config.port = Some(3001);
+    ///     config.local_port = Some(3001);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config), &[peer_addr], true)?;
-    ///     let (endpoint, connection, incoming_messages) = quic_p2p.bootstrap().await?;
+    ///     let endpoint = quic_p2p.bootstrap().await?;
     ///     Ok(())
     /// }
     /// ```
-    pub async fn bootstrap(&self) -> Result<Endpoint> {
-        let endpoint = self.new_endpoint().await?;
+    pub async fn bootstrap(
+        &self,
+    ) -> Result<(
+        Endpoint,
+        IncomingConnections,
+        IncomingMessages,
+        DisconnectionEvents,
+    )> {
+        let (endpoint, incoming_connections, incoming_message, disconnections) =
+            self.new_endpoint().await?;
 
         trace!("Bootstrapping with nodes {:?}", endpoint.bootstrap_nodes());
         if endpoint.bootstrap_nodes().is_empty() {
@@ -251,7 +246,12 @@ impl QuicP2p {
             })?
             .0;
 
-        Ok(endpoint)
+        Ok((
+            endpoint,
+            incoming_connections,
+            incoming_message,
+            disconnections,
+        ))
     }
 
     /// Create a new `Endpoint`  which can be used to connect to peers and send
@@ -266,13 +266,20 @@ impl QuicP2p {
     /// async fn main() -> Result<(), Error> {
     ///
     ///     let mut config = Config::default();
-    ///     config.ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    ///     config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let endpoint = quic_p2p.new_endpoint().await?;
+    ///     let (endpoint, incoming_connections, incoming_messages, disconnections) = quic_p2p.new_endpoint().await?;
     ///     Ok(())
     /// }
     /// ```
-    pub async fn new_endpoint(&self) -> Result<Endpoint> {
+    pub async fn new_endpoint(
+        &self,
+    ) -> Result<(
+        Endpoint,
+        IncomingConnections,
+        IncomingMessages,
+        DisconnectionEvents,
+    )> {
         trace!("Creating a new endpoint");
 
         let bootstrap_nodes: Vec<SocketAddr> = self
