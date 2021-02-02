@@ -14,7 +14,7 @@ use super::{
     api::DEFAULT_UPNP_LEASE_DURATION_SEC,
     connection_deduplicator::ConnectionDeduplicator,
     connection_pool::ConnectionPool,
-    connections::{listen_for_incoming_connections, listen_for_incoming_messages, Connection},
+    connections::{listen_for_incoming_connections, listen_for_incoming_messages, Connection, RecvStream, SendStream},
     error::Result,
     Config,
 };
@@ -371,6 +371,15 @@ impl Endpoint {
         } else {
             None
         }
+    }
+
+    /// Open a bi-directional peer with a given peer
+    pub async fn open_bidirectional_stream(&self, peer_addr: &SocketAddr) -> Result<(SendStream, RecvStream)> {
+        self.connect_to(peer_addr).await?;
+        let connection = self
+            .get_connection(peer_addr)
+            .ok_or_else(|| Error::MissingConnection)?; // will never be None
+        connection.open_bi().await
     }
 
     /// Sends a message to a peer. This will attempt to re-use any existing connections

@@ -8,7 +8,6 @@
 // Software.
 
 use super::{
-    api::Message,
     connection_pool::{ConnectionPool, ConnectionRemover},
     error::{Error, Result},
     wire_msg::WireMsg,
@@ -191,25 +190,18 @@ pub(super) fn listen_for_incoming_messages(
     let src = *remover.remote_addr();
     let _ = tokio::spawn(async move {
         loop {
-            let message: Option<Message> = select! {
-                next_uni = next_on_uni_streams(&mut uni_streams) =>
-                next_uni.map(|(bytes, recv)| Message::UniStream {
-                    bytes,
-                    src,
-                    recv: RecvStream::new(recv)
-                }),
-                next_bi = next_on_bi_streams(&mut bi_streams, src) =>
-                next_bi.map(|(bytes, send, recv)| Message::BiStream {
-                    bytes,
-                    src,
-                    send: SendStream::new(send),
-                    recv: RecvStream::new(recv)
-                }),
+            let message: Option<Bytes> = select! {
+                bytes = next_on_uni_streams(&mut uni_streams) => bytes,
+                bytes = next_on_bi_streams(&mut bi_streams, src) => bytes,
             };
             if let Some(message) = message {
-                message_tx
-                    .send((src, message.get_message_data()))
-                    .map_err(|err| Error::MpscChannelSend(err.to_string()))?;
+                // When the message in handled internally we return Bytes::new() to prevent
+                // connection termination
+                if !message.is_empty() {
+                    message_tx
+                        .send((src, message))
+                        .map_err(|err| Error::MpscChannelSend(err.to_string()))?;
+                }
             } else {
                 log::trace!("The connection has been terminated.");
                 disconnection_tx
@@ -226,7 +218,7 @@ pub(super) fn listen_for_incoming_messages(
 // Returns next message sent by peer in an unidirectional stream.
 async fn next_on_uni_streams(
     uni_streams: &mut quinn::IncomingUniStreams,
-) -> Option<(Bytes, quinn::RecvStream)> {
+) -> Option<Bytes> {
     match uni_streams.next().await {
         None => None,
         Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
@@ -238,14 +230,14 @@ async fn next_on_uni_streams(
             None
         }
         Some(Ok(mut recv)) => match read_bytes(&mut recv).await {
-            Ok(WireMsg::UserMsg(bytes)) => Some((bytes, recv)),
+            Ok(WireMsg::UserMsg(bytes)) => Some(bytes),
             Ok(msg) => {
                 error!("Unexpected message type: {:?}", msg);
-                Some((Bytes::new(), recv))
+                Some(Bytes::new())
             }
             Err(err) => {
                 error!("{}", err);
-                Some((Bytes::new(), recv))
+                Some(Bytes::new())
             }
         },
     }
@@ -255,7 +247,7 @@ async fn next_on_uni_streams(
 async fn next_on_bi_streams(
     bi_streams: &mut quinn::IncomingBiStreams,
     peer_addr: SocketAddr,
-) -> Option<(Bytes, quinn::SendStream, quinn::RecvStream)> {
+) -> Option<Bytes> {
     match bi_streams.next().await {
         None => None,
         Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
@@ -267,13 +259,13 @@ async fn next_on_bi_streams(
             None
         }
         Some(Ok((mut send, mut recv))) => match read_bytes(&mut recv).await {
-            Ok(WireMsg::UserMsg(bytes)) => Some((bytes, send, recv)),
+            Ok(WireMsg::UserMsg(bytes)) => Some(bytes),
             Ok(WireMsg::EndpointEchoReq) => {
                 trace!("Received Echo Request");
                 let message = WireMsg::EndpointEchoResp(peer_addr);
                 message.write_to_stream(&mut send).await.ok()?;
                 trace!("Responded to Echo request");
-                Some((Bytes::new(), send, recv))
+                Some(Bytes::new())
             }
             Ok(WireMsg::EndpointVerificationReq(address_sent)) => {
                 trace!(
@@ -284,15 +276,15 @@ async fn next_on_bi_streams(
                 let message = WireMsg::EndpointVerficationResp(address_sent == peer_addr);
                 message.write_to_stream(&mut send).await.ok()?;
                 trace!("Responded to Endpoint verification request");
-                Some((Bytes::new(), send, recv))
+                Some(Bytes::new())
             }
             Ok(msg) => {
                 error!("Unexpected message type: {:?}", msg);
-                Some((Bytes::new(), send, recv))
+                Some(Bytes::new())
             }
             Err(err) => {
                 error!("{}", err);
-                Some((Bytes::new(), send, recv))
+                Some(Bytes::new())
             }
         },
     }
