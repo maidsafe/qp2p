@@ -10,12 +10,10 @@
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
-    connections::{RecvStream, SendStream},
     endpoint::{DisconnectionEvents, Endpoint, IncomingConnections, IncomingMessages},
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
-use bytes::Bytes;
 use futures::future;
 use log::{debug, error, info, trace};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
@@ -29,40 +27,6 @@ pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
 pub const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
 
 const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
-
-/// Message received from a peer
-#[derive(Debug)]
-pub(crate) enum Message {
-    /// A message sent by peer on a uni-directional stream
-    UniStream {
-        /// Message's bytes
-        bytes: Bytes,
-        /// Address the message was sent from
-        src: SocketAddr,
-        /// Stream to read more messages
-        recv: RecvStream,
-    },
-    /// A message sent by peer on a bi-directional stream
-    BiStream {
-        /// Message's bytes
-        bytes: Bytes,
-        /// Address the message was sent from
-        src: SocketAddr,
-        /// Stream to send a message back to the initiator
-        send: SendStream,
-        /// Stream to read more messages
-        recv: RecvStream,
-    },
-}
-
-impl Message {
-    /// Returns the data from the message
-    pub fn get_message_data(&self) -> Bytes {
-        match self {
-            Self::UniStream { bytes, .. } | Self::BiStream { bytes, .. } => bytes.clone(),
-        }
-    }
-}
 
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
 #[derive(Debug, Clone)]
