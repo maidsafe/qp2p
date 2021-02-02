@@ -253,7 +253,6 @@ pub(super) fn listen_for_incoming_messages(
     let src = *remover.remote_addr();
     let _ = tokio::spawn(async move {
         loop {
-            log::info!("Listening for new messages on new thread");
             let message: Option<Message> = select! {
                 next_uni = next_on_uni_streams(&mut uni_streams) =>
                 next_uni.map(|(bytes, recv)| Message::UniStream {
@@ -358,5 +357,52 @@ async fn next_on_bi_streams(
                 Some((Bytes::new(), send, recv))
             }
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::anyhow;
+
+    use crate::{Error, config::Config, tests::get_incoming_connection, wire_msg::WireMsg};
+    use crate::api::QuicP2p;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    #[tokio::test]
+    async fn echo_service() -> Result<(), Error> {
+        let qp2p = QuicP2p::with_config(
+            Some(Config {
+                local_port: None,
+                local_ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+                ..Config::default()
+            }),
+            Default::default(),
+            false,
+        )?;
+    
+        // Create Endpoint
+        let mut peer1 = qp2p.new_endpoint().await?;
+        let peer1_addr = peer1.socket_addr().await?;
+    
+        let mut peer2 = qp2p.new_endpoint().await?;
+        let peer2_addr = peer2.socket_addr().await?;
+
+        peer2.connect_to(&peer1_addr).await?;
+
+        if let Some(connecting_peer) = get_incoming_connection(&mut peer1).await {
+            assert_eq!(connecting_peer, peer2_addr);
+        }
+        
+        let connection = peer1.get_connection(&peer2_addr).ok_or_else(|| Error::MissingConnection)?;
+        let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
+        let message = WireMsg::EndpointEchoReq;
+        message.write_to_stream(&mut send_stream.quinn_send_stream).await?;
+        let message = WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await?;
+        if let WireMsg::EndpointEchoResp(addr) = message {
+            assert_eq!(addr, peer1_addr);
+        } else {
+            anyhow!("Unexpected response to EchoService request");
+        }
+        Ok(())
     }
 }
