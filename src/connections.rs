@@ -7,6 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use crate::QuicP2p;
+
 use super::{
     connection_pool::{ConnectionPool, ConnectionRemover},
     error::{Error, Result},
@@ -16,8 +18,11 @@ use bytes::Bytes;
 use futures::stream::StreamExt;
 use log::{error, trace};
 use std::net::SocketAddr;
-use tokio::select;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::{
+    select,
+    time::{timeout, Duration},
+};
 
 /// Connection instance to a node which can be used to send messages to it
 #[derive(Clone)]
@@ -216,9 +221,7 @@ pub(super) fn listen_for_incoming_messages(
 }
 
 // Returns next message sent by peer in an unidirectional stream.
-async fn next_on_uni_streams(
-    uni_streams: &mut quinn::IncomingUniStreams,
-) -> Option<Bytes> {
+async fn next_on_uni_streams(uni_streams: &mut quinn::IncomingUniStreams) -> Option<Bytes> {
     match uni_streams.next().await {
         None => None,
         Some(Err(quinn::ConnectionError::ApplicationClosed { .. })) => {
@@ -273,7 +276,28 @@ async fn next_on_bi_streams(
                     address_sent,
                     peer_addr
                 );
-                let message = WireMsg::EndpointVerficationResp(address_sent == peer_addr);
+                // Verify if the peer's endpoint is reachable via EchoServiceReq
+                let qp2p = QuicP2p::with_config(Default::default(), &[], false).ok()?;
+                let (temporary_endpoint, _, _, _) = qp2p.new_endpoint().await.ok()?;
+                let (mut temp_send, mut temp_recv) = temporary_endpoint
+                    .open_bidirectional_stream(&address_sent)
+                    .await
+                    .ok()?;
+                let message = WireMsg::EndpointEchoReq;
+                message
+                    .write_to_stream(&mut temp_send.quinn_send_stream)
+                    .await
+                    .ok()?;
+                let verified = matches!(
+                    timeout(
+                        Duration::from_secs(30),
+                        WireMsg::read_from_stream(&mut temp_recv.quinn_recv_stream)
+                    )
+                    .await,
+                    Ok(Ok(WireMsg::EndpointEchoResp(_)))
+                );
+
+                let message = WireMsg::EndpointVerficationResp(verified);
                 message.write_to_stream(&mut send).await.ok()?;
                 trace!("Responded to Endpoint verification request");
                 Some(Bytes::new())
@@ -325,7 +349,7 @@ mod tests {
 
         let connection = peer1
             .get_connection(&peer2_addr)
-            .ok_or_else(|| Error::MissingConnection)?;
+            .ok_or(Error::MissingConnection)?;
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
         let message = WireMsg::EndpointEchoReq;
         message

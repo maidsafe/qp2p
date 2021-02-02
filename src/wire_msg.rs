@@ -25,7 +25,7 @@ pub enum WireMsg {
     EndpointEchoReq,
     EndpointEchoResp(SocketAddr),
     EndpointVerificationReq(SocketAddr),
-    EndpointVerficationResp(bool), // Use result here?
+    EndpointVerficationResp(bool),
     UserMsg(Bytes),
 }
 
