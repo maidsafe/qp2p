@@ -335,11 +335,11 @@ mod tests {
         )?;
 
         // Create Endpoint
-        let (mut peer1, mut peer1_connections, _, _) = qp2p.new_endpoint().await?;
-        let peer1_addr = peer1.socket_addr().await?;
+        let (peer1, mut peer1_connections, _, _) = qp2p.new_endpoint().await?;
+        let peer1_addr = peer1.socket_addr();
 
-        let (mut peer2, _, _, _) = qp2p.new_endpoint().await?;
-        let peer2_addr = peer2.socket_addr().await?;
+        let (peer2, _, _, _) = qp2p.new_endpoint().await?;
+        let peer2_addr = peer2.socket_addr();
 
         peer2.connect_to(&peer1_addr).await?;
 

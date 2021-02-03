@@ -111,7 +111,7 @@ impl Endpoint {
         let (connection_tx, connection_rx) = mpsc::unbounded_channel();
         let (disconnection_tx, disconnection_rx) = mpsc::unbounded_channel();
 
-        let endpoint = Self {
+        let mut endpoint = Self {
             local_addr,
             public_addr,
             quic_endpoint,
@@ -157,6 +157,8 @@ impl Endpoint {
             } else {
                 warn!("Public IP address not verified since bootstrap contacts are empty");
             }
+        } else {
+            endpoint.public_addr = Some(endpoint.fetch_public_address().await?);
         }
         listen_for_incoming_connections(
             quic_incoming,
@@ -179,12 +181,8 @@ impl Endpoint {
     }
 
     /// Returns the socket address of the endpoint
-    pub async fn socket_addr(&mut self) -> Result<SocketAddr> {
-        if cfg!(test) || !self.qp2p_config.forward_port {
-            Ok(self.local_addr())
-        } else {
-            self.public_addr().await
-        }
+    pub fn socket_addr(&self) -> SocketAddr {
+        self.public_addr.unwrap_or(self.local_addr)
     }
 
     /// Get our connection adddress to give to others for them to connect to us.
@@ -194,7 +192,7 @@ impl Endpoint {
     /// simply build our connection info by querying the underlying bound socket for our address.
     /// Note that if such an obtained address is of unspecified category we will ignore that as
     /// such an address cannot be reached and hence not useful.
-    pub async fn public_addr(&mut self) -> Result<SocketAddr> {
+    async fn fetch_public_address(&mut self) -> Result<SocketAddr> {
         // Skip port forwarding
         if self.local_addr.ip().is_loopback() {
             return Ok(self.local_addr);

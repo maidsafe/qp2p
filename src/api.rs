@@ -171,7 +171,7 @@ impl QuicP2p {
     ///     config.local_port = Some(3000);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
     ///     let (mut endpoint, _, _, _) = quic_p2p.new_endpoint().await?;
-    ///     let peer_addr = endpoint.socket_addr().await?;
+    ///     let peer_addr = endpoint.socket_addr();
     ///
     ///     config.local_port = Some(3001);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config), &[peer_addr], true)?;
