@@ -160,9 +160,7 @@ pub(super) fn listen_for_incoming_connections(
                     }) => {
                         let peer_address = connection.remote_address();
                         let pool_handle = connection_pool.insert(peer_address, connection);
-                        connection_tx
-                            .send(peer_address)
-                            .map_err(|err| Error::MpscChannelSend(err.to_string()))?;
+                        let _ = connection_tx.send(peer_address);
                         listen_for_incoming_messages(
                             uni_streams,
                             bi_streams,
@@ -203,15 +201,11 @@ pub(super) fn listen_for_incoming_messages(
                 // When the message in handled internally we return Bytes::new() to prevent
                 // connection termination
                 if !message.is_empty() {
-                    message_tx
-                        .send((src, message))
-                        .map_err(|err| Error::MpscChannelSend(err.to_string()))?;
+                    let _ = message_tx.send((src, message));
                 }
             } else {
                 log::trace!("The connection has been terminated.");
-                disconnection_tx
-                    .send(*remover.remote_addr())
-                    .map_err(|err| Error::MpscChannelSend(err.to_string()))?;
+                let _ = disconnection_tx.send(*remover.remote_addr());
                 remover.remove();
                 break;
             }
@@ -322,7 +316,7 @@ mod tests {
     use crate::{config::Config, wire_msg::WireMsg, Error};
     use std::net::{IpAddr, Ipv4Addr};
 
-    #[tokio::test(core_threads = 10)]
+    #[tokio::test]
     async fn echo_service() -> Result<(), Error> {
         let qp2p = QuicP2p::with_config(
             Some(Config {

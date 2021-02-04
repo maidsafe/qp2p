@@ -112,7 +112,4 @@ pub enum Error {
     /// Missing connection
     #[error("No connection to the dest peer")]
     MissingConnection,
-    /// Unable to send message on channel
-    #[error("Unable to send message on channel")]
-    MpscChannelSend(String),
 }
