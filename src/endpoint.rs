@@ -386,11 +386,9 @@ impl Endpoint {
         connection.open_bi().await
     }
 
-    /// Sends a message to a peer. This will attempt to re-use any existing connections
-    /// with the said peer. If a connection doesn't exist already, a new connection will be created.
+    /// Sends a message to a peer. This will attempt to use an existing connection
+    /// to the destination  peer. If a connection does not exist, this will fail with `Error::MissingConnection`
     pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
-        self.connect_to(dest).await?;
-
         let connection = self.get_connection(dest).ok_or(Error::MissingConnection)?;
         connection.send_uni(msg).await?;
         Ok(())

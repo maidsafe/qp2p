@@ -5,7 +5,7 @@ use futures::future;
 use std::time::Duration;
 use tokio::time::timeout;
 
-#[tokio::test(core_threads = 10)]
+#[tokio::test]
 async fn successful_connection() -> Result<()> {
     utils::init_logging();
 
@@ -26,7 +26,7 @@ async fn successful_connection() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(core_threads = 10)]
+#[tokio::test]
 async fn single_message() -> Result<()> {
     utils::init_logging();
 
@@ -62,7 +62,7 @@ async fn single_message() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(core_threads = 10)]
+#[tokio::test]
 async fn reuse_outgoing_connection() -> Result<()> {
     utils::init_logging();
 
@@ -114,7 +114,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(core_threads = 10)]
+#[tokio::test]
 async fn reuse_incoming_connection() -> Result<()> {
     utils::init_logging();
 
@@ -168,20 +168,16 @@ async fn reuse_incoming_connection() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(core_threads = 10)]
+#[tokio::test]
 async fn disconnection() -> Result<()> {
     utils::init_logging();
 
     let qp2p = new_qp2p()?;
-    let (
-        mut alice,
-        mut alice_incoming_connections,
-        _alice_incoming_messages,
-        mut alice_disconnections,
-    ) = qp2p.new_endpoint().await?;
+    let (mut alice, mut alice_incoming_connections, _, mut alice_disconnections) =
+        qp2p.new_endpoint().await?;
     let alice_addr = alice.socket_addr();
 
-    let (bob, mut bob_incoming_connections, _bob_incoming_messages, mut bob_disconnections) =
+    let (bob, mut bob_incoming_connections, _, mut bob_disconnections) =
         qp2p.new_endpoint().await?;
     let bob_addr = bob.socket_addr();
 
@@ -221,7 +217,7 @@ async fn disconnection() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(core_threads = 10)]
+#[tokio::test]
 async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     // If both peers call `connect_to` simultaneously (that is, before any of them receives the
     // others connection first), two separate connections are created. This test verifies that
@@ -238,7 +234,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     ) = qp2p.new_endpoint().await?;
     let alice_addr = alice.socket_addr();
 
-    let (mut bob, mut bob_incoming_connections, mut bob_incoming_messages, _bob_disconnections) =
+    let (mut bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
         qp2p.new_endpoint().await?;
     let bob_addr = bob.socket_addr();
 
@@ -307,17 +303,16 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(core_threads = 10)]
+#[tokio::test]
 async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     utils::init_logging();
 
     let qp2p = new_qp2p()?;
-    let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _alice_disconnections) =
+    let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _) =
         qp2p.new_endpoint().await?;
     let alice_addr = alice.socket_addr();
 
-    let (bob, _bob_incoming_connections, mut bob_incoming_messages, _bob_disconnections) =
-        qp2p.new_endpoint().await?;
+    let (bob, _, mut bob_incoming_messages, _) = qp2p.new_endpoint().await?;
     let bob_addr = bob.socket_addr();
 
     // Try to establish two connections to the same peer at the same time.
