@@ -7,6 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use std::sync::Arc;
 use std::{
     collections::{hash_map::Entry, HashMap},
     net::SocketAddr,
@@ -18,14 +19,15 @@ type Result<T = (), E = Error> = std::result::Result<T, E>;
 
 // Deduplicate multiple concurrent connect attempts to the same peer - they all will yield the
 // same `Connection` instead of opening a separate connection each.
+#[derive(Clone)]
 pub(crate) struct ConnectionDeduplicator {
-    map: Mutex<HashMap<SocketAddr, broadcast::Sender<Result>>>,
+    map: Arc<Mutex<HashMap<SocketAddr, broadcast::Sender<Result>>>>,
 }
 
 impl ConnectionDeduplicator {
     pub fn new() -> Self {
         Self {
-            map: Mutex::new(HashMap::new()),
+            map: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
