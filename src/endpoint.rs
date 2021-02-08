@@ -64,6 +64,7 @@ impl DisconnectionEvents {
 
 /// Endpoint instance which can be used to create connections to peers,
 /// and listen to incoming messages from other peers.
+#[derive(Clone)]
 pub struct Endpoint {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
