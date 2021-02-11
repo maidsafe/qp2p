@@ -22,7 +22,7 @@ pub enum Error {
     /// of the peers provided as a list of contacts.
     #[error("Network bootstrap failed")]
     BootstrapFailure,
-    /// No peers/contects found in the bootstrap nodes list.
+    /// No peers/contacts found in the bootstrap nodes list.
     #[error("No nodes/peers found defined for bootstrapping")]
     EmptyBootstrapNodesList,
     /// The path provided is not valid for the operation.
@@ -55,7 +55,7 @@ pub enum Error {
     NoEchoServerEndpointDefined,
     /// Timeout occurred when awaiting for a response from
     /// any of the peers contacted for the echo service.
-    #[error("No response reeived from echo services")]
+    #[error("No response received from echo services")]
     NoEchoServiceResponse,
     /// Failure occurred when sending an echo request.
     #[error("{0}")]
@@ -70,7 +70,7 @@ pub enum Error {
     #[error("Base64 decode")]
     Base64Decode(#[from] base64::DecodeError),
     /// An error occurred which could be resolved by changing some config value.
-    #[error("Configuration {}", 0)]
+    #[error("Configuration {0}")]
     Configuration(String),
     /// The message type flag decoded in an incoming stream is invalid/unsupported.
     #[error("Invalid message type flag found in message's header: {0}")]
@@ -79,7 +79,7 @@ pub enum Error {
     #[error("Stream write error")]
     StreamWrite(#[from] quinn::WriteError),
     /// The expected amount of message bytes couldn't be read from the stream.
-    #[error("Failed to read expected nummber of message bytes: {}", 0)]
+    #[error("Failed to read expected number of message bytes: {0}")]
     StreamRead(#[from] quinn::ReadExactError),
     /// Failure when trying to map a new port using IGD for automatic port forwarding.
     #[error("Could not use IGD for automatic port forwarding")]
@@ -95,7 +95,7 @@ pub enum Error {
     IgdNotSupported,
     /// An error was encountered when trying to either generate
     /// or serialise a self-signed certificate.
-    #[error("Self-signed certificate generation error: {}", 0)]
+    #[error("Self-signed certificate generation error: {0}")]
     CertificateGen(#[from] rcgen::RcgenError),
     /// Response message received contains an empty payload.
     #[error("Empty response message received from peer")]
@@ -112,4 +112,7 @@ pub enum Error {
     /// Missing connection
     #[error("No connection to the dest peer")]
     MissingConnection,
+    /// A supposedly impossible internal error occurred
+    #[error("Unexpected internal error: {0}")]
+    UnexpectedError(String),
 }
