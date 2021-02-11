@@ -322,7 +322,7 @@ async fn handle_endpoint_verification_req(
         Ok(Ok(WireMsg::EndpointEchoResp(_)))
     );
 
-    let message = WireMsg::EndpointVerficationResp(verified);
+    let message = WireMsg::EndpointVerificationResp(verified);
     message.write_to_stream(send_stream).await?;
     trace!("Responded to Endpoint verification request");
 

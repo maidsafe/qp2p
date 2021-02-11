@@ -146,7 +146,7 @@ impl Endpoint {
                 send.send(WireMsg::EndpointVerificationReq(addr)).await?;
                 let response = WireMsg::read_from_stream(&mut recv.quinn_recv_stream).await?;
                 match response {
-                    WireMsg::EndpointVerficationResp(valid) => {
+                    WireMsg::EndpointVerificationResp(valid) => {
                         if valid {
                             info!("Endpoint verification successful! {} is reachable.", addr);
                         } else {
@@ -195,7 +195,7 @@ impl Endpoint {
         self.public_addr.unwrap_or(self.local_addr)
     }
 
-    /// Get our connection adddress to give to others for them to connect to us.
+    /// Get our connection address to give to others for them to connect to us.
     ///
     /// Attempts to use UPnP to automatically find the public endpoint and forward a port.
     /// Will use hard coded contacts to ask for our endpoint. If no contact is given then we'll
