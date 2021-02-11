@@ -14,6 +14,7 @@ use crate::{
 use bytes::Bytes;
 use log::trace;
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 use std::{fmt, net::SocketAddr};
 
 const MSG_HEADER_LEN: usize = 9;
@@ -25,7 +26,7 @@ pub enum WireMsg {
     EndpointEchoReq,
     EndpointEchoResp(SocketAddr),
     EndpointVerificationReq(SocketAddr),
-    EndpointVerficationResp(bool),
+    EndpointVerificationResp(bool),
     UserMsg(Bytes),
 }
 
@@ -41,7 +42,22 @@ impl WireMsg {
 
         let msg_header = MsgHeader::from_bytes(header_bytes);
         log::debug!("reading data of length: {}", msg_header.data_len());
-        let mut data: Vec<u8> = vec![0; msg_header.data_len()];
+        // https://github.com/rust-lang/rust/issues/70460 for work on a cleaner alternative:
+        #[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
+        {
+            compile_error!("You need an architecture capable of addressing 32-bit pointers");
+        }
+        let data_length = match usize::try_from(msg_header.data_len()) {
+            Ok(s) => s,
+            Err(_) => {
+                return Err(Error::UnexpectedError(format!(
+                    // this should never happen due to preceding compilation error
+                    "unable to convert u32 '{}' to usize",
+                    msg_header.data_len()
+                )));
+            }
+        };
+        let mut data: Vec<u8> = vec![0; data_length];
         let msg_flag = msg_header.usr_msg_flag();
 
         recv.read_exact(&mut data).await?;
@@ -91,7 +107,7 @@ impl fmt::Display for WireMsg {
             WireMsg::EndpointVerificationReq(ref sa) => {
                 write!(f, "WireMsg::EndpointVerificationReq({})", sa)
             }
-            WireMsg::EndpointVerficationResp(valid) => write!(
+            WireMsg::EndpointVerificationResp(valid) => write!(
                 f,
                 "WireMsg::EndpointEchoResp({})",
                 if valid { "Valid" } else { "Invalid" }
@@ -107,7 +123,7 @@ impl fmt::Display for WireMsg {
 #[derive(Debug)]
 struct MsgHeader {
     version: u16,
-    data_len: usize,
+    data_len: u32,
     usr_msg_flag: u8,
     #[allow(unused)]
     reserved: [u8; 2],
@@ -115,19 +131,18 @@ struct MsgHeader {
 
 impl MsgHeader {
     pub fn new(msg: &Bytes, usr_msg_flag: u8) -> Result<Self> {
-        let data_len = msg.len();
-        if data_len > u32::MAX as usize {
-            return Err(Error::MaxLengthExceeded(data_len));
+        match u32::try_from(msg.len()) {
+            Err(_) => Err(Error::MaxLengthExceeded(msg.len())),
+            Ok(data_len) => Ok(Self {
+                version: MSG_PROTOCOL_VERSION,
+                data_len,
+                usr_msg_flag,
+                reserved: [0, 0],
+            }),
         }
-        Ok(Self {
-            version: MSG_PROTOCOL_VERSION,
-            data_len,
-            usr_msg_flag,
-            reserved: [0, 0],
-        })
     }
 
-    pub fn data_len(&self) -> usize {
+    pub fn data_len(&self) -> u32 {
         self.data_len
     }
 
@@ -141,10 +156,10 @@ impl MsgHeader {
         [
             version[0],
             version[1],
-            data_len[4],
-            data_len[5],
-            data_len[6],
-            data_len[7],
+            data_len[0],
+            data_len[1],
+            data_len[2],
+            data_len[3],
             self.usr_msg_flag,
             0,
             0,
@@ -153,7 +168,7 @@ impl MsgHeader {
 
     pub fn from_bytes(bytes: [u8; MSG_HEADER_LEN]) -> Self {
         let version = u16::from_be_bytes([bytes[0], bytes[1]]);
-        let data_len = usize::from_be_bytes([0, 0, 0, 0, bytes[2], bytes[3], bytes[4], bytes[5]]);
+        let data_len = u32::from_be_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]);
         let usr_msg_flag = bytes[6];
         Self {
             version,
