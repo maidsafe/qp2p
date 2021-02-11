@@ -31,12 +31,13 @@ webpki = "~0.21.3"
   features = [ "aio" ]
 
   [dependencies.quinn]
-  version = "~0.6.1"
+  git = "https://github.com/quinn-rs/quinn"
+  branch = "main"
   features = [ "tls-rustls" ]
   default-features = false
 
   [dependencies.rustls]
-  version = "~0.17.0"
+  version = "~0.19.0"
   features = [ "dangerous_configuration" ]
 
   [dependencies.serde]
@@ -44,8 +45,8 @@ webpki = "~0.21.3"
   features = [ "derive" ]
 
   [dependencies.tokio]
-  version = "~0.2.24"
-  features = [ "rt-threaded", "sync", "time", "macros", "io-std", "io-util" ]
+  version = "1.2"
+  features = [ "rt-multi-thread", "sync", "time", "macros", "io-std", "io-util" ]
 
 [dev-dependencies]
 flexi_logger = "~0.16.1"
