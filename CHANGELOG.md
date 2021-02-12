@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.16](https://github.com/maidsafe/qp2p/compare/v0.9.15...v0.9.16) (2021-02-12)
+
+
+### Features
+
+* adds a p2p node example that uses bidirectional streams ([46184b8](https://github.com/maidsafe/qp2p/commit/46184b85fa99f9182f8a18c12b3a65c510f38485))
+* makes QuicP2p::Endpoint cloneable so that it can more easily be used across threads. ([a8c8b9d](https://github.com/maidsafe/qp2p/commit/a8c8b9dbeb965b609d280205a0bb6258cb40a6c8))
+* **api:** add API to open bi-directional stream that can be used to ([158ae88](https://github.com/maidsafe/qp2p/commit/158ae88874aef3d7ba9f8064fc95d46ec57ac866))
+* **api:** add support for manual port forwarding by passing additional ([9dca7b9](https://github.com/maidsafe/qp2p/commit/9dca7b933ceb27b7fe7790f58b92100d09a248a8))
+* **api:** move all connection handling and message handling internally ([0093c20](https://github.com/maidsafe/qp2p/commit/0093c20a468a85dba9529b1c0b9b4ef4a4cf4d23))
+* **disconnects:** add API for disconnection and fix tests ([37abcf9](https://github.com/maidsafe/qp2p/commit/37abcf91bd42c9e35bbc7381f0ef310be7d8d960))
+* **echo_service:** find if peer is externally reachable if external IP ([a9989cc](https://github.com/maidsafe/qp2p/commit/a9989cc43c12a8c580666da4b2447f81c65e7922))
+* **echo_service:** perform UPnP and/or echo_service when the endpoint ([5812f7b](https://github.com/maidsafe/qp2p/commit/5812f7b46fbb76f7126d16213e05a2e0531194ef))
+
+
+### Bug Fixes
+
+* **all:** remove FIFO queues and use the mpsc channels directly ([2bab054](https://github.com/maidsafe/qp2p/commit/2bab0548d5131a36bf346589422c667fc87196f0))
+* **echo_service:** prevent contacting the echo service multiple times ([f9cf906](https://github.com/maidsafe/qp2p/commit/f9cf906270faad885f67ce4e4b71bb3767e35f19))
+* **example:** dont use LocalHost in example ([2d70c05](https://github.com/maidsafe/qp2p/commit/2d70c0591cf0659b90baa153d82ae71d0d9cf7f3))
+* **igd:** don't skip port forwarding if local IP address is specified ([2fb6401](https://github.com/maidsafe/qp2p/commit/2fb6401eddbcb711c07f9b3a8deb4e9e0480bb1d))
+* **test:** refactor structure of test code and fix echo_service test ([591ebf8](https://github.com/maidsafe/qp2p/commit/591ebf83529419ebe19701455a875533055c81b5))
+
 ### [0.9.15](https://github.com/maidsafe/qp2p/compare/v0.9.14...v0.9.15) (2021-02-09)
 
 ### [0.9.14](https://github.com/maidsafe/qp2p/compare/v0.9.13...v0.9.14) (2021-02-02)
