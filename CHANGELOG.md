@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.17](https://github.com/maidsafe/qp2p/compare/v0.9.16...v0.9.17) (2021-02-15)
+
+
+### Bug Fixes
+
+* use hard coded contacts to realize local IP address ([3741833](https://github.com/maidsafe/qp2p/commit/3741833f787a44781509ed4ca8006f09aa7c5814))
+
 ### [0.9.16](https://github.com/maidsafe/qp2p/compare/v0.9.15...v0.9.16) (2021-02-12)
 
 
