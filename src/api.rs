@@ -15,7 +15,7 @@ use super::{
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
 use futures::{future, TryFutureExt};
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
 
@@ -316,7 +316,21 @@ fn bind(
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
     let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
     if cfg.local_ip.is_none() {
-        cfg.local_ip = Some(crate::igd::get_local_ip()?);
+        cfg.local_ip = match crate::igd::get_local_ip() {
+            Ok(addr) => Some(addr),
+            Err(err) => {
+                warn!("Error realizing local IP using IGD gateway: {}", err);
+                let socket = UdpSocket::bind("0.0.0.0:0")?;
+                let mut local_ip = None;
+                for addr in cfg.hard_coded_contacts.iter() {
+                    if let Ok(Ok(local_addr)) = socket.connect(addr).map(|()| socket.local_addr()) {
+                        local_ip = Some(local_addr.ip());
+                        break;
+                    }
+                }
+                local_ip
+            }
+        }
     };
     if cfg.clean {
         Config::clear_config_from_disk(None)?;
