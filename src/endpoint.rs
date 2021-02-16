@@ -31,6 +31,9 @@ use tokio::time::timeout;
 // FIXME: make it configurable
 const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 
+// Number of seconds before timing out the IGD request to forward a port.
+const PORT_FORWARD_TIMEOUT: u64 = 30;
+
 /// Channel on which incoming messages can be listened to
 pub struct IncomingMessages(pub(crate) UnboundedReceiver<(SocketAddr, Bytes)>);
 
@@ -124,6 +127,7 @@ impl Endpoint {
             connection_pool: connection_pool.clone(),
             connection_deduplicator: ConnectionDeduplicator::new(),
         };
+
         if let Some(addr) = endpoint.public_addr {
             // External IP and port number is provided
             // This means that the user has performed manual port-forwarding
@@ -141,7 +145,6 @@ impl Endpoint {
                     WireMsg::EndpointVerficationResp(valid) => {
                         if valid {
                             info!("Endpoint verification successful! {} is reachable.", addr);
-                        // Ok(endpoint)
                         } else {
                             error!("Endpoint verification failed! {} is not reachable.", addr);
                             return Err(Error::IncorrectPublicAddress);
@@ -161,6 +164,7 @@ impl Endpoint {
         } else {
             endpoint.public_addr = Some(endpoint.fetch_public_address().await?);
         }
+
         listen_for_incoming_connections(
             quic_incoming,
             connection_pool,
@@ -168,6 +172,7 @@ impl Endpoint {
             connection_tx,
             disconnection_tx,
         );
+
         Ok((
             endpoint,
             IncomingConnections(connection_rx),
@@ -208,7 +213,7 @@ impl Endpoint {
         if self.qp2p_config.forward_port {
             // Attempt to use IGD for port forwarding
             match timeout(
-                Duration::from_secs(30),
+                Duration::from_secs(PORT_FORWARD_TIMEOUT),
                 forward_port(
                     self.local_addr,
                     self.qp2p_config
