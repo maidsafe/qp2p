@@ -8,6 +8,7 @@
 // Software.
 
 use crate::error::{Error, Result};
+use igd::SearchOptions;
 use log::{debug, info, warn};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4};
 use std::time::Duration;
@@ -51,7 +52,7 @@ pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result
 /// `lease_duration` is the life time of a port mapping (in seconds). If it is 0, the
 /// mapping will continue to exist as long as possible.
 pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> Result<SocketAddrV4> {
-    let gateway = igd::aio::search_gateway(igd::SearchOptions::default()).await?;
+    let gateway = igd::aio::search_gateway(SearchOptions::default()).await?;
 
     debug!("IGD gateway found: {:?}", gateway);
 
@@ -82,7 +83,7 @@ pub(crate) async fn renew_port(
     ext_port: u16,
     lease_duration: u32,
 ) -> Result<()> {
-    let gateway = igd::aio::search_gateway(Default::default()).await?;
+    let gateway = igd::aio::search_gateway(SearchOptions::default()).await?;
 
     if let SocketAddr::V4(socket_addr) = local_addr {
         gateway
@@ -107,7 +108,7 @@ pub(crate) async fn renew_port(
 // Find our local IP address by connecting to the gateway and querying local socket address.
 pub(crate) fn get_local_ip() -> Result<IpAddr> {
     debug!("Attempting to realise local IP address with IGD...");
-    let gateway = igd::search_gateway(igd::SearchOptions::default())?;
+    let gateway = igd::search_gateway(SearchOptions::default())?;
     let gateway_conn = std::net::TcpStream::connect(gateway.addr)?;
     let local_sa = gateway_conn.local_addr()?;
     info!("Fetched IP address from IGD gateway: {:?}", &local_sa.ip());
