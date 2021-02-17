@@ -158,12 +158,13 @@ impl QuicP2p {
     ///
     ///     config.local_port = Some(3001);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config), &[peer_addr], true)?;
-    ///     let endpoint = quic_p2p.bootstrap().await?;
+    ///     let endpoint = quic_p2p.bootstrap(None).await?;
     ///     Ok(())
     /// }
     /// ```
     pub async fn bootstrap(
         &self,
+        override_target_addresses: Option<&Vec<SocketAddr>>,
     ) -> Result<(
         Endpoint,
         IncomingConnections,
@@ -175,13 +176,22 @@ impl QuicP2p {
             self.new_endpoint().await?;
 
         trace!("Bootstrapping with nodes {:?}", endpoint.bootstrap_nodes());
-        if endpoint.bootstrap_nodes().is_empty() {
+        if endpoint.bootstrap_nodes().is_empty() && override_target_addresses.is_none() {
             return Err(Error::EmptyBootstrapNodesList);
         }
 
+        let mut addresses = endpoint.bootstrap_nodes();
+        if let Some(target_addresses) = override_target_addresses {
+            // Override the bootstrap nodes for the endpoint
+            trace!(
+                "Bootstrap cache nodes have been overriden by {:?}",
+                target_addresses
+            );
+            addresses = target_addresses;
+        }
+
         // Attempt to connect to all nodes and return the first one to succeed
-        let tasks = endpoint
-            .bootstrap_nodes()
+        let tasks = addresses
             .iter()
             .map(|addr| Box::pin(endpoint.connect_to(addr).map_ok(move |()| *addr)));
 
