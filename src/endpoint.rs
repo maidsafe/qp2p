@@ -8,10 +8,10 @@
 // Software.
 
 use super::error::Error;
-use super::igd::forward_port;
 use super::wire_msg::WireMsg;
+#[cfg(not(feature = "no-igd"))]
+use super::{api::DEFAULT_UPNP_LEASE_DURATION_SEC, igd::forward_port};
 use super::{
-    api::DEFAULT_UPNP_LEASE_DURATION_SEC,
     connection_deduplicator::ConnectionDeduplicator,
     connection_pool::ConnectionPool,
     connections::{
@@ -32,6 +32,7 @@ use tokio::time::timeout;
 const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 
 // Number of seconds before timing out the IGD request to forward a port.
+#[cfg(not(feature = "no-igd"))]
 const PORT_FORWARD_TIMEOUT: u64 = 30;
 
 /// Channel on which incoming messages can be listened to
@@ -210,6 +211,12 @@ impl Endpoint {
 
         let mut addr = None;
 
+        #[cfg(feature = "no-igd")]
+        if self.qp2p_config.forward_port {
+            warn!("Ignoring 'forward_port' flag from config since IGD has been disabled (feature 'no-igd' has been set)");
+        }
+
+        #[cfg(not(feature = "no-igd"))]
         if self.qp2p_config.forward_port {
             // Attempt to use IGD for port forwarding
             match timeout(

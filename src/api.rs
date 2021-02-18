@@ -17,7 +17,7 @@ use super::{
 use futures::{future, TryFutureExt};
 use log::{debug, error, info, trace};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.
@@ -302,7 +302,9 @@ fn bind(
 
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
     let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
+
     if cfg.local_ip.is_none() {
+        debug!("Realizing local IP by connecting to contacts");
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         let mut local_ip = None;
         for addr in cfg.hard_coded_contacts.iter() {
@@ -313,8 +315,10 @@ fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
         }
         cfg.local_ip = local_ip;
     };
+
     if cfg.clean {
         Config::clear_config_from_disk(None)?;
     }
+
     Ok(cfg)
 }

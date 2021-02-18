@@ -55,6 +55,7 @@ mod connection_pool;
 mod connections;
 mod endpoint;
 mod error;
+#[cfg(not(feature = "no-igd"))]
 mod igd;
 mod peer_config;
 #[cfg(test)]
