@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.19](https://github.com/maidsafe/qp2p/compare/v0.9.18...v0.9.19) (2021-02-18)
+
+
+### Bug Fixes
+
+* **logs:** dont log expected messages at error level ([12b2c5a](https://github.com/maidsafe/qp2p/commit/12b2c5a6cca8b6b85b6239bc37e53a79df768921))
+
 ### [0.9.18](https://github.com/maidsafe/qp2p/compare/v0.9.17...v0.9.18) (2021-02-16)
 
 ### [0.9.17](https://github.com/maidsafe/qp2p/compare/v0.9.16...v0.9.17) (2021-02-15)
