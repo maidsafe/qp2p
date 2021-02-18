@@ -16,7 +16,7 @@ use super::{
 };
 use bytes::Bytes;
 use futures::stream::StreamExt;
-use log::{error, trace};
+use log::{error, trace, warn};
 use std::net::SocketAddr;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::{
@@ -223,7 +223,7 @@ async fn next_on_uni_streams(uni_streams: &mut quinn::IncomingUniStreams) -> Opt
             None
         }
         Some(Err(err)) => {
-            error!("Failed to read incoming message on uni-stream: {}", err);
+            warn!("Failed to read incoming message on uni-stream: {}", err);
             None
         }
         Some(Ok(mut recv)) => match read_bytes(&mut recv).await {
@@ -252,7 +252,7 @@ async fn next_on_bi_streams(
             None
         }
         Some(Err(err)) => {
-            error!("Failed to read incoming message on bi-stream: {}", err);
+            warn!("Failed to read incoming message on bi-stream: {}", err);
             None
         }
         Some(Ok((mut send, mut recv))) => match read_bytes(&mut recv).await {
