@@ -157,6 +157,10 @@ impl QuicP2p {
     /// Once a connection with a peer succeeds, a `Connection` for such peer will be returned
     /// and all other connections will be dropped.
     ///
+    /// `override_cache_addresses` can be used to bootstrap aginst specific addresses outwith
+    /// of the config. If anything other than an empty vec is supplied, qp2p bootstraps against
+    /// those SocketAddresses _only_.
+    ///
     /// # Example
     ///
     /// ```
@@ -175,13 +179,13 @@ impl QuicP2p {
     ///
     ///     config.local_port = Some(3001);
     ///     let mut quic_p2p = QuicP2p::with_config(Some(config), &[peer_addr], true)?;
-    ///     let endpoint = quic_p2p.bootstrap(None).await?;
+    ///     let endpoint = quic_p2p.bootstrap(&vec![]).await?;
     ///     Ok(())
     /// }
     /// ```
     pub async fn bootstrap(
         &self,
-        override_target_addresses: Option<&Vec<SocketAddr>>,
+        override_cache_addresses: &Vec<SocketAddr>,
     ) -> Result<(
         Endpoint,
         IncomingConnections,
@@ -193,18 +197,18 @@ impl QuicP2p {
             self.new_endpoint().await?;
 
         trace!("Bootstrapping with nodes {:?}", endpoint.bootstrap_nodes());
-        if endpoint.bootstrap_nodes().is_empty() && override_target_addresses.is_none() {
+        if endpoint.bootstrap_nodes().is_empty() && override_cache_addresses.is_empty() {
             return Err(Error::EmptyBootstrapNodesList);
         }
 
         let mut addresses = endpoint.bootstrap_nodes();
-        if let Some(target_addresses) = override_target_addresses {
+        if !override_cache_addresses.is_empty() {
             // Override the bootstrap nodes for the endpoint
             trace!(
                 "Bootstrap cache nodes have been overriden by {:?}",
-                target_addresses
+                override_cache_addresses
             );
-            addresses = target_addresses;
+            addresses = override_cache_addresses;
         }
 
         // Attempt to connect to all nodes and return the first one to succeed
