@@ -9,14 +9,20 @@
 
 #![allow(unused)]
 
-use crate::utils;
-use crate::{Error, Result};
-use log::{info, warn};
+use crate::error::{Error, Result};
+use bincode::{deserialize_from, serialize_into};
+use dirs_next::home_dir;
+use log::warn;
+use serde::{de::DeserializeOwned, Serialize};
 use std::{
     collections::{HashSet, VecDeque},
-    fs, io,
+    fs,
     net::SocketAddr,
     path::{Path, PathBuf},
+};
+use std::{
+    fs::File,
+    io::{BufReader, BufWriter},
 };
 
 /// Maximum peers in the cache.
@@ -46,12 +52,12 @@ impl BootstrapCache {
         let get_cache_path = |dir: &PathBuf| dir.join("bootstrap_cache");
 
         let cache_path = user_override.map_or_else(
-            || Ok::<_, Error>(get_cache_path(&utils::project_dir()?)),
+            || Ok::<_, Error>(get_cache_path(&project_dir()?)),
             |d| Ok(get_cache_path(d)),
         )?;
 
         let peers = if cache_path.exists() {
-            utils::read_from_disk(&cache_path)?
+            read_from_disk(&cache_path)?
         } else {
             let cache_dir = cache_path.parent().ok_or_else(|| {
                 Error::InvalidPath(format!(
@@ -110,7 +116,7 @@ impl BootstrapCache {
         let get_cache_path = |dir: &PathBuf| dir.join("bootstrap_cache");
 
         let cache_path = user_override.map_or_else(
-            || Ok::<_, Error>(get_cache_path(&utils::project_dir()?)),
+            || Ok::<_, Error>(get_cache_path(&project_dir()?)),
             |d| Ok(get_cache_path(d)),
         )?;
 
@@ -130,12 +136,69 @@ impl BootstrapCache {
     /// Write cached peers to disk every 10 inserted peers.
     fn try_sync_to_disk(&mut self) {
         if self.add_count > 9 {
-            if let Err(e) = utils::write_to_disk(&self.cache_path, &self.peers) {
+            if let Err(e) = write_to_disk(&self.cache_path, &self.peers) {
                 warn!("Failed to write bootstrap cache to disk: {}", e);
             }
             self.add_count = 0;
         }
     }
+}
+
+// Private utilities/helpers below
+
+/// Get the project directory
+#[cfg(any(
+    all(
+        unix,
+        not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+    ),
+    windows
+))]
+#[inline]
+fn project_dir() -> Result<PathBuf> {
+    let dirs = home_dir().ok_or(Error::UserHomeDir)?;
+    let project_dir = dirs.join(".safe").join("qp2p");
+    Ok(project_dir)
+}
+
+/// Get the project directory
+#[cfg(not(any(
+    all(
+        unix,
+        not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
+    ),
+    windows
+)))]
+#[inline]
+fn project_dir() -> Result<Dirs> {
+    Err(Error::Configuration {
+        e: "No default project dir on non-desktop platforms. User must provide an override path."
+            .to_string(),
+    })
+}
+
+/// Try reading from the disk into the given structure.
+fn read_from_disk<D>(file_path: &Path) -> Result<D>
+where
+    D: DeserializeOwned,
+{
+    Ok(File::open(file_path)
+        .map_err(Into::into)
+        .map(BufReader::new)
+        .and_then(|mut rdr| deserialize_from(&mut rdr))?)
+}
+
+/// Try writing the given structure to the disk.
+fn write_to_disk<S>(file_path: &Path, s: &S) -> Result<()>
+where
+    S: Serialize,
+{
+    File::create(file_path)
+        .map_err(Into::into)
+        .map(BufWriter::new)
+        .and_then(|mut rdr| serialize_into(&mut rdr, s))?;
+
+    Ok(())
 }
 
 #[cfg(test)]

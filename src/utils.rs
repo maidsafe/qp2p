@@ -7,47 +7,6 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::error::{Error, Result};
-use bincode::{deserialize_from, serialize_into};
-use dirs_next::home_dir;
-use serde::{de::DeserializeOwned, Serialize};
-use std::{
-    fs::File,
-    io::{BufReader, BufWriter},
-    path::{Path, PathBuf},
-};
-
-/// Get the project directory
-#[cfg(any(
-    all(
-        unix,
-        not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
-    ),
-    windows
-))]
-#[inline]
-pub fn project_dir() -> Result<PathBuf> {
-    let dirs = home_dir().ok_or(Error::UserHomeDir)?;
-    let project_dir = dirs.join(".safe").join("qp2p");
-    Ok(project_dir)
-}
-
-/// Get the project directory
-#[cfg(not(any(
-    all(
-        unix,
-        not(any(target_os = "android", target_os = "androideabi", target_os = "ios"))
-    ),
-    windows
-)))]
-#[inline]
-pub fn project_dir() -> Result<Dirs> {
-    Err(Error::Configuration {
-        e: "No default project dir on non-desktop platforms. User must provide an override path."
-            .to_string(),
-    })
-}
-
 /// Convert binary data to a diplay-able format
 #[inline]
 pub fn bin_data_format(data: &[u8]) -> String {
@@ -67,30 +26,6 @@ pub fn bin_data_format(data: &[u8]) -> String {
         data[len - 2],
         data[len - 1]
     )
-}
-
-/// Try reading from the disk into the given structure.
-pub fn read_from_disk<D>(file_path: &Path) -> Result<D>
-where
-    D: DeserializeOwned,
-{
-    Ok(File::open(file_path)
-        .map_err(Into::into)
-        .map(BufReader::new)
-        .and_then(|mut rdr| deserialize_from(&mut rdr))?)
-}
-
-/// Try writing the given structure to the disk.
-pub fn write_to_disk<S>(file_path: &Path, s: &S) -> Result<()>
-where
-    S: Serialize,
-{
-    File::create(file_path)
-        .map_err(Into::into)
-        .map(BufWriter::new)
-        .and_then(|mut rdr| serialize_into(&mut rdr, s))?;
-
-    Ok(())
 }
 
 #[cfg(test)]
