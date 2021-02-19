@@ -77,9 +77,7 @@ impl QuicP2p {
             .map(|p| (p, false))
             .unwrap_or((DEFAULT_PORT_TO_TRY, true));
 
-        let mut ip = cfg
-            .local_ip
-            .unwrap_or_else(|| IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+        let mut ip = cfg.local_ip.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
 
         // check hard coded contacts for being local (aka loopback)
         if let Some(contact) = cfg.hard_coded_contacts.iter().next() {
