@@ -12,11 +12,12 @@ use crate::{
     utils,
 };
 use bytes::Bytes;
-use log::trace;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::{
-    collections::HashSet, fmt, fs, io, net::IpAddr, net::SocketAddr, path::PathBuf, str::FromStr,
+    collections::HashSet,
+    fmt,
+    net::{IpAddr, SocketAddr},
+    str::FromStr,
 };
 use structopt::StructOpt;
 
@@ -79,46 +80,6 @@ pub struct Config {
     /// Duration of a UPnP port mapping.
     #[structopt(long)]
     pub upnp_lease_duration: Option<u32>,
-    /// Use a fresh config without re-using any config available on disk
-    #[structopt(long)]
-    pub fresh: bool,
-    /// Clean all existing config available on disk
-    #[structopt(long)]
-    pub clean: bool,
-}
-
-impl Config {
-    /// Try and read the config off the disk first. If such a file-path doesn't exist it'll create
-    /// a default one with random certificate and write that to the disk, eventually returning that
-    /// config to the caller.
-    pub fn read_or_construct_default(user_override: Option<&Path>) -> Result<Config> {
-        let config_path = config_path(user_override)?;
-
-        if config_path.exists() {
-            trace!("Reading config from {:?}", config_path);
-            Ok(utils::read_from_disk(&config_path)?)
-        } else {
-            let config_dir = config_path
-                .parent()
-                .ok_or_else(|| io::ErrorKind::NotFound.into())
-                .map_err(Error::Io)?;
-            fs::create_dir_all(&config_dir)?;
-
-            let cfg = Config::default();
-            utils::write_to_disk(&config_path, &cfg)?;
-
-            Ok(cfg)
-        }
-    }
-
-    /// Clear all configuration files from disk
-    pub fn clear_config_from_disk(user_override: Option<&Path>) -> Result<()> {
-        let config_path = config_path(user_override)?;
-        if config_path.exists() {
-            fs::remove_file(&config_path)?;
-        }
-        Ok(())
-    }
 }
 
 /// To be used to read and write our certificate and private key to disk esp. as a part of our
@@ -172,37 +133,5 @@ impl fmt::Debug for SerialisableCertificate {
             "SerialisableCertificate {{ cert_der: {}, key_der: <HIDDEN> }}",
             utils::bin_data_format(&self.cert_der)
         )
-    }
-}
-
-fn config_path(user_override: Option<&Path>) -> Result<PathBuf> {
-    let get_config_file = |dir: &Path| dir.join("config");
-
-    let cfg_path = user_override.map_or_else(
-        || Ok::<_, Error>(get_config_file(&utils::project_dir()?)),
-        |d| Ok(get_config_file(d)),
-    )?;
-
-    Ok(cfg_path)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_utils::test_dirs;
-    use crate::{utils, Error};
-
-    #[test]
-    fn config_create_read_and_write() -> Result<(), Error> {
-        let dir = test_dirs();
-        let config_path = config_path(Some(&dir))?;
-
-        assert!(utils::read_from_disk::<Config>(&config_path).is_err());
-
-        let cfg = Config::read_or_construct_default(Some(&dir))?;
-        let read_cfg = utils::read_from_disk(&config_path)?;
-
-        assert_eq!(cfg, read_cfg);
-        Ok(())
     }
 }

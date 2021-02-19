@@ -17,7 +17,7 @@ use super::{
 use futures::{future, TryFutureExt};
 use log::{debug, error, info, trace};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::{collections::HashSet, path::PathBuf};
+use std::path::PathBuf;
 
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.
@@ -95,12 +95,8 @@ impl QuicP2p {
 
         let mut qp2p_config = cfg.clone();
 
-        if cfg.clean {
-            BootstrapCache::clear_from_disk(custom_dirs.as_ref())?;
-        }
-
         let mut bootstrap_cache =
-            BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref(), cfg.fresh)?;
+            BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref())?;
         if use_bootstrap_cache {
             bootstrap_cache.peers_mut().extend(bootstrap_nodes);
         } else {
@@ -301,7 +297,7 @@ fn bind(
 }
 
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
-    let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
+    let mut cfg = cfg.map_or(Config::default(), |cfg| cfg);
 
     if cfg.local_ip.is_none() {
         debug!("Realizing local IP by connecting to contacts");
@@ -315,10 +311,6 @@ fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
         }
         cfg.local_ip = local_ip;
     };
-
-    if cfg.clean {
-        Config::clear_config_from_disk(None)?;
-    }
 
     Ok(cfg)
 }
