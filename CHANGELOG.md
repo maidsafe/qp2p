@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.21](https://github.com/maidsafe/qp2p/compare/v0.9.20...v0.9.21) (2021-02-19)
+
+
+### Bug Fixes
+
+* **config:** do not use the IGD gateway to realize local IP address ([62dbcc4](https://github.com/maidsafe/qp2p/commit/62dbcc4d9eda960adabb76c13c10e98ab4842735))
+
 ### [0.9.20](https://github.com/maidsafe/qp2p/compare/v0.9.19...v0.9.20) (2021-02-19)
 
 
