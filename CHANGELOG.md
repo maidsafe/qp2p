@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.20](https://github.com/maidsafe/qp2p/compare/v0.9.19...v0.9.20) (2021-02-19)
+
+
+### Bug Fixes
+
+* use loopback even when IGD finds local ip, if network is loopback ([95f00b3](https://github.com/maidsafe/qp2p/commit/95f00b33739043d03bc8f382340c68e9f2b126d0))
+
 ### [0.9.19](https://github.com/maidsafe/qp2p/compare/v0.9.18...v0.9.19) (2021-02-18)
 
 
