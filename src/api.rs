@@ -65,32 +65,34 @@ impl QuicP2p {
         bootstrap_nodes: &[SocketAddr],
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
-        let cfg = unwrap_config_or_default(cfg)?;
         debug!("Config passed in to qp2p: {:?}", cfg);
+        let cfg = unwrap_config_or_default(cfg)?;
+        debug!(
+            "Config decided on after unwrap and IGD in to qp2p: {:?}",
+            cfg
+        );
 
         let (port, allow_random_port) = cfg
             .local_port
             .map(|p| (p, false))
             .unwrap_or((DEFAULT_PORT_TO_TRY, true));
 
-        let ip = cfg.local_ip.unwrap_or_else(|| {
-            let mut our_ip = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+        let mut ip = cfg
+            .local_ip
+            .unwrap_or_else(|| IpAddr::V4(Ipv4Addr::UNSPECIFIED));
 
-            // check hard coded contacts for being local (aka loopback)
-            if let Some(contact) = cfg.hard_coded_contacts.iter().next() {
-                let ip = contact.ip();
+        // check hard coded contacts for being local (aka loopback)
+        if let Some(contact) = cfg.hard_coded_contacts.iter().next() {
+            let potential_ip = contact.ip();
 
-                if ip.is_loopback() {
-                    trace!(
-                        "IP from hardcoded contact is loopback, setting our IP to: {:?}",
-                        ip
-                    );
-                    our_ip = ip;
-                }
+            if potential_ip.is_loopback() {
+                trace!(
+                    "IP from hardcoded contact is loopback, setting our IP to: {:?}",
+                    potential_ip
+                );
+                ip = potential_ip;
             }
-
-            our_ip
-        });
+        }
 
         let idle_timeout_msec = cfg.idle_timeout_msec.unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
 
