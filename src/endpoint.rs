@@ -247,22 +247,24 @@ impl Endpoint {
             }
         }
 
-        // Try to contact an echo service
-        match timeout(Duration::from_secs(30), self.query_ip_echo_service()).await {
-            Ok(res) => match res {
-                Ok(echo_res) => match addr {
-                    None => {
+        if addr.is_none() {
+            // Try to contact an echo service
+            match timeout(
+                Duration::from_secs(PORT_FORWARD_TIMEOUT),
+                self.query_ip_echo_service(),
+            )
+            .await
+            {
+                Ok(res) => match res {
+                    Ok(echo_res) => {
                         addr = Some(echo_res);
                     }
-                    Some(address) => {
-                        info!("Got response from echo service: {:?}, but IGD has already provided our external address: {:?}", echo_res, address);
+                    Err(err) => {
+                        info!("Could not contact echo service: {} - {:?}", err, err);
                     }
                 },
-                Err(err) => {
-                    info!("Could not contact echo service: {} - {:?}", err, err);
-                }
-            },
-            Err(e) => info!("Echo service timed out: {:?}", e),
+                Err(e) => info!("Echo service timed out: {:?}", e),
+            }
         }
 
         addr.map_or(Err(Error::NoEchoServiceResponse), |socket_addr| {
