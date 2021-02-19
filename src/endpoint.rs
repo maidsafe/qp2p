@@ -35,6 +35,9 @@ const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 #[cfg(not(feature = "no-igd"))]
 const PORT_FORWARD_TIMEOUT: u64 = 30;
 
+// Number of seconds before timing out the echo service query.
+const ECHO_SERVICE_QUERY_TIMEOUT: u64 = 30;
+
 /// Channel on which incoming messages can be listened to
 pub struct IncomingMessages(pub(crate) UnboundedReceiver<(SocketAddr, Bytes)>);
 
@@ -250,20 +253,14 @@ impl Endpoint {
         if addr.is_none() {
             // Try to contact an echo service
             match timeout(
-                Duration::from_secs(PORT_FORWARD_TIMEOUT),
+                Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
                 self.query_ip_echo_service(),
             )
             .await
             {
-                Ok(res) => match res {
-                    Ok(echo_res) => {
-                        addr = Some(echo_res);
-                    }
-                    Err(err) => {
-                        info!("Could not contact echo service: {} - {:?}", err, err);
-                    }
-                },
-                Err(e) => info!("Echo service timed out: {:?}", e),
+                Ok(Ok(echo_res)) => addr = Some(echo_res),
+                Ok(Err(err)) => info!("Could not contact echo service: {} - {:?}", err, err),
+                Err(err) => info!("Query to echo service timed out: {:?}", err),
             }
         }
 

@@ -42,7 +42,6 @@ impl BootstrapCache {
     pub fn new(
         hard_coded_contacts: HashSet<SocketAddr>,
         user_override: Option<&PathBuf>,
-        fresh: bool,
     ) -> Result<BootstrapCache> {
         let get_cache_path = |dir: &PathBuf| dir.join("bootstrap_cache");
 
@@ -52,11 +51,7 @@ impl BootstrapCache {
         )?;
 
         let peers = if cache_path.exists() {
-            if fresh {
-                VecDeque::new()
-            } else {
-                utils::read_from_disk(&cache_path)?
-            }
+            utils::read_from_disk(&cache_path)?
         } else {
             let cache_dir = cache_path.parent().ok_or_else(|| {
                 Error::InvalidPath(format!(
@@ -154,7 +149,7 @@ mod tests {
         #[test]
         fn when_10_peers_are_added_they_are_synced_to_disk() -> Result<(), Error> {
             let dirs = test_dirs();
-            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs), false)?;
+            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs))?;
 
             for _ in 0..10 {
                 cache.add_peer(rand_node_addr());
@@ -162,7 +157,7 @@ mod tests {
 
             assert_eq!(cache.peers.len(), 10);
 
-            let cache = BootstrapCache::new(Default::default(), Some(&dirs), false)?;
+            let cache = BootstrapCache::new(Default::default(), Some(&dirs))?;
             assert_eq!(cache.peers.len(), 10);
             Ok(())
         }
@@ -175,7 +170,7 @@ mod tests {
             assert!(hard_coded.insert(peer1));
 
             let dirs = test_dirs();
-            let mut cache = BootstrapCache::new(hard_coded, Some(&dirs), false)?;
+            let mut cache = BootstrapCache::new(hard_coded, Some(&dirs))?;
 
             cache.add_peer(peer1);
             cache.add_peer(peer2);
@@ -190,7 +185,7 @@ mod tests {
             let dirs = test_dirs();
             let port_base = 5000;
 
-            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs), false)?;
+            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs))?;
 
             for i in 0..MAX_CACHE_SIZE {
                 cache.add_peer(make_node_addr(port_base + i as u16));
@@ -209,7 +204,7 @@ mod tests {
         #[test]
         fn it_moves_given_node_to_the_top_of_the_list() -> Result<(), Error> {
             let dirs = test_dirs();
-            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs), false)?;
+            let mut cache = BootstrapCache::new(Default::default(), Some(&dirs))?;
             let peer1 = rand_node_addr();
             let peer2 = rand_node_addr();
             let peer3 = rand_node_addr();
