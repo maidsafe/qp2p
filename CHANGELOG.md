@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.22](https://github.com/maidsafe/qp2p/compare/v0.9.21...v0.9.22) (2021-02-20)
+
+
+### Features
+
+* **igd:** expose a feature to completely disable IGD support, downgrading igd crate to v0.11.1 ([0873b29](https://github.com/maidsafe/qp2p/commit/0873b29972f8c179bee585ed45f913cf0280bf61))
+
+
+### Bug Fixes
+
+* **echo_service:** dont contact echo_service if IGD was successful ([8899436](https://github.com/maidsafe/qp2p/commit/88994366c8a995fc941b9e8936fd3530ea18c24d))
+
 ### [0.9.21](https://github.com/maidsafe/qp2p/compare/v0.9.20...v0.9.21) (2021-02-19)
 
 

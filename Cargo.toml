@@ -6,7 +6,7 @@ homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/maidsafe/qp2p"
-version = "0.9.21"
+version = "0.9.22"
 authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 keywords = [ "quic" ]
 edition = "2018"
@@ -58,4 +58,4 @@ dirs-next = "2.0.0"
 
 [features]
 default = [ "igd" ]
-no-igd = []
+no-igd = [ ]
