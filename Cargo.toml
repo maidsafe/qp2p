@@ -12,7 +12,7 @@ keywords = [ "quic" ]
 edition = "2018"
 
 [dependencies]
-base64 = "~0.12.2"
+base64 = "0.13.0"
 bincode = "1.2.1"
 futures = "~0.3.8"
 log = "~0.4.8"
@@ -27,7 +27,7 @@ webpki = "~0.21.3"
   features = [ "serde" ]
 
   [dependencies.igd]
-  version = "~0.11.1"
+  version = "0.12.0"
   features = [ "aio" ]
   optional = true
 
@@ -50,9 +50,9 @@ webpki = "~0.21.3"
   features = [ "rt-multi-thread", "sync", "time", "macros", "io-std", "io-util" ]
 
 [dev-dependencies]
-flexi_logger = "~0.16.1"
+flexi_logger = "0.17.1"
 anyhow = "1.0.36"
-rand = "~0.7.3"
+rand = "0.8.3"
 
 [target."cfg(any(all(unix, not(any(target_os = \"android\", target_os = \"androideabi\", target_os = \"ios\"))), windows))".dependencies]
 dirs-next = "2.0.0"
