@@ -12,7 +12,7 @@ use igd::SearchOptions;
 use log::{debug, info, warn};
 use std::net::{SocketAddr, SocketAddrV4};
 use std::time::Duration;
-use tokio::time::{self, Instant};
+use quinn::tokio::time::{self, Instant};
 
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
 pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result<SocketAddrV4> {
@@ -23,7 +23,7 @@ pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result
         let ext_port = ext_sock_addr.port();
         let lease_interval = Duration::from_secs(lease_duration.into());
 
-        let _ = tokio::spawn(async move {
+        let _ = quinn::tokio::spawn(async move {
             let mut timer = time::interval_at(Instant::now() + lease_interval, lease_interval);
 
             loop {

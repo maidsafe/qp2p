@@ -3,9 +3,9 @@ use crate::utils;
 use anyhow::{anyhow, Result};
 use futures::future;
 use std::time::Duration;
-use tokio::time::timeout;
+use quinn::tokio::time::timeout;
 
-#[tokio::test]
+#[quinn::tokio::test]
 async fn successful_connection() -> Result<()> {
     utils::init_logging();
 

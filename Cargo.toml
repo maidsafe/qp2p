@@ -32,9 +32,9 @@ webpki = "~0.21.3"
   optional = true
 
   [dependencies.quinn]
-  git = "https://github.com/quinn-rs/quinn"
-  branch = "main"
-  features = [ "tls-rustls" ]
+  git = "https://github.com/nashley/quinn"
+  branch = "re-export_tokio"
+  features = [ "tls-rustls", "tokio-rt-multi-thread", "tokio-sync", "tokio-time", "tokio-macros", "tokio-io-std", "tokio-io-util" ]
   default-features = false
 
   [dependencies.rustls]
@@ -44,10 +44,6 @@ webpki = "~0.21.3"
   [dependencies.serde]
   version = "1.0.117"
   features = [ "derive" ]
-
-  [dependencies.tokio]
-  version = "1.2"
-  features = [ "rt-multi-thread", "sync", "time", "macros", "io-std", "io-util" ]
 
 [dev-dependencies]
 flexi_logger = "0.17.1"

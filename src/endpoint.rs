@@ -24,8 +24,8 @@ use super::{
 use bytes::Bytes;
 use log::{debug, error, info, trace, warn};
 use std::{net::SocketAddr, time::Duration};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
-use tokio::time::timeout;
+use quinn::tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use quinn::tokio::time::timeout;
 
 /// Host name of the Quic communication certificate used by peers
 // FIXME: make it configurable
@@ -423,7 +423,7 @@ impl Endpoint {
             debug!("Connecting to {:?}", &node);
             self.connect_to(&node).await?;
             let connection = self.get_connection(&node).ok_or(Error::MissingConnection)?;
-            let task_handle = tokio::spawn(async move {
+            let task_handle = quinn::tokio::spawn(async move {
                 let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {

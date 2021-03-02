@@ -13,7 +13,7 @@ use std::{
     net::SocketAddr,
 };
 use thiserror::Error;
-use tokio::sync::{broadcast, Mutex};
+use quinn::tokio::sync::{broadcast, Mutex};
 
 type Result<T = (), E = Error> = std::result::Result<T, E>;
 

@@ -18,8 +18,8 @@ use bytes::Bytes;
 use futures::stream::StreamExt;
 use log::{error, trace, warn};
 use std::net::SocketAddr;
-use tokio::sync::mpsc::UnboundedSender;
-use tokio::{
+use quinn::tokio::sync::mpsc::UnboundedSender;
+use quinn::tokio::{
     select,
     time::{timeout, Duration},
 };
@@ -148,7 +148,7 @@ pub(super) fn listen_for_incoming_connections(
     connection_tx: UnboundedSender<SocketAddr>,
     disconnection_tx: UnboundedSender<SocketAddr>,
 ) {
-    let _ = tokio::spawn(async move {
+    let _ = quinn::tokio::spawn(async move {
         loop {
             match quinn_incoming.next().await {
                 Some(quinn_conn) => match quinn_conn.await {
@@ -191,7 +191,7 @@ pub(super) fn listen_for_incoming_messages(
     disconnection_tx: UnboundedSender<SocketAddr>,
 ) {
     let src = *remover.remote_addr();
-    let _ = tokio::spawn(async move {
+    let _ = quinn::tokio::spawn(async move {
         loop {
             let message: Option<Bytes> = select! {
                 bytes = next_on_uni_streams(&mut uni_streams) => bytes,
