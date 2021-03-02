@@ -72,3 +72,5 @@ pub use quinn::ConnectionError;
 
 #[cfg(test)]
 mod tests;
+
+pub extern crate tokio;

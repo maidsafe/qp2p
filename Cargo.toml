@@ -56,3 +56,18 @@ dirs-next = "2.0.0"
 [features]
 default = [ "igd" ]
 no-igd = [ ]
+
+#Re-export tokio features:
+tokio-full = ["quinn/tokio-full"]
+tokio-fs = ["quinn/tokio-fs"]
+tokio-io-util = ["quinn/tokio-io-util"]
+tokio-io-std = ["quinn/tokio-io-std"]
+tokio-macros = ["quinn/tokio-macros"]
+tokio-net = ["quinn/tokio-net"]
+tokio-process = ["quinn/tokio-process"]
+tokio-rt = ["quinn/tokio-rt"]
+tokio-rt-multi-thread = ["quinn/tokio-rt-multi-thread"]
+tokio-signal = ["quinn/tokio-signal"]
+tokio-sync = ["quinn/tokio-sync"]
+tokio-test-util = ["quinn/tokio-test-util"]
+tokio-time = ["quinn/tokio-time"]
