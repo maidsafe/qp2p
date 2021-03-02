@@ -27,17 +27,17 @@ webpki = "~0.21.3"
   features = [ "serde" ]
 
   [dependencies.igd]
-  version = "~0.11.1"
+  version = "~0.12.0"
   features = [ "aio" ]
   optional = true
 
   [dependencies.quinn]
-  version = "~0.6.1"
+  version = "~0.7.0"
   features = [ "tls-rustls" ]
   default-features = false
 
   [dependencies.rustls]
-  version = "~0.17.0"
+  version = "~0.19.0"
   features = [ "dangerous_configuration" ]
 
   [dependencies.serde]
@@ -45,8 +45,8 @@ webpki = "~0.21.3"
   features = [ "derive" ]
 
   [dependencies.tokio]
-  version = "~0.2.24"
-  features = [ "rt-threaded", "sync", "time", "macros", "io-std", "io-util" ]
+  version = "1.2.0"
+  features = [ "rt", "sync", "time", "macros", "io-std", "io-util", "rt-multi-thread" ]
 
 [dev-dependencies]
 flexi_logger = "~0.16.1"
