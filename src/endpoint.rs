@@ -8,10 +8,10 @@
 // Software.
 
 use super::error::Error;
-use super::igd::forward_port;
 use super::wire_msg::WireMsg;
+#[cfg(not(feature = "no-igd"))]
+use super::{api::DEFAULT_UPNP_LEASE_DURATION_SEC, igd::forward_port};
 use super::{
-    api::DEFAULT_UPNP_LEASE_DURATION_SEC,
     connection_deduplicator::ConnectionDeduplicator,
     connection_pool::ConnectionPool,
     connections::{
@@ -32,7 +32,11 @@ use tokio::time::timeout;
 const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 
 // Number of seconds before timing out the IGD request to forward a port.
+#[cfg(not(feature = "no-igd"))]
 const PORT_FORWARD_TIMEOUT: u64 = 30;
+
+// Number of seconds before timing out the echo service query.
+const ECHO_SERVICE_QUERY_TIMEOUT: u64 = 30;
 
 /// Channel on which incoming messages can be listened to
 pub struct IncomingMessages(pub(crate) UnboundedReceiver<(SocketAddr, Bytes)>);
@@ -210,6 +214,12 @@ impl Endpoint {
 
         let mut addr = None;
 
+        #[cfg(feature = "no-igd")]
+        if self.qp2p_config.forward_port {
+            warn!("Ignoring 'forward_port' flag from config since IGD has been disabled (feature 'no-igd' has been set)");
+        }
+
+        #[cfg(not(feature = "no-igd"))]
         if self.qp2p_config.forward_port {
             // Attempt to use IGD for port forwarding
             match timeout(
@@ -240,22 +250,18 @@ impl Endpoint {
             }
         }
 
-        // Try to contact an echo service
-        match timeout(Duration::from_secs(30), self.query_ip_echo_service()).await {
-            Ok(res) => match res {
-                Ok(echo_res) => match addr {
-                    None => {
-                        addr = Some(echo_res);
-                    }
-                    Some(address) => {
-                        info!("Got response from echo service: {:?}, but IGD has already provided our external address: {:?}", echo_res, address);
-                    }
-                },
-                Err(err) => {
-                    info!("Could not contact echo service: {} - {:?}", err, err);
-                }
-            },
-            Err(e) => info!("Echo service timed out: {:?}", e),
+        if addr.is_none() {
+            // Try to contact an echo service
+            match timeout(
+                Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
+                self.query_ip_echo_service(),
+            )
+            .await
+            {
+                Ok(Ok(echo_res)) => addr = Some(echo_res),
+                Ok(Err(err)) => info!("Could not contact echo service: {} - {:?}", err, err),
+                Err(err) => info!("Query to echo service timed out: {:?}", err),
+            }
         }
 
         addr.map_or(Err(Error::NoEchoServiceResponse), |socket_addr| {

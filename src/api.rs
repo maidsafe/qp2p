@@ -15,7 +15,7 @@ use super::{
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
 use futures::{future, TryFutureExt};
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info, trace};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::PathBuf;
 
@@ -65,32 +65,19 @@ impl QuicP2p {
         bootstrap_nodes: &[SocketAddr],
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
-        let cfg = unwrap_config_or_default(cfg)?;
         debug!("Config passed in to qp2p: {:?}", cfg);
+        let cfg = unwrap_config_or_default(cfg)?;
+        debug!(
+            "Config decided on after unwrap and IGD in to qp2p: {:?}",
+            cfg
+        );
 
         let (port, allow_random_port) = cfg
             .local_port
             .map(|p| (p, false))
             .unwrap_or((DEFAULT_PORT_TO_TRY, true));
 
-        let ip = cfg.local_ip.unwrap_or_else(|| {
-            let mut our_ip = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
-
-            // check hard coded contacts for being local (aka loopback)
-            if let Some(contact) = cfg.hard_coded_contacts.iter().next() {
-                let ip = contact.ip();
-
-                if ip.is_loopback() {
-                    trace!(
-                        "IP from hardcoded contact is loopback, setting our IP to: {:?}",
-                        ip
-                    );
-                    our_ip = ip;
-                }
-            }
-
-            our_ip
-        });
+        let ip = cfg.local_ip.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
 
         let idle_timeout_msec = cfg.idle_timeout_msec.unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
 
@@ -108,12 +95,8 @@ impl QuicP2p {
 
         let mut qp2p_config = cfg.clone();
 
-        if cfg.clean {
-            BootstrapCache::clear_from_disk(custom_dirs.as_ref())?;
-        }
-
         let mut bootstrap_cache =
-            BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref(), cfg.fresh)?;
+            BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref())?;
         if use_bootstrap_cache {
             bootstrap_cache.peers_mut().extend(bootstrap_nodes);
         } else {
@@ -314,26 +297,20 @@ fn bind(
 }
 
 fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
-    let mut cfg = cfg.map_or(Config::read_or_construct_default(None)?, |cfg| cfg);
+    let mut cfg = cfg.map_or(Config::default(), |cfg| cfg);
+
     if cfg.local_ip.is_none() {
-        cfg.local_ip = match crate::igd::get_local_ip() {
-            Ok(addr) => Some(addr),
-            Err(err) => {
-                warn!("Error realizing local IP using IGD gateway: {}", err);
-                let socket = UdpSocket::bind("0.0.0.0:0")?;
-                let mut local_ip = None;
-                for addr in cfg.hard_coded_contacts.iter() {
-                    if let Ok(Ok(local_addr)) = socket.connect(addr).map(|()| socket.local_addr()) {
-                        local_ip = Some(local_addr.ip());
-                        break;
-                    }
-                }
-                local_ip
+        debug!("Realizing local IP by connecting to contacts");
+        let socket = UdpSocket::bind("0.0.0.0:0")?;
+        let mut local_ip = None;
+        for addr in cfg.hard_coded_contacts.iter() {
+            if let Ok(Ok(local_addr)) = socket.connect(addr).map(|()| socket.local_addr()) {
+                local_ip = Some(local_addr.ip());
+                break;
             }
         }
+        cfg.local_ip = local_ip;
     };
-    if cfg.clean {
-        Config::clear_config_from_disk(None)?;
-    }
+
     Ok(cfg)
 }

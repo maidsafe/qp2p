@@ -10,7 +10,7 @@
 use crate::error::{Error, Result};
 use igd::SearchOptions;
 use log::{debug, info, warn};
-use std::net::{IpAddr, SocketAddr, SocketAddrV4};
+use std::net::{SocketAddr, SocketAddrV4};
 use std::time::Duration;
 use tokio::time::{self, Instant};
 
@@ -103,14 +103,4 @@ pub(crate) async fn renew_port(
         info!("IPv6 for IGD is not supported");
         Err(Error::IgdNotSupported)
     }
-}
-
-// Find our local IP address by connecting to the gateway and querying local socket address.
-pub(crate) fn get_local_ip() -> Result<IpAddr> {
-    debug!("Attempting to realise local IP address with IGD...");
-    let gateway = igd::search_gateway(SearchOptions::default())?;
-    let gateway_conn = std::net::TcpStream::connect(gateway.addr)?;
-    let local_sa = gateway_conn.local_addr()?;
-    info!("Fetched IP address from IGD gateway: {:?}", &local_sa.ip());
-    Ok(local_sa.ip())
 }

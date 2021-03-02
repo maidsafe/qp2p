@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.9.24](https://github.com/maidsafe/qp2p/compare/v0.9.23...v0.9.24) (2021-02-25)
+
+### [0.9.23](https://github.com/maidsafe/qp2p/compare/v0.9.22...v0.9.23) (2021-02-21)
+
+### [0.9.22](https://github.com/maidsafe/qp2p/compare/v0.9.21...v0.9.22) (2021-02-20)
+
+
+### Features
+
+* **igd:** expose a feature to completely disable IGD support, downgrading igd crate to v0.11.1 ([0873b29](https://github.com/maidsafe/qp2p/commit/0873b29972f8c179bee585ed45f913cf0280bf61))
+
+
+### Bug Fixes
+
+* **echo_service:** dont contact echo_service if IGD was successful ([8899436](https://github.com/maidsafe/qp2p/commit/88994366c8a995fc941b9e8936fd3530ea18c24d))
+
+### [0.9.21](https://github.com/maidsafe/qp2p/compare/v0.9.20...v0.9.21) (2021-02-19)
+
+
+### Bug Fixes
+
+* **config:** do not use the IGD gateway to realize local IP address ([62dbcc4](https://github.com/maidsafe/qp2p/commit/62dbcc4d9eda960adabb76c13c10e98ab4842735))
+
+### [0.9.20](https://github.com/maidsafe/qp2p/compare/v0.9.19...v0.9.20) (2021-02-19)
+
+
+### Bug Fixes
+
+* use loopback even when IGD finds local ip, if network is loopback ([95f00b3](https://github.com/maidsafe/qp2p/commit/95f00b33739043d03bc8f382340c68e9f2b126d0))
+
+### [0.9.19](https://github.com/maidsafe/qp2p/compare/v0.9.18...v0.9.19) (2021-02-18)
+
+
+### Bug Fixes
+
+* **logs:** dont log expected messages at error level ([12b2c5a](https://github.com/maidsafe/qp2p/commit/12b2c5a6cca8b6b85b6239bc37e53a79df768921))
+
 ### [0.9.18](https://github.com/maidsafe/qp2p/compare/v0.9.17...v0.9.18) (2021-02-16)
 
 ### [0.9.17](https://github.com/maidsafe/qp2p/compare/v0.9.16...v0.9.17) (2021-02-15)

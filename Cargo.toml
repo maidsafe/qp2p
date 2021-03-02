@@ -6,7 +6,7 @@ homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/maidsafe/qp2p"
-version = "0.9.18"
+version = "0.9.24"
 authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 keywords = [ "quic" ]
 edition = "2018"
@@ -27,8 +27,9 @@ webpki = "~0.21.3"
   features = [ "serde" ]
 
   [dependencies.igd]
-  version = "~0.12.0"
+  version = "~0.11.1"
   features = [ "aio" ]
+  optional = true
 
   [dependencies.quinn]
   git = "https://github.com/quinn-rs/quinn"
@@ -55,3 +56,7 @@ rand = "~0.7.3"
 
 [target."cfg(any(all(unix, not(any(target_os = \"android\", target_os = \"androideabi\", target_os = \"ios\"))), windows))".dependencies]
 dirs-next = "2.0.0"
+
+[features]
+default = [ "igd" ]
+no-igd = [ ]
