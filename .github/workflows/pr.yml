@@ -84,7 +84,7 @@ jobs:
 
       # Run cargo tarpaulin & push result to coveralls.io
       - name: rust-tarpaulin code coverage check
-        uses: actions-rs/tarpaulin@master
+        uses: actions-rs/tarpaulin@v0.1
         with:
           args: '-v --release --out Lcov -- --skip echo_service' # test would timeout on CI
       - name: Push code coverage results to coveralls.io
@@ -113,7 +113,7 @@ jobs:
           override: true
 
       # Install and run cargo udeps to find unused cargo dependencies
-      - name: cargo-udeps duplicate dependency check
+      - name: cargo-udeps unused dependency check
         run: |
           cargo install cargo-udeps --locked
           cargo +nightly udeps --all-targets
