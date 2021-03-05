@@ -6,7 +6,7 @@ homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/maidsafe/qp2p"
-version = "0.9.25"
+version = "0.10.0"
 authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 keywords = [ "quic" ]
 edition = "2018"
@@ -46,7 +46,15 @@ webpki = "~0.21.3"
 
   [dependencies.tokio]
   version = "1.2.0"
-  features = [ "rt", "sync", "time", "macros", "io-std", "io-util", "rt-multi-thread" ]
+  features = [
+  "rt",
+  "sync",
+  "time",
+  "macros",
+  "io-std",
+  "io-util",
+  "rt-multi-thread"
+]
 
 [dev-dependencies]
 flexi_logger = "~0.16.1"
