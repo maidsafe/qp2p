@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.10.0](https://github.com/maidsafe/qp2p/compare/v0.9.25...v0.10.0) (2021-03-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tokio:** new Tokio v1 is not backward compatible with previous runtime versions < 1.
+
+* **tokio:** upgrade tokio to v1.2.0, quinn to v0.7.0 and rustls to v0.19.0 ([0465cf8](https://github.com/maidsafe/qp2p/commit/0465cf87c04e860fff3532bd6133c0497ced0c6d))
+
 ### [0.9.25](https://github.com/maidsafe/qp2p/compare/v0.9.24...v0.9.25) (2021-03-03)
 
 ### [0.9.24](https://github.com/maidsafe/qp2p/compare/v0.9.23...v0.9.24) (2021-02-25)
