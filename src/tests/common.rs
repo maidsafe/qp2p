@@ -1,6 +1,6 @@
 use super::{new_qp2p, random_msg};
 use crate::utils;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, format_err, Result};
 use futures::future;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -354,5 +354,62 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
         anyhow!("No message from alice");
     }
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn many_messages() -> Result<()> {
+    use futures::future;
+    use std::{convert::TryInto, sync::Arc};
+
+    utils::init_logging();
+
+    let num_messages: usize = 101;
+
+    let qp2p = new_qp2p()?;
+    let (send_endpoint, _, _, _) = qp2p.new_endpoint().await?;
+    let (recv_endpoint, _, mut recv_incoming_messages, _) = qp2p.new_endpoint().await?;
+
+    let send_addr = send_endpoint.socket_addr();
+    let recv_addr = recv_endpoint.socket_addr();
+
+    let mut tasks = Vec::new();
+
+    // Sender
+    let send_endpoint = Arc::new(send_endpoint);
+
+    for id in 0..num_messages {
+        tasks.push(tokio::spawn({
+            let endpoint = send_endpoint.clone();
+            async move {
+                log::info!("sending {}", id);
+                let msg = id.to_le_bytes().to_vec().into();
+                endpoint.connect_to(&recv_addr).await?;
+                endpoint.send_message(msg, &recv_addr).await?;
+                log::info!("sent {}", id);
+
+                Ok(())
+            }
+        }));
+    }
+
+    // Receiver
+    tasks.push(tokio::spawn({
+        async move {
+            for _ in 0..num_messages {
+                if let Some((src, msg)) = recv_incoming_messages.next().await {
+                    let id = usize::from_le_bytes(msg[..].try_into().unwrap());
+                    assert_eq!(src, send_addr);
+                    log::info!("received {}", id);
+                } else {
+                    return Err(format_err!("incoming messages stream closed unexpectedly"));
+                }
+            }
+
+            Ok(())
+        }
+    }));
+
+    let _ = future::try_join_all(tasks).await?;
     Ok(())
 }
