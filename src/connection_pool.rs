@@ -53,7 +53,7 @@ impl ConnectionPool {
             .is_some()
     }
 
-    pub fn remove(&mut self, addr: &SocketAddr) -> Vec<quinn::Connection> {
+    pub fn remove(&self, addr: &SocketAddr) -> Vec<quinn::Connection> {
         let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
 
         let keys_to_remove = store

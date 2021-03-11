@@ -173,7 +173,7 @@ async fn disconnection() -> Result<()> {
     utils::init_logging();
 
     let qp2p = new_qp2p()?;
-    let (mut alice, mut alice_incoming_connections, _, mut alice_disconnections) =
+    let (alice, mut alice_incoming_connections, _, mut alice_disconnections) =
         qp2p.new_endpoint().await?;
     let alice_addr = alice.socket_addr();
 
@@ -234,7 +234,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     ) = qp2p.new_endpoint().await?;
     let alice_addr = alice.socket_addr();
 
-    let (mut bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
+    let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
         qp2p.new_endpoint().await?;
     let bob_addr = bob.socket_addr();
 
