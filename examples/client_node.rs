@@ -18,8 +18,9 @@
 
 mod common;
 
+use anyhow::{Context, Result};
 use bytes::Bytes;
-use common::{EventReceivers, Rpc, Event};
+use common::{Event, EventReceivers, Rpc};
 use crc::crc32;
 use log::{debug, error, info};
 use qp2p::{Config, Endpoint, QuicP2p};
@@ -27,7 +28,6 @@ use rand::{self, distributions::Standard, seq::IteratorRandom, Rng};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use structopt::StructOpt;
-use anyhow::{Context, Result};
 use tracing_subscriber::EnvFilter;
 
 /// Client node will be connecting to bootstrap node from which it will receive contacts
@@ -84,11 +84,7 @@ impl ClientNode {
             .with_context(|| "No valid bootstrap node was provided.".to_string())?;
 
         // let (event_tx, event_rx) = new_unbounded_channels();
-        let qp2p = QuicP2p::with_config(
-            Some(config),
-            &[],
-            false
-        )?;
+        let qp2p = QuicP2p::with_config(Some(config), &[], false)?;
 
         let large_msg = Bytes::from(random_data_with_hash(LARGE_MSG_SIZE));
         assert!(hash_correct(&large_msg));
@@ -96,14 +92,15 @@ impl ClientNode {
         let small_msg = Bytes::from(random_data_with_hash(SMALL_MSG_SIZE));
         assert!(hash_correct(&small_msg));
 
-        let (endpoint, incoming_connections, incoming_messages, disconnections) = qp2p.new_endpoint().await?;
+        let (endpoint, incoming_connections, incoming_messages, disconnections) =
+            qp2p.new_endpoint().await?;
         let our_addr = endpoint.socket_addr();
         info!("Our address: {}", our_addr);
 
         let event_rx = EventReceivers {
             incoming_connections,
             incoming_messages,
-            disconnections
+            disconnections,
         };
 
         Ok(Self {
@@ -150,8 +147,12 @@ impl ClientNode {
             info!("Connected to bootstrap node. Waiting for other node contacts...");
         } else if self.client_nodes.contains(&peer) {
             // TODO: handle tokens properly. Currently just hardcoding to 0 in example
-            self.endpoint.send_message(self.large_msg.clone(), &peer).await?;
-            self.endpoint.send_message(self.small_msg.clone(), &peer).await?;
+            self.endpoint
+                .send_message(self.large_msg.clone(), &peer)
+                .await?;
+            self.endpoint
+                .send_message(self.small_msg.clone(), &peer)
+                .await?;
             self.sent_messages += 1;
         }
         Ok(())

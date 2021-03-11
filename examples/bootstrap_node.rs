@@ -21,7 +21,7 @@ mod common;
 
 use anyhow::Result;
 use bytes::Bytes;
-use common::{Rpc, Event, EventReceivers};
+use common::{Event, EventReceivers, Rpc};
 use log::{error, info, warn};
 use qp2p::{Config, QuicP2p};
 use serde::{Deserialize, Serialize};
@@ -54,13 +54,14 @@ async fn main() -> Result<()> {
     let qp2p = QuicP2p::with_config(
         Some(bootstrap_node_config.quic_p2p_opts),
         Default::default(),
-        false
+        false,
     )?;
-    let (endpoint, incoming_connections, incoming_messages, disconnections) = qp2p.new_endpoint().await?;
+    let (endpoint, incoming_connections, incoming_messages, disconnections) =
+        qp2p.new_endpoint().await?;
     let mut event_rx = EventReceivers {
         incoming_connections,
         incoming_messages,
-        disconnections
+        disconnections,
     };
 
     let our_addr = endpoint.socket_addr();

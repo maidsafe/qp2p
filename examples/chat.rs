@@ -11,10 +11,10 @@
 
 mod common;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use bytes::Bytes;
 use common::{Event, EventReceivers};
-use qp2p::{Config, QuicP2p, Endpoint};
+use qp2p::{Config, Endpoint, QuicP2p};
 use rand::{distributions::Standard, Rng};
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
@@ -23,8 +23,8 @@ use std::{
     net::SocketAddr,
     sync::{Arc, Mutex},
 };
-use tokio::task::JoinHandle;
 use structopt::StructOpt;
+use tokio::task::JoinHandle;
 
 struct PeerList {
     peers: Vec<SocketAddr>,
@@ -76,16 +76,13 @@ struct CliArgs {
 async fn main() -> Result<()> {
     let CliArgs { quic_p2p_opts } = CliArgs::from_args();
 
-    let qp2p = QuicP2p::with_config(
-        Some(quic_p2p_opts),
-        Default::default(),
-        false
-    )?;
-    let (mut endpoint, incoming_connections, incoming_messages, disconnections) = qp2p.new_endpoint().await?;
+    let qp2p = QuicP2p::with_config(Some(quic_p2p_opts), Default::default(), false)?;
+    let (endpoint, incoming_connections, incoming_messages, disconnections) =
+        qp2p.new_endpoint().await?;
     let event_rx = EventReceivers {
         incoming_connections,
         incoming_messages,
-        disconnections
+        disconnections,
     };
 
     print_logo();
@@ -108,7 +105,7 @@ async fn main() -> Result<()> {
                 let mut peerlist = peerlist.lock().unwrap();
                 let result = match cmd {
                     "ourinfo" => {
-                        print_ourinfo(&mut endpoint)?;
+                        print_ourinfo(&endpoint);
                         Ok(())
                     }
                     "addpeer" => peerlist.insert_from_str(&args.collect::<Vec<_>>().join(" ")),
@@ -118,12 +115,12 @@ async fn main() -> Result<()> {
                     }
                     "delpeer" => args
                         .next()
-                        .ok_or(anyhow!("Missing index argument"))
-                        .and_then(|idx| idx.parse().or(Err(anyhow!("Invalid index argument"))))
+                        .ok_or_else(|| anyhow!("Missing index argument"))
+                        .and_then(|idx| idx.parse().map_err(|_| anyhow!("Invalid index argument")))
                         .and_then(|idx| peerlist.remove(idx))
                         .and(Ok(())),
-                    "send" => on_cmd_send(&mut args, &peerlist, &mut endpoint).await,
-                    "sendrand" => on_cmd_send_rand(&mut args, &peerlist, &mut endpoint).await,
+                    "send" => on_cmd_send(&mut args, &peerlist, &endpoint).await,
+                    "sendrand" => on_cmd_send_rand(&mut args, &peerlist, &endpoint).await,
                     "quit" | "exit" => break 'outer,
                     "help" => {
                         println!(
@@ -154,10 +151,15 @@ async fn on_cmd_send<'a>(
     peer_list: &PeerList,
     endpoint: &Endpoint,
 ) -> Result<()> {
-    let peer = args.next()
+    let peer = args
+        .next()
         .with_context(|| "Missing index argument")
-        .and_then(|idx| idx.parse().or(Err(anyhow!("Invalid index argument"))))
-        .and_then(|idx| peer_list.get(idx).ok_or(anyhow!("Index out of bounds")))?;
+        .and_then(|idx| idx.parse().map_err(|_| anyhow!("Invalid index argument")))
+        .and_then(|idx| {
+            peer_list
+                .get(idx)
+                .ok_or_else(|| anyhow!("Index out of bounds"))
+        })?;
     let msg = Bytes::from(args.collect::<Vec<_>>().join(" "));
     endpoint.send_message(msg, peer).await.map_err(From::from)
 }
@@ -169,21 +171,33 @@ async fn on_cmd_send_rand<'a>(
     peer_list: &PeerList,
     endpoint: &Endpoint,
 ) -> Result<()> {
-    let (addr, msg_len) = args.next()
-        .ok_or(anyhow!("Missing index argument"))
-        .and_then(|idx| idx.parse().or(Err(anyhow!("Invalid index argument"))))
-        .and_then(|idx| peer_list.get(idx).ok_or(anyhow!("Index out of bounds")))
+    let (addr, msg_len) = args
+        .next()
+        .ok_or_else(|| anyhow!("Missing index argument"))
+        .and_then(|idx| idx.parse().map_err(|_| anyhow!("Invalid index argument")))
+        .and_then(|idx| {
+            peer_list
+                .get(idx)
+                .ok_or_else(|| anyhow!("Index out of bounds"))
+        })
         .and_then(|peer| {
             args.next()
-                .ok_or(anyhow!("Missing bytes count"))
-                .and_then(|bytes| bytes.parse::<usize>().or(Err(anyhow!("Invalid bytes count argument"))))
+                .ok_or_else(|| anyhow!("Missing bytes count"))
+                .and_then(|bytes| {
+                    bytes
+                        .parse::<usize>()
+                        .map_err(|_| anyhow!("Invalid bytes count argument"))
+                })
                 .map(|bytes_to_send| (peer, bytes_to_send))
         })?;
-        let data = Bytes::from(random_vec(msg_len));
-        endpoint.send_message(data,addr).await.map_err(From::from)
+    let data = Bytes::from(random_vec(msg_len));
+    endpoint.send_message(data, addr).await.map_err(From::from)
 }
 
-fn handle_qp2p_events(mut event_rx: EventReceivers, peer_list: Arc<Mutex<PeerList>>) -> JoinHandle<()> {
+fn handle_qp2p_events(
+    mut event_rx: EventReceivers,
+    peer_list: Arc<Mutex<PeerList>>,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
             match event {
@@ -195,11 +209,11 @@ fn handle_qp2p_events(mut event_rx: EventReceivers, peer_list: Arc<Mutex<PeerLis
                         println!(
                             "[{}] {}",
                             src,
-                            String::from_utf8(msg.to_vec()).unwrap_or("Invalid String".to_string())
+                            String::from_utf8(msg.to_vec())
+                                .unwrap_or_else(|_| "Invalid String".to_string())
                         );
                     }
-                }
-                // event => println!("Unexpected quic-p2p event: {:?}", event),
+                } // event => println!("Unexpected quic-p2p event: {:?}", event),
             }
         }
     })
@@ -215,11 +229,10 @@ fn parse_socket_addr(input: &str) -> Result<SocketAddr> {
     input.parse().map_err(|_| anyhow!("Invalid socket address"))
 }
 
-fn print_ourinfo(endpoint: &Endpoint) -> Result<()> {
+fn print_ourinfo(endpoint: &Endpoint) {
     let ourinfo = endpoint.socket_addr();
 
     println!("Our info: {}", ourinfo);
-    Ok(())
 }
 
 fn print_logo() {

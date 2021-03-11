@@ -13,7 +13,7 @@ use std::net::SocketAddr;
 use bytes::Bytes;
 use crossbeam_channel as mpmc;
 use futures::{select, FutureExt};
-use qp2p::{IncomingConnections, IncomingMessages, DisconnectionEvents};
+use qp2p::{DisconnectionEvents, IncomingConnections, IncomingMessages};
 use serde::{Deserialize, Serialize};
 
 /// Remote procedure call for our examples to communicate.
@@ -33,9 +33,8 @@ pub enum Event {
 pub struct EventReceivers {
     pub incoming_messages: IncomingMessages,
     pub incoming_connections: IncomingConnections,
-    pub disconnections: DisconnectionEvents
+    pub disconnections: DisconnectionEvents,
 }
-
 
 #[allow(unused)]
 pub struct EventSenders {
