@@ -271,7 +271,7 @@ impl Endpoint {
     }
 
     /// Removes all existing connections to a given peer
-    pub fn disconnect_from(&mut self, peer_addr: &SocketAddr) -> Result<()> {
+    pub fn disconnect_from(&self, peer_addr: &SocketAddr) -> Result<()> {
         self.connection_pool
             .remove(peer_addr)
             .iter()

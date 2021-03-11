@@ -173,7 +173,7 @@ async fn disconnection() -> Result<()> {
     utils::init_logging();
 
     let qp2p = new_qp2p()?;
-    let (mut alice, mut alice_incoming_connections, _, mut alice_disconnections) =
+    let (alice, mut alice_incoming_connections, _, mut alice_disconnections) =
         qp2p.new_endpoint().await?;
     let alice_addr = alice.socket_addr();
 
@@ -234,7 +234,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     ) = qp2p.new_endpoint().await?;
     let alice_addr = alice.socket_addr();
 
-    let (mut bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
+    let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
         qp2p.new_endpoint().await?;
     let bob_addr = bob.socket_addr();
 
@@ -354,5 +354,66 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
         anyhow!("No message from alice");
     }
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn many_messages() -> Result<()> {
+    use futures::future;
+    use std::{convert::TryInto, sync::Arc};
+
+    utils::init_logging();
+
+    let num_messages: usize = 10_000;
+
+    let qp2p = new_qp2p()?;
+    let (send_endpoint, _, _, _) = qp2p.new_endpoint().await?;
+    let (recv_endpoint, _, mut recv_incoming_messages, _) = qp2p.new_endpoint().await?;
+
+    let send_addr = send_endpoint.socket_addr();
+    let recv_addr = recv_endpoint.socket_addr();
+
+    let mut tasks = Vec::new();
+
+    // Sender
+    let send_endpoint = Arc::new(send_endpoint);
+
+    for id in 0..num_messages {
+        tasks.push(tokio::spawn({
+            let endpoint = send_endpoint.clone();
+            async move {
+                log::info!("sending {}", id);
+                let msg = id.to_le_bytes().to_vec().into();
+                endpoint.connect_to(&recv_addr).await?;
+                endpoint.send_message(msg, &recv_addr).await?;
+                log::info!("sent {}", id);
+
+                Ok::<_, anyhow::Error>(())
+            }
+        }));
+    }
+
+    // Receiver
+    tasks.push(tokio::spawn({
+        async move {
+            let mut num_received = 0;
+
+            while let Some((src, msg)) = recv_incoming_messages.next().await {
+                let id = usize::from_le_bytes(msg[..].try_into().unwrap());
+                assert_eq!(src, send_addr);
+                log::info!("received {}", id);
+
+                num_received += 1;
+
+                if num_received >= num_messages {
+                    break;
+                }
+            }
+
+            Ok(())
+        }
+    }));
+
+    let _ = future::try_join_all(tasks).await?;
     Ok(())
 }
