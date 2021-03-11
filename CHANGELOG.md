@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.10.1](https://github.com/maidsafe/qp2p/compare/v0.10.0...v0.10.1) (2021-03-11)
+
+
+### Bug Fixes
+
+* read multiple messages from a single stream ([949fc4b](https://github.com/maidsafe/qp2p/commit/949fc4b49b0e3c2d4b6afb96b58a41166e4e640f))
+
 ## [0.10.0](https://github.com/maidsafe/qp2p/compare/v0.9.25...v0.10.0) (2021-03-05)
 
 
