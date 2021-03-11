@@ -47,6 +47,12 @@ impl WireMsg {
         recv.read_exact(&mut data).await?;
         trace!("Got new message with {} bytes.", data.len());
 
+        // FIXME: we may want to support receiving not only a single message
+        // on each stream, so we should keep reading the RecvStream till the end,
+        // parsing wire msgs instead of just discarding them after a first message is read.
+        let mut data2: Vec<u8> = vec![0; msg_header.data_len()];
+        let _ = recv.read_exact(&mut data2).await;
+
         if data.is_empty() {
             Err(Error::EmptyResponse)
         } else if msg_flag == USER_MSG_FLAG {
