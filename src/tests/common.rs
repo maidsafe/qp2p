@@ -1,6 +1,6 @@
 use super::{new_qp2p, random_msg};
 use crate::utils;
-use anyhow::{anyhow, format_err, Result};
+use anyhow::{anyhow, Result};
 use futures::future;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -364,7 +364,7 @@ async fn many_messages() -> Result<()> {
 
     utils::init_logging();
 
-    let num_messages: usize = 101;
+    let num_messages: usize = 10_000;
 
     let qp2p = new_qp2p()?;
     let (send_endpoint, _, _, _) = qp2p.new_endpoint().await?;
@@ -388,7 +388,7 @@ async fn many_messages() -> Result<()> {
                 endpoint.send_message(msg, &recv_addr).await?;
                 log::info!("sent {}", id);
 
-                Ok(())
+                Ok::<_, anyhow::Error>(())
             }
         }));
     }
@@ -396,13 +396,17 @@ async fn many_messages() -> Result<()> {
     // Receiver
     tasks.push(tokio::spawn({
         async move {
-            for _ in 0..num_messages {
-                if let Some((src, msg)) = recv_incoming_messages.next().await {
-                    let id = usize::from_le_bytes(msg[..].try_into().unwrap());
-                    assert_eq!(src, send_addr);
-                    log::info!("received {}", id);
-                } else {
-                    return Err(format_err!("incoming messages stream closed unexpectedly"));
+            let mut num_received = 0;
+
+            while let Some((src, msg)) = recv_incoming_messages.next().await {
+                let id = usize::from_le_bytes(msg[..].try_into().unwrap());
+                assert_eq!(src, send_addr);
+                log::info!("received {}", id);
+
+                num_received += 1;
+
+                if num_received >= num_messages {
+                    break;
                 }
             }
 
