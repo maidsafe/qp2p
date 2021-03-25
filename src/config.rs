@@ -36,7 +36,7 @@ pub struct Config {
     /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
     /// If external port is provided it means that the user is carrying out manual port forwarding and this field is mandatory.
     /// This will be the internal port number mapped to the process
-    #[structopt(short, long)]
+    #[structopt(long)]
     pub local_port: Option<u16>,
     /// IP address for the listener. If none is supplied and `forward_port` is enabled, we will use IGD to realize the
     /// local IP address of the machine. If IGD fails the application will exit.
