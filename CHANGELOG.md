@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.11.0](https://github.com/maidsafe/qp2p/compare/v0.10.1...v0.11.0) (2021-03-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **header:** this changes the data_len field in MsgHeader from usize
+to u32
+
+* **header:** Allow compilation on 32 bit architectures ([7c39399](https://github.com/maidsafe/qp2p/commit/7c39399dbc4596e5497cd0b8ef11ab5532d63529))
+
 ### [0.10.1](https://github.com/maidsafe/qp2p/compare/v0.10.0...v0.10.1) (2021-03-11)
 
 
