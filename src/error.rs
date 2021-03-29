@@ -62,7 +62,7 @@ pub enum Error {
     EchoServiceFailure(String),
     /// TLS error
     #[error("TLS Error ")]
-    TLS(#[from] rustls::TLSError),
+    Tls(#[from] rustls::TLSError),
     /// Serialisation error, which can happen on different type of data.
     #[error("Serialisation error")]
     Serialisation(#[from] bincode::Error),
