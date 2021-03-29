@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.11.1](https://github.com/maidsafe/qp2p/compare/v0.11.0...v0.11.1) (2021-03-28)
+
+
+### Features
+
+* add peer address to connection log messages ([1130207](https://github.com/maidsafe/qp2p/commit/113020747804eb4a94172dbba9162e9e66a84ce2))
+
 ## [0.11.0](https://github.com/maidsafe/qp2p/compare/v0.10.1...v0.11.0) (2021-03-25)
 
 
