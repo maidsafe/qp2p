@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.11.2](https://github.com/maidsafe/qp2p/compare/v0.11.1...v0.11.2) (2021-03-29)
+
+
+### Bug Fixes
+
+* **clippy:** rename error variant to fix clippy issue with latest rust ([c2d0227](https://github.com/maidsafe/qp2p/commit/c2d0227bc4179a264dbf1aac16448b018f16dd06))
+* **config:** remove duplicate options for config params ([b40f2ef](https://github.com/maidsafe/qp2p/commit/b40f2ef7fc8ef217536b29510a42988f66b1460f))
+* remove duplicate short option ([30fd110](https://github.com/maidsafe/qp2p/commit/30fd110d7083041888fa4b3712cd1782efec8deb))
+
 ### [0.11.1](https://github.com/maidsafe/qp2p/compare/v0.11.0...v0.11.1) (2021-03-28)
 
 
