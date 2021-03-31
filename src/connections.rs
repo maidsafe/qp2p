@@ -210,11 +210,14 @@ async fn read_on_uni_streams(
     while let Some(result) = uni_streams.next().await {
         match result {
             Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
-                trace!("Connection terminated by peer.");
+                trace!("Connection terminated by peer {:?}.", peer_addr);
                 break;
             }
             Err(err) => {
-                warn!("Failed to read incoming message on uni-stream: {}", err);
+                warn!(
+                    "Failed to read incoming message on uni-stream for peer {:?} with error: {}",
+                    peer_addr, err
+                );
                 break;
             }
             Ok(mut recv) => loop {
@@ -225,7 +228,10 @@ async fn read_on_uni_streams(
                     Ok(msg) => error!("Unexpected message type: {:?}", msg),
                     Err(Error::StreamRead(quinn::ReadExactError::FinishedEarly)) => break,
                     Err(err) => {
-                        error!("Failed reading from a uni-stream: {}", err);
+                        error!(
+                            "Failed reading from a uni-stream for peer {:?} with error: {}",
+                            peer_addr, err
+                        );
                         break;
                     }
                 }
@@ -243,11 +249,14 @@ async fn read_on_bi_streams(
     while let Some(result) = bi_streams.next().await {
         match result {
             Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
-                trace!("Connection terminated by peer.");
+                trace!("Connection terminated by peer {:?}.", peer_addr);
                 break;
             }
             Err(err) => {
-                warn!("Failed to read incoming message on bi-stream: {}", err);
+                warn!(
+                    "Failed to read incoming message on bi-stream for peer {:?} with error: {}",
+                    peer_addr, err
+                );
                 break;
             }
             Ok((mut send, mut recv)) => loop {
@@ -257,7 +266,10 @@ async fn read_on_bi_streams(
                     }
                     Ok(WireMsg::EndpointEchoReq) => {
                         if let Err(error) = handle_endpoint_echo_req(peer_addr, &mut send).await {
-                            error!("Failed to handle Echo Request: {}", error);
+                            error!(
+                                "Failed to handle Echo Request for peer {:?} with error: {}",
+                                peer_addr, error
+                            );
                         }
                     }
                     Ok(WireMsg::EndpointVerificationReq(address_sent)) => {
@@ -265,15 +277,21 @@ async fn read_on_bi_streams(
                             handle_endpoint_verification_req(peer_addr, address_sent, &mut send)
                                 .await
                         {
-                            error!("Failed to handle Endpoint verification request: {}", error);
+                            error!("Failed to handle Endpoint verification request for peer {:?} with error: {}", peer_addr, error);
                         }
                     }
                     Ok(msg) => {
-                        error!("Unexpected message type: {:?}", msg);
+                        error!(
+                            "Unexpected message type from peer {:?}: {:?}",
+                            peer_addr, msg
+                        );
                     }
                     Err(Error::StreamRead(quinn::ReadExactError::FinishedEarly)) => break,
                     Err(err) => {
-                        error!("Failed reading from a bi-stream: {}", err);
+                        error!(
+                            "Failed reading from a bi-stream for peer {:?} with error: {}",
+                            peer_addr, err
+                        );
                         break;
                     }
                 }
@@ -286,10 +304,10 @@ async fn handle_endpoint_echo_req(
     peer_addr: SocketAddr,
     send_stream: &mut quinn::SendStream,
 ) -> Result<()> {
-    trace!("Received Echo Request");
+    trace!("Received Echo Request from peer {:?}", peer_addr);
     let message = WireMsg::EndpointEchoResp(peer_addr);
     message.write_to_stream(send_stream).await?;
-    trace!("Responded to Echo request");
+    trace!("Responded to Echo request from peer {:?}", peer_addr);
     Ok(())
 }
 
@@ -322,9 +340,12 @@ async fn handle_endpoint_verification_req(
         Ok(Ok(WireMsg::EndpointEchoResp(_)))
     );
 
-    let message = WireMsg::EndpointVerficationResp(verified);
+    let message = WireMsg::EndpointVerificationResp(verified);
     message.write_to_stream(send_stream).await?;
-    trace!("Responded to Endpoint verification request");
+    trace!(
+        "Responded to Endpoint verification request from {:?}",
+        peer_addr
+    );
 
     Ok(())
 }
