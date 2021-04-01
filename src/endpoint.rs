@@ -169,13 +169,11 @@ impl Endpoint {
             } else {
                 warn!("Public IP address not verified since bootstrap contacts are empty");
             }
+        } else if !local_addr.ip().is_loopback() {
+            info!("local addr is not loopback: {:?}", local_addr);
+            endpoint.public_addr = Some(local_addr);
         } else {
-            if !local_addr.ip().is_loopback() {
-                info!("local addr is not loopback: {:?}", local_addr);
-                endpoint.public_addr = Some(local_addr);
-            } else {
-                endpoint.public_addr = Some(endpoint.fetch_public_address().await?);
-            }
+            endpoint.public_addr = Some(endpoint.fetch_public_address().await?);
         }
 
         listen_for_incoming_connections(
