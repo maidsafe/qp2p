@@ -108,7 +108,10 @@ impl Endpoint {
         IncomingMessages,
         DisconnectionEvents,
     )> {
+        debug!("Making a new endpoint...");
         let local_addr = quic_endpoint.local_addr()?;
+        debug!("Local addr is:{:?}.", local_addr);
+
         let public_addr = match (qp2p_config.external_ip, qp2p_config.external_port) {
             (Some(ip), Some(port)) => Some(SocketAddr::new(ip, port)),
             _ => None,
@@ -131,6 +134,7 @@ impl Endpoint {
             connection_pool: connection_pool.clone(),
             connection_deduplicator: ConnectionDeduplicator::new(),
         };
+        debug!("Endpoint public addrress: {:?}", endpoint.public_addr);
 
         if let Some(addr) = endpoint.public_addr {
             // External IP and port number is provided
@@ -166,7 +170,12 @@ impl Endpoint {
                 warn!("Public IP address not verified since bootstrap contacts are empty");
             }
         } else {
-            endpoint.public_addr = Some(endpoint.fetch_public_address().await?);
+            if !local_addr.ip().is_loopback() {
+                info!("local addr is not loopback: {:?}", local_addr);
+                endpoint.public_addr = Some(local_addr);
+            } else {
+                endpoint.public_addr = Some(endpoint.fetch_public_address().await?);
+            }
         }
 
         listen_for_incoming_connections(
@@ -203,6 +212,11 @@ impl Endpoint {
     /// Note that if such an obtained address is of unspecified category we will ignore that as
     /// such an address cannot be reached and hence not useful.
     async fn fetch_public_address(&mut self) -> Result<SocketAddr> {
+        debug!(
+            "Fetching public addr as none was found, localaddr is: {:?}",
+            self.local_addr
+        );
+
         // Skip port forwarding
         if self.local_addr.ip().is_loopback() {
             return Ok(self.local_addr);
@@ -221,6 +235,7 @@ impl Endpoint {
 
         #[cfg(not(feature = "no-igd"))]
         if self.qp2p_config.forward_port {
+            debug!("Should be attempting to port forward...");
             // Attempt to use IGD for port forwarding
             match timeout(
                 Duration::from_secs(PORT_FORWARD_TIMEOUT),
@@ -263,7 +278,6 @@ impl Endpoint {
                 Err(err) => info!("Query to echo service timed out: {:?}", err),
             }
         }
-
         addr.map_or(Err(Error::NoEchoServiceResponse), |socket_addr| {
             self.public_addr = Some(socket_addr);
             Ok(socket_addr)

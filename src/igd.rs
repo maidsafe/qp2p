@@ -16,6 +16,7 @@ use tokio::time::{self, Instant};
 
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
 pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result<SocketAddrV4> {
+    debug!("local addre in forwrd port: {:?}", local_addr);
     let igd_res = add_port(local_addr, lease_duration).await;
 
     if let Ok(ref ext_sock_addr) = igd_res {
