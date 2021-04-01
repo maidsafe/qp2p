@@ -220,7 +220,7 @@ impl Endpoint {
         }
 
         #[cfg(not(feature = "no-igd"))]
-        if self.qp2p_config.forward_port {
+        if self.qp2p_config.use_igd {
             // Attempt to use IGD for port forwarding
             match timeout(
                 Duration::from_secs(PORT_FORWARD_TIMEOUT),
