@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::QuicP2p;
+use crate::Endpoint;
 
 use super::{
     connection_pool::{ConnectionPool, ConnectionRemover},
@@ -144,6 +144,7 @@ pub(super) fn listen_for_incoming_connections(
     message_tx: UnboundedSender<(SocketAddr, Bytes)>,
     connection_tx: UnboundedSender<SocketAddr>,
     disconnection_tx: UnboundedSender<SocketAddr>,
+    endpoint: Endpoint,
 ) {
     let _ = tokio::spawn(async move {
         loop {
@@ -164,6 +165,7 @@ pub(super) fn listen_for_incoming_connections(
                             pool_handle,
                             message_tx.clone(),
                             disconnection_tx.clone(),
+                            endpoint.clone(),
                         );
                     }
                     Err(err) => {
@@ -186,12 +188,13 @@ pub(super) fn listen_for_incoming_messages(
     remover: ConnectionRemover,
     message_tx: UnboundedSender<(SocketAddr, Bytes)>,
     disconnection_tx: UnboundedSender<SocketAddr>,
+    endpoint: Endpoint,
 ) {
     let src = *remover.remote_addr();
     let _ = tokio::spawn(async move {
         let _ = future::join(
             read_on_uni_streams(&mut uni_streams, src, message_tx.clone()),
-            read_on_bi_streams(&mut bi_streams, src, message_tx),
+            read_on_bi_streams(&mut bi_streams, src, message_tx, &endpoint),
         )
         .await;
 
@@ -245,6 +248,7 @@ async fn read_on_bi_streams(
     bi_streams: &mut quinn::IncomingBiStreams,
     peer_addr: SocketAddr,
     message_tx: UnboundedSender<(SocketAddr, Bytes)>,
+    endpoint: &Endpoint,
 ) {
     while let Some(result) = bi_streams.next().await {
         match result {
@@ -273,9 +277,13 @@ async fn read_on_bi_streams(
                         }
                     }
                     Ok(WireMsg::EndpointVerificationReq(address_sent)) => {
-                        if let Err(error) =
-                            handle_endpoint_verification_req(peer_addr, address_sent, &mut send)
-                                .await
+                        if let Err(error) = handle_endpoint_verification_req(
+                            peer_addr,
+                            address_sent,
+                            &mut send,
+                            endpoint,
+                        )
+                        .await
                         {
                             error!("Failed to handle Endpoint verification request for peer {:?} with error: {}", peer_addr, error);
                         }
@@ -315,6 +323,7 @@ async fn handle_endpoint_verification_req(
     peer_addr: SocketAddr,
     addr_sent: SocketAddr,
     send_stream: &mut quinn::SendStream,
+    endpoint: &Endpoint,
 ) -> Result<()> {
     trace!(
         "Received Endpoint verification request {:?} from {:?}",
@@ -322,11 +331,7 @@ async fn handle_endpoint_verification_req(
         peer_addr
     );
     // Verify if the peer's endpoint is reachable via EchoServiceReq
-    let qp2p = QuicP2p::with_config(Default::default(), &[], false)?;
-    let (temporary_endpoint, _, _, _) = qp2p.new_endpoint().await?;
-    let (mut temp_send, mut temp_recv) = temporary_endpoint
-        .open_bidirectional_stream(&addr_sent)
-        .await?;
+    let (mut temp_send, mut temp_recv) = endpoint.open_bidirectional_stream(&addr_sent).await?;
     let message = WireMsg::EndpointEchoReq;
     message
         .write_to_stream(&mut temp_send.quinn_send_stream)

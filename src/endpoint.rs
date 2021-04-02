@@ -175,6 +175,7 @@ impl Endpoint {
             message_tx,
             connection_tx,
             disconnection_tx,
+            endpoint.clone(),
         );
 
         Ok((
@@ -367,6 +368,7 @@ impl Endpoint {
             guard,
             self.message_tx.clone(),
             self.disconnection_tx.clone(),
+            self.clone(),
         );
 
         self.connection_deduplicator
