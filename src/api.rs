@@ -16,12 +16,12 @@ use super::{
 };
 use futures::{future, TryFutureExt};
 use log::{debug, error, info, trace};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
 
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.
-pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
+pub const DEFAULT_PORT_TO_TRY: u16 = 0;
 
 /// Default duration of a UPnP lease, in seconds.
 pub const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
@@ -77,7 +77,7 @@ impl QuicP2p {
             .map(|p| (p, false))
             .unwrap_or((DEFAULT_PORT_TO_TRY, true));
 
-        let ip = cfg.local_ip.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+        let ip = cfg.local_ip.ok_or(Error::UnspecifiedLocalIp)?;
 
         let idle_timeout_msec = cfg.idle_timeout_msec.unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
 

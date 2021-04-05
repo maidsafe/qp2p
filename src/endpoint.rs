@@ -205,8 +205,8 @@ impl Endpoint {
     /// such an address cannot be reached and hence not useful.
     async fn fetch_public_address(&mut self) -> Result<SocketAddr> {
         // Skip port forwarding
-        if self.local_addr.ip().is_loopback() {
-            return Ok(self.local_addr);
+        if self.local_addr.ip().is_loopback() || !self.qp2p_config.forward_port {
+            self.public_addr = Some(self.local_addr);
         }
 
         if let Some(socket_addr) = self.public_addr {
@@ -220,8 +220,20 @@ impl Endpoint {
             warn!("Ignoring 'forward_port' flag from config since IGD has been disabled (feature 'no-igd' has been set)");
         }
 
+        // Try to contact an echo service
+        match timeout(
+            Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
+            self.query_ip_echo_service(),
+        )
+        .await
+        {
+            Ok(Ok(echo_res)) => addr = Some(echo_res),
+            Ok(Err(err)) => info!("Could not contact echo service: {} - {:?}", err, err),
+            Err(err) => info!("Query to echo service timed out: {:?}", err),
+        }
+
         #[cfg(not(feature = "no-igd"))]
-        if self.qp2p_config.forward_port {
+        if addr.is_none() && self.qp2p_config.forward_port {
             // Attempt to use IGD for port forwarding
             match timeout(
                 Duration::from_secs(PORT_FORWARD_TIMEOUT),
@@ -251,21 +263,7 @@ impl Endpoint {
             }
         }
 
-        if addr.is_none() {
-            // Try to contact an echo service
-            match timeout(
-                Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
-                self.query_ip_echo_service(),
-            )
-            .await
-            {
-                Ok(Ok(echo_res)) => addr = Some(echo_res),
-                Ok(Err(err)) => info!("Could not contact echo service: {} - {:?}", err, err),
-                Err(err) => info!("Query to echo service timed out: {:?}", err),
-            }
-        }
-
-        addr.map_or(Err(Error::NoEchoServiceResponse), |socket_addr| {
+        addr.map_or(Err(Error::UnresolvedPublicIp), |socket_addr| {
             self.public_addr = Some(socket_addr);
             Ok(socket_addr)
         })
