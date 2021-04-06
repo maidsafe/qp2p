@@ -289,9 +289,8 @@ fn bind(
             })
         }
         Err(err) => Err(Error::Configuration(format!(
-            "Could not bind to the user supplied port: {}! Error: {}",
-            local_addr.port(),
-            err
+            "Could not bind to address: {}! Error: {}",
+            local_addr, err
         ))),
     }
 }
