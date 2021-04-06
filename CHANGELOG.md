@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.11.5](https://github.com/maidsafe/qp2p/compare/v0.11.4...v0.11.5) (2021-04-06)
+
+
+### Bug Fixes
+
+* **endpoint_verification:** add timeout for endpoint verification query ([2fc7041](https://github.com/maidsafe/qp2p/commit/2fc70418d839e2b4209f1ca06864a1edcd2ef3b8))
+
 ### [0.11.4](https://github.com/maidsafe/qp2p/compare/v0.11.3...v0.11.4) (2021-04-05)
 
 ### [0.11.3](https://github.com/maidsafe/qp2p/compare/v0.11.2...v0.11.3) (2021-04-02)
