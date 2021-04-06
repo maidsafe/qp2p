@@ -144,9 +144,13 @@ impl Endpoint {
                     .ok_or(Error::MissingConnection)?;
                 let (mut send, mut recv) = connection.open_bi().await?;
                 send.send(WireMsg::EndpointVerificationReq(addr)).await?;
-                let response = WireMsg::read_from_stream(&mut recv.quinn_recv_stream).await?;
+                let response = timeout(
+                    Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
+                    WireMsg::read_from_stream(&mut recv.quinn_recv_stream),
+                )
+                .await;
                 match response {
-                    WireMsg::EndpointVerificationResp(valid) => {
+                    Ok(Ok(WireMsg::EndpointVerificationResp(valid))) => {
                         if valid {
                             info!("Endpoint verification successful! {} is reachable.", addr);
                         } else {
@@ -154,12 +158,23 @@ impl Endpoint {
                             return Err(Error::IncorrectPublicAddress);
                         }
                     }
-                    other => {
+                    Ok(Ok(other)) => {
                         error!(
                             "Unexpected message when verifying public endpoint: {}",
                             other
                         );
                         return Err(Error::UnexpectedMessageType(other));
+                    }
+                    Ok(Err(err)) => {
+                        error!("Error while verifying Public IP Address");
+                        return Err(err);
+                    }
+                    Err(err) => {
+                        error!(
+                            "Timeout while trying to validate Public IP address: {}",
+                            err
+                        );
+                        return Err(Error::IncorrectPublicAddress);
                     }
                 }
             } else {
