@@ -371,24 +371,42 @@ impl Endpoint {
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        let guard = self
-            .connection_pool
-            .insert(*node_addr, new_conn.connection.clone());
-
-        listen_for_incoming_messages(
-            new_conn.uni_streams,
-            new_conn.bi_streams,
-            guard,
-            self.message_tx.clone(),
-            self.disconnection_tx.clone(),
-            self.clone(),
-        );
+        self.add_new_connection(new_conn);
 
         self.connection_deduplicator
             .complete(node_addr, Ok(()))
             .await;
 
         Ok(())
+    }
+
+    /// Creates a fresh connection without looking at the connection pool and connection duplicator.
+    pub(crate) async fn new_connection(
+        &self,
+        peer_addr: &SocketAddr,
+    ) -> Result<quinn::NewConnection> {
+        let new_connection = self
+            .quic_endpoint
+            .connect_with(self.client_cfg.clone(), peer_addr, CERT_SERVER_NAME)?
+            .await?;
+
+        trace!("Successfully created new connection to peer: {}", peer_addr);
+        Ok(new_connection)
+    }
+
+    pub(crate) fn add_new_connection(&self, conn: quinn::NewConnection) {
+        let guard = self
+            .connection_pool
+            .insert(conn.connection.remote_address(), conn.connection);
+
+        listen_for_incoming_messages(
+            conn.uni_streams,
+            conn.bi_streams,
+            guard,
+            self.message_tx.clone(),
+            self.disconnection_tx.clone(),
+            self.clone(),
+        );
     }
 
     /// Get an existing connection for the peer address.
