@@ -371,7 +371,7 @@ impl Endpoint {
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        self.add_new_connection(new_conn);
+        self.add_new_connection_to_pool(new_conn);
 
         self.connection_deduplicator
             .complete(node_addr, Ok(()))
@@ -381,7 +381,7 @@ impl Endpoint {
     }
 
     /// Creates a fresh connection without looking at the connection pool and connection duplicator.
-    pub(crate) async fn new_connection(
+    pub(crate) async fn create_new_connection(
         &self,
         peer_addr: &SocketAddr,
     ) -> Result<quinn::NewConnection> {
@@ -394,7 +394,7 @@ impl Endpoint {
         Ok(new_connection)
     }
 
-    pub(crate) fn add_new_connection(&self, conn: quinn::NewConnection) {
+    pub(crate) fn add_new_connection_to_pool(&self, conn: quinn::NewConnection) {
         let guard = self
             .connection_pool
             .insert(conn.connection.remote_address(), conn.connection);
