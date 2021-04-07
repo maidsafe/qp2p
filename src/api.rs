@@ -183,7 +183,7 @@ impl QuicP2p {
         let tasks = endpoint
             .bootstrap_nodes()
             .iter()
-            .map(|addr| Box::pin(endpoint.new_connection(addr)));
+            .map(|addr| Box::pin(endpoint.create_new_connection(addr)));
 
         let successful_connection = future::select_ok(tasks)
             .await
@@ -194,7 +194,7 @@ impl QuicP2p {
             .0;
 
         let bootstrapped_peer = successful_connection.connection.remote_address();
-        endpoint.add_new_connection(successful_connection);
+        endpoint.add_new_connection_to_pool(successful_connection);
 
         Ok((
             endpoint,
