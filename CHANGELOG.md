@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.11.6](https://github.com/maidsafe/qp2p/compare/v0.11.5...v0.11.6) (2021-04-07)
+
+
+### Bug Fixes
+
+* **bootstrap:** fix stalled connections w/multiple bootstrap contacts ([cd02b6a](https://github.com/maidsafe/qp2p/commit/cd02b6a5d8819ac96b997b9271c712b2f679be8a))
+
 ### [0.11.5](https://github.com/maidsafe/qp2p/compare/v0.11.4...v0.11.5) (2021-04-06)
 
 
