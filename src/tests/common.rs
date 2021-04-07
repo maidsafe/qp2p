@@ -1,8 +1,8 @@
-use super::{new_qp2p, random_msg};
+use super::{new_qp2p, new_qp2p_with_hcc, random_msg};
 use crate::utils;
 use anyhow::{anyhow, Result};
 use futures::future;
-use std::time::Duration;
+use std::{collections::HashSet, time::Duration};
 use tokio::time::timeout;
 
 #[tokio::test]
@@ -415,5 +415,32 @@ async fn many_messages() -> Result<()> {
     }));
 
     let _ = future::try_join_all(tasks).await?;
+    Ok(())
+}
+
+// When we bootstrap with multiple bootstrap contacts, we will use the first connection
+// that succeeds. We should still be able to establish a connection with the rest of the
+// bootstrap contacts later.
+#[tokio::test]
+async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()> {
+    let qp2p = new_qp2p()?;
+
+    let (ep1, _, _, _) = qp2p.new_endpoint().await?;
+    let (ep2, _, _, _) = qp2p.new_endpoint().await?;
+    let (ep3, _, _, _) = qp2p.new_endpoint().await?;
+
+    let contacts = vec![ep1.socket_addr(), ep2.socket_addr(), ep3.socket_addr()]
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>();
+
+    let qp2p = new_qp2p_with_hcc(contacts.clone())?;
+    let (ep, _, _, _, bootstrapped_peer) = qp2p.bootstrap().await?;
+
+    for peer in contacts {
+        if peer != bootstrapped_peer {
+            ep.connect_to(&peer).await?;
+        }
+    }
     Ok(())
 }

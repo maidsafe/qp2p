@@ -14,7 +14,7 @@ use super::{
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
-use futures::{future, TryFutureExt};
+use futures::future;
 use log::{debug, error, info, trace};
 use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
@@ -179,19 +179,22 @@ impl QuicP2p {
             return Err(Error::EmptyBootstrapNodesList);
         }
 
-        // Attempt to connect to all nodes and return the first one to succeed
+        // Attempt to create a new connection to all nodes and return the first one to succeed
         let tasks = endpoint
             .bootstrap_nodes()
             .iter()
-            .map(|addr| Box::pin(endpoint.connect_to(addr).map_ok(move |()| *addr)));
+            .map(|addr| Box::pin(endpoint.new_connection(addr)));
 
-        let bootstrapped_peer = future::select_ok(tasks)
+        let successful_connection = future::select_ok(tasks)
             .await
             .map_err(|err| {
                 error!("Failed to bootstrap to the network: {}", err);
                 Error::BootstrapFailure
             })?
             .0;
+
+        let bootstrapped_peer = successful_connection.connection.remote_address();
+        endpoint.add_new_connection(successful_connection);
 
         Ok((
             endpoint,
