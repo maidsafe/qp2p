@@ -453,10 +453,13 @@ impl Endpoint {
 
         let mut tasks = Vec::default();
         for node in self.bootstrap_nodes.iter().cloned() {
-            debug!("Connecting to {:?}", &node);
-            self.connect_to(&node).await?;
-            let connection = self.get_connection(&node).ok_or(Error::MissingConnection)?;
+            let endpoint = self.clone();
             let task_handle = tokio::spawn(async move {
+                debug!("Connecting to {:?}", &node);
+                endpoint.connect_to(&node).await?;
+                let connection = endpoint
+                    .get_connection(&node)
+                    .ok_or(Error::MissingConnection)?;
                 let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
@@ -469,9 +472,10 @@ impl Endpoint {
         }
 
         let (result, _) = futures::future::select_ok(tasks).await.map_err(|err| {
-            log::error!("Failed to contact echo service: {}", err);
+            error!("Failed to contact echo service: {}", err);
             Error::EchoServiceFailure(err.to_string())
         })?;
+
         result
     }
 
