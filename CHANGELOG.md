@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.11.7](https://github.com/maidsafe/qp2p/compare/v0.11.6...v0.11.7) (2021-04-08)
+
+
+### Bug Fixes
+
+* **boostrap:** connect to peers concurrently when querying their echo service ([bb6b7dd](https://github.com/maidsafe/qp2p/commit/bb6b7dd149ecfa7ced30eda1a6e3640a3e0206b5))
+
 ### [0.11.6](https://github.com/maidsafe/qp2p/compare/v0.11.5...v0.11.6) (2021-04-07)
 
 
