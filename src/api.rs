@@ -97,15 +97,11 @@ impl QuicP2p {
 
         let mut bootstrap_cache =
             BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref())?;
-        if use_bootstrap_cache {
-            bootstrap_cache.peers_mut().extend(bootstrap_nodes);
-        } else {
+        if !use_bootstrap_cache {
             let bootstrap_cache = bootstrap_cache.peers_mut();
             bootstrap_cache.clear();
-            for addr in bootstrap_nodes {
-                bootstrap_cache.push_back(*addr);
-            }
         }
+        bootstrap_cache.peers_mut().extend(bootstrap_nodes);
 
         let endpoint_cfg =
             peer_config::new_our_cfg(idle_timeout_msec, keep_alive_interval_msec, cert, key)?;
@@ -174,27 +170,9 @@ impl QuicP2p {
         let (endpoint, incoming_connections, incoming_message, disconnections) =
             self.new_endpoint().await?;
 
-        trace!("Bootstrapping with nodes {:?}", endpoint.bootstrap_nodes());
-        if endpoint.bootstrap_nodes().is_empty() {
-            return Err(Error::EmptyBootstrapNodesList);
-        }
-
-        // Attempt to create a new connection to all nodes and return the first one to succeed
-        let tasks = endpoint
-            .bootstrap_nodes()
-            .iter()
-            .map(|addr| Box::pin(endpoint.create_new_connection(addr)));
-
-        let successful_connection = future::select_ok(tasks)
-            .await
-            .map_err(|err| {
-                error!("Failed to bootstrap to the network: {}", err);
-                Error::BootstrapFailure
-            })?
-            .0;
-
-        let bootstrapped_peer = successful_connection.connection.remote_address();
-        endpoint.add_new_connection_to_pool(successful_connection);
+        let bootstrapped_peer = self
+            .bootstrap_with(&endpoint, endpoint.bootstrap_nodes())
+            .await?;
 
         Ok((
             endpoint,
@@ -263,6 +241,49 @@ impl QuicP2p {
         .await?;
 
         Ok(endpoint)
+    }
+
+    async fn bootstrap_with(
+        &self,
+        endpoint: &Endpoint,
+        bootstrap_nodes: &[SocketAddr],
+    ) -> Result<SocketAddr> {
+        trace!("Bootstrapping with nodes {:?}", bootstrap_nodes);
+        if bootstrap_nodes.is_empty() {
+            return Err(Error::EmptyBootstrapNodesList);
+        }
+
+        // Attempt to create a new connection to all nodes and return the first one to succeed
+        let tasks = bootstrap_nodes
+            .iter()
+            .map(|addr| Box::pin(endpoint.create_new_connection(addr)));
+
+        let successful_connection = future::select_ok(tasks)
+            .await
+            .map_err(|err| {
+                error!("Failed to bootstrap to the network: {}", err);
+                Error::BootstrapFailure
+            })?
+            .0;
+        let bootstrapped_peer = successful_connection.connection.remote_address();
+        endpoint.add_new_connection_to_pool(successful_connection);
+        Ok(bootstrapped_peer)
+    }
+
+    /// Rebootstrap
+    pub async fn rebootstrap(
+        &mut self,
+        endpoint: &Endpoint,
+        bootstrap_nodes: &[SocketAddr],
+    ) -> Result<SocketAddr> {
+        // Clear existing bootstrap cache
+        self.bootstrap_cache.peers_mut().clear();
+
+        let bootstrapped_peer = self.bootstrap_with(endpoint, bootstrap_nodes).await?;
+
+        self.bootstrap_cache.add_peer(bootstrapped_peer);
+
+        Ok(bootstrapped_peer)
     }
 }
 
