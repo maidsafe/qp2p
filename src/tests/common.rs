@@ -444,3 +444,19 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn reachability() -> Result<()> {
+    let qp2p = new_qp2p()?;
+
+    let (ep1, _, _, _) = qp2p.new_endpoint().await?;
+    let (ep2, _, _, _) = qp2p.new_endpoint().await?;
+
+    if let Ok(()) = ep1.is_reachable(&"127.0.0.1:12345".parse()?).await {
+        anyhow!("Unexpected success");
+    };
+    let reachable_addr = ep2.socket_addr();
+    ep1.is_reachable(&reachable_addr).await?;
+    Ok(())    
+
+}
