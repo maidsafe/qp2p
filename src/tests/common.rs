@@ -457,6 +457,5 @@ async fn reachability() -> Result<()> {
     };
     let reachable_addr = ep2.socket_addr();
     ep1.is_reachable(&reachable_addr).await?;
-    Ok(())    
-
+    Ok(())
 }
