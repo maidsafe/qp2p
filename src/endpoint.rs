@@ -248,7 +248,7 @@ impl Endpoint {
         }
 
         #[cfg(not(feature = "no-igd"))]
-        if addr.is_none() && self.qp2p_config.forward_port {
+        if self.qp2p_config.forward_port {
             // Attempt to use IGD for port forwarding
             match timeout(
                 Duration::from_secs(PORT_FORWARD_TIMEOUT),
@@ -268,12 +268,10 @@ impl Endpoint {
                     }
                     Err(e) => {
                         info!("IGD request failed: {} - {:?}", e, e);
-                        return Err(Error::IgdNotSupported);
                     }
                 },
                 Err(e) => {
                     info!("IGD request timeout: {:?}", e);
-                    return Err(Error::IgdNotSupported);
                 }
             }
         }
@@ -380,19 +378,27 @@ impl Endpoint {
         Ok(())
     }
 
-    /// Verify if an address is publicly rechable. This will attempt to create
+    /// Verify if an address is publicly reachable. This will attempt to create
     /// a new connection and use it to exchange a message and verify that the node
-    /// can be reached
+    /// can be reached.
     pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<()> {
         let new_connection = self.create_new_connection(peer_addr).await?;
         let (mut send_stream, mut recv_stream) = new_connection.connection.open_bi().await?;
         let message = WireMsg::EndpointEchoReq;
         message.write_to_stream(&mut send_stream).await?;
-        
-        match timeout(Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT), WireMsg::read_from_stream(&mut recv_stream)).await {
+
+        match timeout(
+            Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
+            WireMsg::read_from_stream(&mut recv_stream),
+        )
+        .await
+        {
             Ok(Ok(WireMsg::EndpointEchoResp(_))) => Ok(()),
             Ok(Ok(other)) => {
-                info!("Unexpected message type when verifying reachability: {}", &other);
+                info!(
+                    "Unexpected message type when verifying reachability: {}",
+                    &other
+                );
                 Ok(())
             }
             Ok(Err(err)) => {
