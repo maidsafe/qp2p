@@ -144,9 +144,13 @@ impl Endpoint {
                     .ok_or(Error::MissingConnection)?;
                 let (mut send, mut recv) = connection.open_bi().await?;
                 send.send(WireMsg::EndpointVerificationReq(addr)).await?;
-                let response = WireMsg::read_from_stream(&mut recv.quinn_recv_stream).await?;
+                let response = timeout(
+                    Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
+                    WireMsg::read_from_stream(&mut recv.quinn_recv_stream),
+                )
+                .await;
                 match response {
-                    WireMsg::EndpointVerificationResp(valid) => {
+                    Ok(Ok(WireMsg::EndpointVerificationResp(valid))) => {
                         if valid {
                             info!("Endpoint verification successful! {} is reachable.", addr);
                         } else {
@@ -154,12 +158,23 @@ impl Endpoint {
                             return Err(Error::IncorrectPublicAddress);
                         }
                     }
-                    other => {
+                    Ok(Ok(other)) => {
                         error!(
                             "Unexpected message when verifying public endpoint: {}",
                             other
                         );
                         return Err(Error::UnexpectedMessageType(other));
+                    }
+                    Ok(Err(err)) => {
+                        error!("Error while verifying Public IP Address");
+                        return Err(err);
+                    }
+                    Err(err) => {
+                        error!(
+                            "Timeout while trying to validate Public IP address: {}",
+                            err
+                        );
+                        return Err(Error::IncorrectPublicAddress);
                     }
                 }
             } else {
@@ -175,6 +190,7 @@ impl Endpoint {
             message_tx,
             connection_tx,
             disconnection_tx,
+            endpoint.clone(),
         );
 
         Ok((
@@ -204,8 +220,8 @@ impl Endpoint {
     /// such an address cannot be reached and hence not useful.
     async fn fetch_public_address(&mut self) -> Result<SocketAddr> {
         // Skip port forwarding
-        if self.local_addr.ip().is_loopback() {
-            return Ok(self.local_addr);
+        if self.local_addr.ip().is_loopback() || !self.qp2p_config.forward_port {
+            self.public_addr = Some(self.local_addr);
         }
 
         if let Some(socket_addr) = self.public_addr {
@@ -217,6 +233,18 @@ impl Endpoint {
         #[cfg(feature = "no-igd")]
         if self.qp2p_config.use_igd {
             warn!("Ignoring 'forward_port' flag from config since IGD has been disabled (feature 'no-igd' has been set)");
+        }
+
+        // Try to contact an echo service
+        match timeout(
+            Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
+            self.query_ip_echo_service(),
+        )
+        .await
+        {
+            Ok(Ok(echo_res)) => addr = Some(echo_res),
+            Ok(Err(err)) => info!("Could not contact echo service: {} - {:?}", err, err),
+            Err(err) => info!("Query to echo service timed out: {:?}", err),
         }
 
         #[cfg(not(feature = "no-igd"))]
@@ -250,21 +278,7 @@ impl Endpoint {
             }
         }
 
-        if addr.is_none() {
-            // Try to contact an echo service
-            match timeout(
-                Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
-                self.query_ip_echo_service(),
-            )
-            .await
-            {
-                Ok(Ok(echo_res)) => addr = Some(echo_res),
-                Ok(Err(err)) => info!("Could not contact echo service: {} - {:?}", err, err),
-                Err(err) => info!("Query to echo service timed out: {:?}", err),
-            }
-        }
-
-        addr.map_or(Err(Error::NoEchoServiceResponse), |socket_addr| {
+        addr.map_or(Err(Error::UnresolvedPublicIp), |socket_addr| {
             self.public_addr = Some(socket_addr);
             Ok(socket_addr)
         })
@@ -357,23 +371,42 @@ impl Endpoint {
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        let guard = self
-            .connection_pool
-            .insert(*node_addr, new_conn.connection.clone());
-
-        listen_for_incoming_messages(
-            new_conn.uni_streams,
-            new_conn.bi_streams,
-            guard,
-            self.message_tx.clone(),
-            self.disconnection_tx.clone(),
-        );
+        self.add_new_connection_to_pool(new_conn);
 
         self.connection_deduplicator
             .complete(node_addr, Ok(()))
             .await;
 
         Ok(())
+    }
+
+    /// Creates a fresh connection without looking at the connection pool and connection duplicator.
+    pub(crate) async fn create_new_connection(
+        &self,
+        peer_addr: &SocketAddr,
+    ) -> Result<quinn::NewConnection> {
+        let new_connection = self
+            .quic_endpoint
+            .connect_with(self.client_cfg.clone(), peer_addr, CERT_SERVER_NAME)?
+            .await?;
+
+        trace!("Successfully created new connection to peer: {}", peer_addr);
+        Ok(new_connection)
+    }
+
+    pub(crate) fn add_new_connection_to_pool(&self, conn: quinn::NewConnection) {
+        let guard = self
+            .connection_pool
+            .insert(conn.connection.remote_address(), conn.connection);
+
+        listen_for_incoming_messages(
+            conn.uni_streams,
+            conn.bi_streams,
+            guard,
+            self.message_tx.clone(),
+            self.disconnection_tx.clone(),
+            self.clone(),
+        );
     }
 
     /// Get an existing connection for the peer address.
@@ -420,10 +453,13 @@ impl Endpoint {
 
         let mut tasks = Vec::default();
         for node in self.bootstrap_nodes.iter().cloned() {
-            debug!("Connecting to {:?}", &node);
-            self.connect_to(&node).await?;
-            let connection = self.get_connection(&node).ok_or(Error::MissingConnection)?;
+            let endpoint = self.clone();
             let task_handle = tokio::spawn(async move {
+                debug!("Connecting to {:?}", &node);
+                endpoint.connect_to(&node).await?;
+                let connection = endpoint
+                    .get_connection(&node)
+                    .ok_or(Error::MissingConnection)?;
                 let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
@@ -436,9 +472,10 @@ impl Endpoint {
         }
 
         let (result, _) = futures::future::select_ok(tasks).await.map_err(|err| {
-            log::error!("Failed to contact echo service: {}", err);
+            error!("Failed to contact echo service: {}", err);
             Error::EchoServiceFailure(err.to_string())
         })?;
+
         result
     }
 

@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.11.7](https://github.com/maidsafe/qp2p/compare/v0.11.6...v0.11.7) (2021-04-08)
+
+
+### Bug Fixes
+
+* **boostrap:** connect to peers concurrently when querying their echo service ([bb6b7dd](https://github.com/maidsafe/qp2p/commit/bb6b7dd149ecfa7ced30eda1a6e3640a3e0206b5))
+
+### [0.11.6](https://github.com/maidsafe/qp2p/compare/v0.11.5...v0.11.6) (2021-04-07)
+
+
+### Bug Fixes
+
+* **bootstrap:** fix stalled connections w/multiple bootstrap contacts ([cd02b6a](https://github.com/maidsafe/qp2p/commit/cd02b6a5d8819ac96b997b9271c712b2f679be8a))
+
+### [0.11.5](https://github.com/maidsafe/qp2p/compare/v0.11.4...v0.11.5) (2021-04-06)
+
+
+### Bug Fixes
+
+* **endpoint_verification:** add timeout for endpoint verification query ([2fc7041](https://github.com/maidsafe/qp2p/commit/2fc70418d839e2b4209f1ca06864a1edcd2ef3b8))
+
+### [0.11.4](https://github.com/maidsafe/qp2p/compare/v0.11.3...v0.11.4) (2021-04-05)
+
+### [0.11.3](https://github.com/maidsafe/qp2p/compare/v0.11.2...v0.11.3) (2021-04-02)
+
+
+### Bug Fixes
+
+* **manual-port-forwarding:** use the existing endpoint to validate ([56e6626](https://github.com/maidsafe/qp2p/commit/56e66263527aeef5d3cbf49e361b5a19bb80bf28))
+
 ### [0.11.2](https://github.com/maidsafe/qp2p/compare/v0.11.1...v0.11.2) (2021-03-29)
 
 

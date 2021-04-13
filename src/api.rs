@@ -14,14 +14,14 @@ use super::{
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
-use futures::{future, TryFutureExt};
+use futures::future;
 use log::{debug, error, info, trace};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
 
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.
-pub const DEFAULT_PORT_TO_TRY: u16 = 12000;
+pub const DEFAULT_PORT_TO_TRY: u16 = 0;
 
 /// Default duration of a UPnP lease, in seconds.
 pub const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
@@ -77,7 +77,7 @@ impl QuicP2p {
             .map(|p| (p, false))
             .unwrap_or((DEFAULT_PORT_TO_TRY, true));
 
-        let ip = cfg.local_ip.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+        let ip = cfg.local_ip.ok_or(Error::UnspecifiedLocalIp)?;
 
         let idle_timeout_msec = cfg.idle_timeout_msec.unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
 
@@ -179,19 +179,22 @@ impl QuicP2p {
             return Err(Error::EmptyBootstrapNodesList);
         }
 
-        // Attempt to connect to all nodes and return the first one to succeed
+        // Attempt to create a new connection to all nodes and return the first one to succeed
         let tasks = endpoint
             .bootstrap_nodes()
             .iter()
-            .map(|addr| Box::pin(endpoint.connect_to(addr).map_ok(move |()| *addr)));
+            .map(|addr| Box::pin(endpoint.create_new_connection(addr)));
 
-        let bootstrapped_peer = future::select_ok(tasks)
+        let successful_connection = future::select_ok(tasks)
             .await
             .map_err(|err| {
                 error!("Failed to bootstrap to the network: {}", err);
                 Error::BootstrapFailure
             })?
             .0;
+
+        let bootstrapped_peer = successful_connection.connection.remote_address();
+        endpoint.add_new_connection_to_pool(successful_connection);
 
         Ok((
             endpoint,
@@ -289,9 +292,8 @@ fn bind(
             })
         }
         Err(err) => Err(Error::Configuration(format!(
-            "Could not bind to the user supplied port: {}! Error: {}",
-            local_addr.port(),
-            err
+            "Could not bind to address: {}! Error: {}",
+            local_addr, err
         ))),
     }
 }
