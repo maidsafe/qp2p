@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.11.8](https://github.com/maidsafe/qp2p/compare/v0.11.7...v0.11.8) (2021-04-13)
+
+
+### Features
+
+* **api:** add new api to check if endpoint is externally reachable ([6305442](https://github.com/maidsafe/qp2p/commit/63054421b7514967f41843111cae068398aca784))
+
+
+### Bug Fixes
+
+* **igd:** run igd even if echo service succeedes ([b2a2971](https://github.com/maidsafe/qp2p/commit/b2a297135ecd40d715dec615c757bee19f752c4b))
+
 ### [0.11.7](https://github.com/maidsafe/qp2p/compare/v0.11.6...v0.11.7) (2021-04-08)
 
 
