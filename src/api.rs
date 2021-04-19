@@ -285,6 +285,16 @@ impl QuicP2p {
 
         Ok(bootstrapped_peer)
     }
+
+    /// Clears the current bootstrap cache and replaces the peer list with the provided
+    /// bootstrap nodes.
+    pub fn update_bootstrap_cache(&mut self, bootstrap_nodes: &[SocketAddr]) -> Result<()> {
+        let bootstrap_cache = self.bootstrap_cache.peers_mut();
+        bootstrap_cache.clear();
+        bootstrap_cache.extend(bootstrap_nodes);
+        self.bootstrap_cache.try_sync_to_disk();
+        Ok(())
+    }
 }
 
 // Private helpers

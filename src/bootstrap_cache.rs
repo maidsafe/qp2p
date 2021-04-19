@@ -134,7 +134,7 @@ impl BootstrapCache {
     }
 
     /// Write cached peers to disk every 10 inserted peers.
-    fn try_sync_to_disk(&mut self) {
+    pub(crate) fn try_sync_to_disk(&mut self) {
         if self.add_count > 9 {
             if let Err(e) = write_to_disk(&self.cache_path, &self.peers) {
                 warn!("Failed to write bootstrap cache to disk: {}", e);
