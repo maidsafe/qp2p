@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.11.9](https://github.com/maidsafe/qp2p/compare/v0.11.8...v0.11.9) (2021-04-26)
+
+
+### Features
+
+* **api:** add public API to get an endpoint's list of bootstrap nodes ([075c89e](https://github.com/maidsafe/qp2p/commit/075c89e30adc19cea0d60d76182a581ea3b2cdcb))
+* **boostrap_cache:** add API to replace contents of bootstrap cache ([0684769](https://github.com/maidsafe/qp2p/commit/0684769d68ddfc5cfb5905e0ea538c792bec5412))
+* **endpoint:** add functionality for re-boostrapping to the network ([af6b54d](https://github.com/maidsafe/qp2p/commit/af6b54d33fdc766c504bb313dfa600cc9a4af240))
+
 ### [0.11.8](https://github.com/maidsafe/qp2p/compare/v0.11.7...v0.11.8) (2021-04-13)
 
 
