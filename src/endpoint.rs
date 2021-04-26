@@ -511,7 +511,10 @@ impl Endpoint {
         result
     }
 
-    pub(crate) fn bootstrap_nodes(&self) -> &[SocketAddr] {
+    /// Returns the list of boostrap nodes that the endpoint will try bootstrapping to.
+    /// This is the combined list of contacts from the Hard Coded contacts in the config
+    /// and the bootstrap cache (if enabled)
+    pub fn bootstrap_nodes(&self) -> &[SocketAddr] {
         &self.bootstrap_nodes
     }
 }

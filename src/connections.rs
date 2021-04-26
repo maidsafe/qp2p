@@ -132,9 +132,6 @@ pub async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg> {
 pub async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()> {
     let wire_msg = WireMsg::UserMsg(msg);
     wire_msg.write_to_stream(&mut send_stream).await?;
-
-    trace!("Message was sent to remote peer");
-
     Ok(())
 }
 
@@ -198,7 +195,7 @@ pub(super) fn listen_for_incoming_messages(
         )
         .await;
 
-        log::trace!("The connection has been terminated.");
+        log::trace!("The connection to {:?} has been terminated.", src);
         let _ = disconnection_tx.send(src);
         remover.remove();
     });

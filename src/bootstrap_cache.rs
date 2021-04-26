@@ -109,7 +109,7 @@ impl BootstrapCache {
         if self.peers.len() > MAX_CACHE_SIZE {
             let _ = self.peers.pop_front();
         }
-        self.try_sync_to_disk();
+        self.try_sync_to_disk(false);
     }
 
     pub fn clear_from_disk(user_override: Option<&PathBuf>) -> Result<()> {
@@ -134,8 +134,9 @@ impl BootstrapCache {
     }
 
     /// Write cached peers to disk every 10 inserted peers.
-    pub(crate) fn try_sync_to_disk(&mut self) {
-        if self.add_count > 9 {
+    /// If the bootstrap cache is to be updated explicitly force can be set to `true`.
+    pub(crate) fn try_sync_to_disk(&mut self, force: bool) {
+        if self.add_count > 9 || force {
             if let Err(e) = write_to_disk(&self.cache_path, &self.peers) {
                 warn!("Failed to write bootstrap cache to disk: {}", e);
             }
