@@ -12,7 +12,6 @@ use crate::{
     utils,
 };
 use bytes::Bytes;
-use log::trace;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::{fmt, net::SocketAddr};
@@ -37,11 +36,9 @@ impl WireMsg {
     // Read a message's bytes from the provided stream
     pub async fn read_from_stream(recv: &mut quinn::RecvStream) -> Result<Self> {
         let mut header_bytes = [0; MSG_HEADER_LEN];
-        log::debug!("reading header");
         recv.read_exact(&mut header_bytes).await?;
 
         let msg_header = MsgHeader::from_bytes(header_bytes);
-        log::debug!("reading data of length: {}", msg_header.data_len());
         // https://github.com/rust-lang/rust/issues/70460 for work on a cleaner alternative:
         #[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
         {
@@ -61,7 +58,6 @@ impl WireMsg {
         let msg_flag = msg_header.usr_msg_flag();
 
         recv.read_exact(&mut data).await?;
-        trace!("Got new message with {} bytes.", data.len());
 
         if data.is_empty() {
             Err(Error::EmptyResponse)
@@ -81,7 +77,6 @@ impl WireMsg {
             WireMsg::UserMsg(ref m) => (m.clone(), USER_MSG_FLAG),
             _ => (From::from(bincode::serialize(&self)?), ECHO_SRVC_MSG_FLAG),
         };
-        trace!("Sending message to remote peer ({} bytes)", msg_bytes.len());
 
         let msg_header = MsgHeader::new(&msg_bytes, msg_flag)?;
         let header_bytes = msg_header.to_bytes();

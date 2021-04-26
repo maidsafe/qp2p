@@ -423,6 +423,7 @@ async fn many_messages() -> Result<()> {
 // bootstrap contacts later.
 #[tokio::test]
 async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()> {
+    utils::init_logging();
     let qp2p = new_qp2p()?;
 
     let (ep1, _, _, _) = qp2p.new_endpoint().await?;

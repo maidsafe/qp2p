@@ -16,6 +16,7 @@ use super::{
 };
 use futures::future;
 use log::{debug, error, info, trace};
+use std::collections::HashSet;
 use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
 
@@ -97,6 +98,7 @@ impl QuicP2p {
 
         let mut bootstrap_cache =
             BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref())?;
+        trace!("Peers in bootstrap cache: {:?}", bootstrap_cache.peers());
         if !use_bootstrap_cache {
             let bootstrap_cache = bootstrap_cache.peers_mut();
             bootstrap_cache.clear();
@@ -288,12 +290,12 @@ impl QuicP2p {
 
     /// Clears the current bootstrap cache and replaces the peer list with the provided
     /// bootstrap nodes.
-    pub fn update_bootstrap_cache(&mut self, bootstrap_nodes: &[SocketAddr]) -> Result<()> {
+    pub fn update_bootstrap_contacts(&mut self, bootstrap_nodes: &[SocketAddr]) {
+        self.qp2p_config.hard_coded_contacts = HashSet::new();
         let bootstrap_cache = self.bootstrap_cache.peers_mut();
         bootstrap_cache.clear();
         bootstrap_cache.extend(bootstrap_nodes);
-        self.bootstrap_cache.try_sync_to_disk();
-        Ok(())
+        self.bootstrap_cache.try_sync_to_disk(true);
     }
 }
 
