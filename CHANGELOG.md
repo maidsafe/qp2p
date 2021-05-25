@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.11.10](https://github.com/maidsafe/qp2p/compare/v0.11.9...v0.11.10) (2021-05-25)
+
+
+### Features
+
+* **api:** create new try_send_message API and change send_message ([1264246](https://github.com/maidsafe/qp2p/commit/12642469b55350d0eaeeeb2da8d3320b5682d5f3))
+
 ### [0.11.9](https://github.com/maidsafe/qp2p/compare/v0.11.8...v0.11.9) (2021-04-26)
 
 
