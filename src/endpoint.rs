@@ -465,10 +465,21 @@ impl Endpoint {
 
     /// Sends a message to a peer. This will attempt to use an existing connection
     /// to the destination  peer. If a connection does not exist, this will fail with `Error::MissingConnection`
-    pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
+    pub async fn try_send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
         let connection = self.get_connection(dest).ok_or(Error::MissingConnection)?;
         connection.send_uni(msg).await?;
         Ok(())
+    }
+
+    /// Sends a message to a peer. This will attempt to use an existing connection
+    /// to the peer first. If this connection is broken or doesn't exist
+    /// a new connection is created and the message is sent.
+    pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
+        if self.try_send_message(msg.clone(), dest).await.is_ok() {
+            return Ok(());
+        }
+        self.connect_to(dest).await?;
+        self.try_send_message(msg, dest).await
     }
 
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
