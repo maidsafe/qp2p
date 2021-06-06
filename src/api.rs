@@ -268,7 +268,9 @@ impl QuicP2p {
             })?
             .0;
         let bootstrapped_peer = successful_connection.connection.remote_address();
-        endpoint.add_new_connection_to_pool(successful_connection);
+        endpoint
+            .add_new_connection_to_pool(successful_connection)
+            .await;
         Ok(bootstrapped_peer)
     }
 

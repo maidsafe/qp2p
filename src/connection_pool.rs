@@ -7,28 +7,26 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use std::{
-    collections::BTreeMap,
-    net::SocketAddr,
-    sync::{Arc, Mutex, PoisonError},
-};
+use std::{collections::BTreeMap, net::SocketAddr, sync::Arc};
+
+use tokio::sync::RwLock;
 
 // Pool for keeping open connections. Pooled connections are associated with a `ConnectionRemover`
 // which can be used to remove them from the pool.
 #[derive(Clone)]
 pub(crate) struct ConnectionPool {
-    store: Arc<Mutex<Store>>,
+    store: Arc<RwLock<Store>>,
 }
 
 impl ConnectionPool {
     pub fn new() -> Self {
         Self {
-            store: Arc::new(Mutex::new(Store::default())),
+            store: Arc::new(RwLock::new(Store::default())),
         }
     }
 
-    pub fn insert(&self, addr: SocketAddr, conn: quinn::Connection) -> ConnectionRemover {
-        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+    pub async fn insert(&self, addr: SocketAddr, conn: quinn::Connection) -> ConnectionRemover {
+        let mut store = self.store.write().await;
 
         let key = Key {
             addr,
@@ -42,19 +40,19 @@ impl ConnectionPool {
         }
     }
 
-    pub fn has(&self, addr: &SocketAddr) -> bool {
-        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+    pub async fn has(&self, addr: &SocketAddr) -> bool {
+        let store = self.store.read().await;
 
         // Efficiently fetch the first entry whose key is equal to `key` and check if it exists
         store
             .map
-            .range_mut(Key::min(*addr)..=Key::max(*addr))
+            .range(Key::min(*addr)..=Key::max(*addr))
             .next()
             .is_some()
     }
 
-    pub fn remove(&self, addr: &SocketAddr) -> Vec<quinn::Connection> {
-        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+    pub async fn remove(&self, addr: &SocketAddr) -> Vec<quinn::Connection> {
+        let mut store = self.store.write().await;
 
         let keys_to_remove = store
             .map
@@ -69,14 +67,11 @@ impl ConnectionPool {
             .collect::<Vec<_>>()
     }
 
-    pub fn get(&self, addr: &SocketAddr) -> Option<(quinn::Connection, ConnectionRemover)> {
-        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+    pub async fn get(&self, addr: &SocketAddr) -> Option<(quinn::Connection, ConnectionRemover)> {
+        let store = self.store.read().await;
 
         // Efficiently fetch the first entry whose key is equal to `key`.
-        let (key, conn) = store
-            .map
-            .range_mut(Key::min(*addr)..=Key::max(*addr))
-            .next()?;
+        let (key, conn) = store.map.range(Key::min(*addr)..=Key::max(*addr)).next()?;
 
         let conn = conn.clone();
         let remover = ConnectionRemover {
@@ -91,14 +86,14 @@ impl ConnectionPool {
 // Handle for removing a connection from the pool.
 #[derive(Clone)]
 pub(crate) struct ConnectionRemover {
-    store: Arc<Mutex<Store>>,
+    store: Arc<RwLock<Store>>,
     key: Key,
 }
 
 impl ConnectionRemover {
     // Remove the connection from the pool.
-    pub fn remove(&self) {
-        let mut store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+    pub async fn remove(&self) {
+        let mut store = self.store.write().await;
         let _ = store.map.remove(&self.key);
     }
 
