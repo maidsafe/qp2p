@@ -191,7 +191,7 @@ async fn disconnection() -> Result<()> {
     }
 
     // After Alice disconnects from Bob both peers should receive the disconnected event.
-    alice.disconnect_from(&bob_addr)?;
+    alice.disconnect_from(&bob_addr).await?;
 
     if let Some(disconnected_peer) = alice_disconnections.next().await {
         assert_eq!(disconnected_peer, bob_addr);
@@ -273,7 +273,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     }
 
     // Drop the connection initiated by Bob.
-    bob.disconnect_from(&alice_addr)?;
+    bob.disconnect_from(&alice_addr).await?;
 
     // It should be closed on Alice's side too.
     if let Some(disconnected_peer) = alice_disconnections.next().await {
