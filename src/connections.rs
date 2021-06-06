@@ -34,14 +34,15 @@ impl Connection {
     }
 
     pub async fn open_bi(&self) -> Result<(SendStream, RecvStream)> {
-        let (send_stream, recv_stream) = self.handle_error(self.quic_conn.open_bi().await)?;
+        let (send_stream, recv_stream) = self.handle_error(self.quic_conn.open_bi().await).await?;
         Ok((SendStream::new(send_stream), RecvStream::new(recv_stream)))
     }
 
     /// Send message to peer using a uni-directional stream.
     pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
-        let mut send_stream = self.handle_error(self.quic_conn.open_uni().await)?;
-        self.handle_error(send_msg(&mut send_stream, msg).await)?;
+        let mut send_stream = self.handle_error(self.quic_conn.open_uni().await).await?;
+        self.handle_error(send_msg(&mut send_stream, msg).await)
+            .await?;
 
         // We try to make sure the stream is gracefully closed and the bytes get sent,
         // but if it was already closed (perhaps by the peer) then we
@@ -49,15 +50,15 @@ impl Connection {
         match send_stream.finish().await {
             Ok(()) | Err(quinn::WriteError::Stopped(_)) => Ok(()),
             Err(err) => {
-                self.handle_error(Err(err))?;
+                self.handle_error(Err(err)).await?;
                 Ok(())
             }
         }
     }
 
-    fn handle_error<T, E>(&self, result: Result<T, E>) -> Result<T, E> {
+    async fn handle_error<T, E>(&self, result: Result<T, E>) -> Result<T, E> {
         if result.is_err() {
-            self.remover.remove()
+            self.remover.remove().await
         }
 
         result
@@ -154,7 +155,7 @@ pub(super) fn listen_for_incoming_connections(
                         ..
                     }) => {
                         let peer_address = connection.remote_address();
-                        let pool_handle = connection_pool.insert(peer_address, connection);
+                        let pool_handle = connection_pool.insert(peer_address, connection).await;
                         let _ = connection_tx.send(peer_address);
                         listen_for_incoming_messages(
                             uni_streams,
@@ -197,7 +198,7 @@ pub(super) fn listen_for_incoming_messages(
 
         log::trace!("The connection to {:?} has been terminated.", src);
         let _ = disconnection_tx.send(src);
-        remover.remove();
+        remover.remove().await;
     });
 }
 

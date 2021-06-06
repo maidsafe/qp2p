@@ -141,6 +141,7 @@ impl Endpoint {
                 endpoint.connect_to(contact).await?;
                 let connection = endpoint
                     .get_connection(&contact)
+                    .await
                     .ok_or(Error::MissingConnection)?;
                 let (mut send, mut recv) = connection.open_bi().await?;
                 send.send(WireMsg::EndpointVerificationReq(addr)).await?;
@@ -283,9 +284,10 @@ impl Endpoint {
     }
 
     /// Removes all existing connections to a given peer
-    pub fn disconnect_from(&self, peer_addr: &SocketAddr) -> Result<()> {
+    pub async fn disconnect_from(&self, peer_addr: &SocketAddr) -> Result<()> {
         self.connection_pool
             .remove(peer_addr)
+            .await
             .iter()
             .for_each(|conn| {
                 conn.close(0u8.into(), b"");
@@ -331,7 +333,7 @@ impl Endpoint {
     /// from the pool and the subsequent call to `connect_to` is guaranteed to reopen new connection
     /// too.
     pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<()> {
-        if self.connection_pool.has(node_addr) {
+        if self.connection_pool.has(node_addr).await {
             trace!("We are already connected to this peer: {}", node_addr);
         }
 
@@ -369,7 +371,7 @@ impl Endpoint {
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        self.add_new_connection_to_pool(new_conn);
+        self.add_new_connection_to_pool(new_conn).await;
 
         self.connection_deduplicator
             .complete(node_addr, Ok(()))
@@ -426,10 +428,11 @@ impl Endpoint {
         Ok(new_connection)
     }
 
-    pub(crate) fn add_new_connection_to_pool(&self, conn: quinn::NewConnection) {
+    pub(crate) async fn add_new_connection_to_pool(&self, conn: quinn::NewConnection) {
         let guard = self
             .connection_pool
-            .insert(conn.connection.remote_address(), conn.connection);
+            .insert(conn.connection.remote_address(), conn.connection)
+            .await;
 
         listen_for_incoming_messages(
             conn.uni_streams,
@@ -442,8 +445,8 @@ impl Endpoint {
     }
 
     /// Get an existing connection for the peer address.
-    pub(crate) fn get_connection(&self, peer_addr: &SocketAddr) -> Option<Connection> {
-        if let Some((conn, guard)) = self.connection_pool.get(peer_addr) {
+    pub(crate) async fn get_connection(&self, peer_addr: &SocketAddr) -> Option<Connection> {
+        if let Some((conn, guard)) = self.connection_pool.get(peer_addr).await {
             trace!("Connection exists in the connection pool: {}", peer_addr);
             Some(Connection::new(conn, guard))
         } else {
@@ -459,6 +462,7 @@ impl Endpoint {
         self.connect_to(peer_addr).await?;
         let connection = self
             .get_connection(peer_addr)
+            .await
             .ok_or(Error::MissingConnection)?;
         connection.open_bi().await
     }
@@ -466,7 +470,10 @@ impl Endpoint {
     /// Sends a message to a peer. This will attempt to use an existing connection
     /// to the destination  peer. If a connection does not exist, this will fail with `Error::MissingConnection`
     pub async fn try_send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
-        let connection = self.get_connection(dest).ok_or(Error::MissingConnection)?;
+        let connection = self
+            .get_connection(dest)
+            .await
+            .ok_or(Error::MissingConnection)?;
         connection.send_uni(msg).await?;
         Ok(())
     }
@@ -502,6 +509,7 @@ impl Endpoint {
                 endpoint.connect_to(&node).await?;
                 let connection = endpoint
                     .get_connection(&node)
+                    .await
                     .ok_or(Error::MissingConnection)?;
                 let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
