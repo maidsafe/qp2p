@@ -167,7 +167,10 @@ pub(super) fn listen_for_incoming_connections(
                         );
                     }
                     Err(err) => {
-                        error!("An incoming connection failed because of an error: {}", err);
+                        error!(
+                            "An incoming connection failed because of an error: {:?}",
+                            err
+                        );
                     }
                 },
                 None => {
@@ -216,7 +219,7 @@ async fn read_on_uni_streams(
             }
             Err(err) => {
                 warn!(
-                    "Failed to read incoming message on uni-stream for peer {:?} with error: {}",
+                    "Failed to read incoming message on uni-stream for peer {:?} with error: {:?}",
                     peer_addr, err
                 );
                 break;
@@ -230,7 +233,7 @@ async fn read_on_uni_streams(
                     Err(Error::StreamRead(quinn::ReadExactError::FinishedEarly)) => break,
                     Err(err) => {
                         error!(
-                            "Failed reading from a uni-stream for peer {:?} with error: {}",
+                            "Failed reading from a uni-stream for peer {:?} with error: {:?}",
                             peer_addr, err
                         );
                         break;
@@ -256,7 +259,7 @@ async fn read_on_bi_streams(
             }
             Err(err) => {
                 warn!(
-                    "Failed to read incoming message on bi-stream for peer {:?} with error: {}",
+                    "Failed to read incoming message on bi-stream for peer {:?} with error: {:?}",
                     peer_addr, err
                 );
                 break;
@@ -269,7 +272,7 @@ async fn read_on_bi_streams(
                     Ok(WireMsg::EndpointEchoReq) => {
                         if let Err(error) = handle_endpoint_echo_req(peer_addr, &mut send).await {
                             error!(
-                                "Failed to handle Echo Request for peer {:?} with error: {}",
+                                "Failed to handle Echo Request for peer {:?} with error: {:?}",
                                 peer_addr, error
                             );
                         }
@@ -283,7 +286,7 @@ async fn read_on_bi_streams(
                         )
                         .await
                         {
-                            error!("Failed to handle Endpoint verification request for peer {:?} with error: {}", peer_addr, error);
+                            error!("Failed to handle Endpoint verification request for peer {:?} with error: {:?}", peer_addr, error);
                         }
                     }
                     Ok(msg) => {
@@ -295,7 +298,7 @@ async fn read_on_bi_streams(
                     Err(Error::StreamRead(quinn::ReadExactError::FinishedEarly)) => break,
                     Err(err) => {
                         error!(
-                            "Failed reading from a bi-stream for peer {:?} with error: {}",
+                            "Failed reading from a bi-stream for peer {:?} with error: {:?}",
                             peer_addr, err
                         );
                         break;
@@ -388,6 +391,7 @@ mod tests {
 
         let connection = peer1
             .get_connection(&peer2_addr)
+            .await
             .ok_or(Error::MissingConnection)?;
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
         let message = WireMsg::EndpointEchoReq;
