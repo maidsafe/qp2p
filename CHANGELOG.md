@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.12.0](https://github.com/maidsafe/qp2p/compare/v0.11.11...v0.12.0) (2021-06-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **refactor:** updates some apis to be async
+
+### Features
+
+* **refactor:** remove unnecessary mutex ([8066b18](https://github.com/maidsafe/qp2p/commit/8066b18a13ebbf07cf5f3304435a47afab5a5600))
+
+
+### Bug Fixes
+
+* **tests:** minor test fixes ([95ab0f7](https://github.com/maidsafe/qp2p/commit/95ab0f74f13ebd3ef5cad06a3178dfd909f28f48))
+
 ### [0.11.11](https://github.com/maidsafe/qp2p/compare/v0.11.10...v0.11.11) (2021-06-01)
 
 ### [0.11.10](https://github.com/maidsafe/qp2p/compare/v0.11.9...v0.11.10) (2021-05-25)
