@@ -24,7 +24,8 @@ use super::{
 use bytes::Bytes;
 use std::{net::SocketAddr, time::Duration};
 use tokio::sync::broadcast::{self, Receiver, Sender};
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender};
+
 use tokio::time::timeout;
 use tracing::{debug, error, info, trace, warn};
 
@@ -39,8 +40,11 @@ const PORT_FORWARD_TIMEOUT: u64 = 30;
 // Number of seconds before timing out the echo service query.
 const ECHO_SERVICE_QUERY_TIMEOUT: u64 = 30;
 
+/// Standard size of our channel bounds
+const STANDARD_CHANNEL_SIZE: usize = 5;
+
 /// Channel on which incoming messages can be listened to
-pub struct IncomingMessages(pub(crate) UnboundedReceiver<(SocketAddr, Bytes)>);
+pub struct IncomingMessages(pub(crate) MpscReceiver<(SocketAddr, Bytes)>);
 
 impl IncomingMessages {
     /// Blocks and returns the next incoming message and the source peer address
@@ -50,7 +54,7 @@ impl IncomingMessages {
 }
 
 /// Channel on which incoming connections are notified on
-pub struct IncomingConnections(pub(crate) UnboundedReceiver<SocketAddr>);
+pub struct IncomingConnections(pub(crate) MpscReceiver<SocketAddr>);
 
 impl IncomingConnections {
     /// Blocks until there is an incoming connection and returns the address of the
@@ -61,7 +65,7 @@ impl IncomingConnections {
 }
 
 /// Disconnection
-pub struct DisconnectionEvents(pub(crate) UnboundedReceiver<SocketAddr>);
+pub struct DisconnectionEvents(pub(crate) MpscReceiver<SocketAddr>);
 
 impl DisconnectionEvents {
     /// Blocks until there is a disconnection event and returns the address of the disconnected peer
@@ -77,8 +81,8 @@ pub struct Endpoint {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
-    message_tx: UnboundedSender<(SocketAddr, Bytes)>,
-    disconnection_tx: UnboundedSender<SocketAddr>,
+    message_tx: MpscSender<(SocketAddr, Bytes)>,
+    disconnection_tx: MpscSender<SocketAddr>,
     client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
     qp2p_config: Config,
@@ -117,9 +121,9 @@ impl Endpoint {
         };
         let connection_pool = ConnectionPool::new();
 
-        let (message_tx, message_rx) = mpsc::unbounded_channel();
-        let (connection_tx, connection_rx) = mpsc::unbounded_channel();
-        let (disconnection_tx, disconnection_rx) = mpsc::unbounded_channel();
+        let (message_tx, message_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
+        let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
+        let (disconnection_tx, disconnection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
         let (termination_tx, termination_rx) = broadcast::channel(1);
 
         let mut endpoint = Self {
