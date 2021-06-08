@@ -63,7 +63,7 @@ impl ConnectionPool {
 
         keys_to_remove
             .iter()
-            .filter_map(|key| store.map.remove(key))
+            .filter_map(|key| store.map.remove(&key))
             .collect::<Vec<_>>()
     }
 

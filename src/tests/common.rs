@@ -358,6 +358,73 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
 }
 
 #[tokio::test]
+async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
+    use futures::future;
+
+    utils::init_logging();
+
+    let num_senders: usize = 10;
+    let num_messages_each: usize = 10;
+    let num_messages_total: usize = 100;
+
+    let qp2p = new_qp2p()?;
+    let (recv_endpoint, _, mut recv_incoming_messages, _) = qp2p.new_endpoint().await?;
+    let recv_addr = recv_endpoint.socket_addr();
+
+    let test_msgs: Vec<_> = (0..num_messages_each).map(|_| random_msg()).collect();
+    let sending_msgs = test_msgs.clone();
+
+    let mut tasks = Vec::new();
+
+    // Receiver
+    tasks.push(tokio::spawn({
+        async move {
+            let mut num_received = 0;
+
+            while let Some((src, msg)) = recv_incoming_messages.next().await {
+                log::info!("received from {:?} with message size {}", src, msg.len());
+                assert_eq!(msg.len(), test_msgs[0].len());
+
+                num_received += 1;
+
+                if num_received >= num_messages_total {
+                    break;
+                }
+            }
+
+            Ok(())
+        }
+    }));
+
+    // Sender
+    for id in 0..num_senders {
+        let messages = sending_msgs.clone();
+        tasks.push(tokio::spawn({
+            let qp2p = new_qp2p()?;
+            let (send_endpoint, _, _, _) = qp2p.new_endpoint().await?;
+
+            async move {
+                log::info!("connecting {}", id);
+                send_endpoint.connect_to(&recv_addr).await?;
+                for (index, message) in messages.iter().enumerate().take(num_messages_each) {
+                    log::info!("sender #{} sending message #{}", id, index);
+                    send_endpoint
+                        .send_message(message.clone(), &recv_addr)
+                        .await?;
+                }
+
+                log::info!("sender #{} completed sending messages", id);
+
+                Ok::<_, anyhow::Error>(())
+            }
+        }));
+    }
+
+    let _ = future::try_join_all(tasks).await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn many_messages() -> Result<()> {
     use futures::future;
     use std::{convert::TryInto, sync::Arc};
