@@ -335,6 +335,7 @@ impl Endpoint {
     pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<()> {
         if self.connection_pool.has(node_addr).await {
             trace!("We are already connected to this peer: {}", node_addr);
+            return Ok(());
         }
 
         // Check if a connect attempt to this address is already in progress.
