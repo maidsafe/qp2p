@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.12.1](https://github.com/maidsafe/qp2p/compare/v0.12.0...v0.12.1) (2021-06-09)
+
+
+### Bug Fixes
+
+* avoid re-connect attempts on existing connection ([3cde437](https://github.com/maidsafe/qp2p/commit/3cde43768d1df1cd54c1f2659d8abccc89e99038))
+
 ## [0.12.0](https://github.com/maidsafe/qp2p/compare/v0.11.11...v0.12.0) (2021-06-07)
 
 
