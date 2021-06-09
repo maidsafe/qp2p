@@ -61,6 +61,10 @@ flexi_logger = "~0.16.1"
 anyhow = "1.0.36"
 rand = "~0.7.3"
 
+  [dev-dependencies.tiny-keccak]
+  version = "2.0.2"
+  features = [ "sha3" ]
+
 [target."cfg(any(all(unix, not(any(target_os = \"android\", target_os = \"androideabi\", target_os = \"ios\"))), windows))".dependencies]
 dirs-next = "2.0.0"
 
