@@ -117,15 +117,14 @@ jobs:
       # Install Rust and required components
       - uses: actions-rs/toolchain@v1
         with:
-          profile: minimal
           toolchain: nightly
           override: true
 
-      # Install and run cargo udeps to find unused cargo dependencies
-      - name: cargo-udeps unused dependency check
-        run: |
-          cargo install cargo-udeps --locked
-          cargo +nightly udeps --all-targets
+      - name: Run cargo-udeps
+        uses: aig787/cargo-udeps-action@v1
+        with:
+          version: 'latest'
+          args: '--all-targets'
 
   cargo-deny:
     if: |
