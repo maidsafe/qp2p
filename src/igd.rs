@@ -10,19 +10,18 @@
 use crate::error::{Error, Result};
 use igd::SearchOptions;
 use log::{debug, info, warn};
-use std::net::{SocketAddr, SocketAddrV4};
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::time::{self, Instant};
 
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
-pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result<SocketAddrV4> {
+pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result<u16> {
     let igd_res = add_port(local_addr, lease_duration).await;
 
-    if let Ok(ref ext_sock_addr) = igd_res {
+    if let Ok(ext_port) = &igd_res {
         // Start a tokio task to renew the lease periodically.
-        let ext_port = ext_sock_addr.port();
         let lease_interval = Duration::from_secs(lease_duration.into());
-
+        let ext_port = *ext_port;
         let _ = tokio::spawn(async move {
             let mut timer = time::interval_at(Instant::now() + lease_interval, lease_interval);
 
@@ -51,7 +50,7 @@ pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result
 ///
 /// `lease_duration` is the life time of a port mapping (in seconds). If it is 0, the
 /// mapping will continue to exist as long as possible.
-pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> Result<SocketAddrV4> {
+pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> Result<u16> {
     let gateway = igd::aio::search_gateway(SearchOptions::default()).await?;
 
     debug!("IGD gateway found: {:?}", gateway);
@@ -59,18 +58,20 @@ pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> Res
     debug!("Our local address is: {:?}", local_addr);
 
     if let SocketAddr::V4(socket_addr) = local_addr {
-        let ext_addr = gateway
-            .get_any_address(
+        gateway
+            .add_port(
                 igd::PortMappingProtocol::UDP,
+                socket_addr.port(),
                 socket_addr,
                 lease_duration,
                 "MaidSafe.net",
             )
             .await?;
 
-        debug!("Our external port number is: {}", ext_addr.port());
+        let ext_port = socket_addr.port();
+        debug!("Our external port number is: {}", socket_addr.port());
 
-        Ok(ext_addr)
+        Ok(ext_port)
     } else {
         info!("IPv6 for IGD is not supported");
         Err(Error::IgdNotSupported)
