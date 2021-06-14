@@ -263,9 +263,10 @@ impl Endpoint {
             .await
             {
                 Ok(res) => match res {
-                    Ok(public_sa) => {
-                        debug!("IGD success: {:?}", SocketAddr::V4(public_sa));
-                        addr = Some(SocketAddr::V4(public_sa));
+                    Ok(port) => {
+                        if let Some(socket) = &mut addr {
+                            socket.set_port(port);
+                        }
                     }
                     Err(e) => {
                         info!("IGD request failed: {} - {:?}", e, e);
