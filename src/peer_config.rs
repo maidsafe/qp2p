@@ -16,12 +16,12 @@ use std::{sync::Arc, time::Duration};
 /// see no conversation between them.
 ///
 /// The value is in milliseconds.
-pub const DEFAULT_IDLE_TIMEOUT_MSEC: u64 = 30_000; // 30secs
+pub const DEFAULT_IDLE_TIMEOUT_MSEC: u64 = 60_000; // 60secs
 /// Default Interval to send keep-alives if we are idling so that the peer does not disconnect from
 /// us declaring us offline. If none is supplied we'll default to the documented constant.
 ///
 /// The value is in milliseconds.
-pub const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 10_000; // 10secs
+pub const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 20_000; // 20secs
 
 pub fn new_client_cfg(
     idle_timeout_msec: u64,
