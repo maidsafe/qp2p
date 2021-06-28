@@ -95,6 +95,12 @@ impl std::fmt::Debug for Endpoint {
     }
 }
 
+impl Drop for Endpoint {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
 impl Endpoint {
     pub(crate) async fn new(
         quic_endpoint: quinn::Endpoint,
