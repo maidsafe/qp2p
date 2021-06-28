@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     // loop over incoming messages
     while let Some((socket_addr, bytes)) = incoming_messages.next().await {
         println!("Received from {:?} --> {:?}", socket_addr, bytes);
-        if bytes == Bytes::from(MSG_MARCO) {
+        if bytes == *MSG_MARCO {
             let reply = Bytes::from(MSG_POLO);
             node.send_message(reply.clone(), &socket_addr).await?;
             println!("Replied to {:?} --> {:?}", socket_addr, reply);
