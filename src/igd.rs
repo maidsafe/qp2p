@@ -12,10 +12,15 @@ use igd::SearchOptions;
 use log::{debug, info, warn};
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::sync::broadcast::{error::TryRecvError, Receiver};
 use tokio::time::{self, Instant};
 
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
-pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result<u16> {
+pub async fn forward_port(
+    local_addr: SocketAddr,
+    lease_duration: u32,
+    mut termination_rx: Receiver<()>,
+) -> Result<u16> {
     let igd_res = add_port(local_addr, lease_duration).await;
 
     if let Ok(ext_port) = &igd_res {
@@ -27,6 +32,9 @@ pub async fn forward_port(local_addr: SocketAddr, lease_duration: u32) -> Result
 
             loop {
                 let _ = timer.tick().await;
+                if termination_rx.try_recv() != Err(TryRecvError::Empty) {
+                    break;
+                }
                 debug!("Renewing IGD lease for port {}", local_addr);
 
                 let renew_res = renew_port(local_addr, ext_port, lease_duration).await;

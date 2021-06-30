@@ -24,6 +24,7 @@ use super::{
 use bytes::Bytes;
 use log::{debug, error, info, trace, warn};
 use std::{net::SocketAddr, time::Duration};
+use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::time::timeout;
 
@@ -81,6 +82,7 @@ pub struct Endpoint {
     client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
     qp2p_config: Config,
+    termination_tx: Sender<()>,
     connection_pool: ConnectionPool,
     connection_deduplicator: ConnectionDeduplicator,
 }
@@ -118,6 +120,7 @@ impl Endpoint {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
         let (connection_tx, connection_rx) = mpsc::unbounded_channel();
         let (disconnection_tx, disconnection_rx) = mpsc::unbounded_channel();
+        let (termination_tx, termination_rx) = broadcast::channel(1);
 
         let mut endpoint = Self {
             local_addr,
@@ -128,6 +131,7 @@ impl Endpoint {
             client_cfg,
             bootstrap_nodes,
             qp2p_config,
+            termination_tx,
             connection_pool: connection_pool.clone(),
             connection_deduplicator: ConnectionDeduplicator::new(),
         };
@@ -182,7 +186,7 @@ impl Endpoint {
                 warn!("Public IP address not verified since bootstrap contacts are empty");
             }
         } else {
-            endpoint.public_addr = Some(endpoint.fetch_public_address().await?);
+            endpoint.public_addr = Some(endpoint.fetch_public_address(termination_rx).await?);
         }
 
         listen_for_incoming_connections(
@@ -219,7 +223,7 @@ impl Endpoint {
     /// simply build our connection info by querying the underlying bound socket for our address.
     /// Note that if such an obtained address is of unspecified category we will ignore that as
     /// such an address cannot be reached and hence not useful.
-    async fn fetch_public_address(&mut self) -> Result<SocketAddr> {
+    async fn fetch_public_address(&mut self, termination_rx: Receiver<()>) -> Result<SocketAddr> {
         // Skip port forwarding
         if self.local_addr.ip().is_loopback() || !self.qp2p_config.forward_port {
             self.public_addr = Some(self.local_addr);
@@ -258,6 +262,7 @@ impl Endpoint {
                     self.qp2p_config
                         .upnp_lease_duration
                         .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC),
+                    termination_rx,
                 ),
             )
             .await
@@ -493,6 +498,7 @@ impl Endpoint {
 
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
     pub fn close(&self) {
+        let _ = self.termination_tx.send(());
         self.quic_endpoint.close(0_u32.into(), b"")
     }
 
