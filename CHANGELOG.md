@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.12.5](https://github.com/maidsafe/qp2p/compare/v0.12.4...v0.12.5) (2021-07-01)
+
+
+### Features
+
+* **error:** add error variant when creating port binding fails ([24b2bc5](https://github.com/maidsafe/qp2p/commit/24b2bc5d6612f3ea4945d11afb80ab35f83c93a1))
+
+
+### Bug Fixes
+
+* **clippy:** fix clippy issues ([53de7a9](https://github.com/maidsafe/qp2p/commit/53de7a946de283660bf8e0ad29f43ae22b6233f4))
+* **igd:** stop renewing port mapping after endpoint.close() is called ([949b372](https://github.com/maidsafe/qp2p/commit/949b3725d4aedbc9d0cea5136ade8eb9ed6b5ab6))
+
 ### [0.12.4](https://github.com/maidsafe/qp2p/compare/v0.12.3...v0.12.4) (2021-06-24)
 
 ### [0.12.3](https://github.com/maidsafe/qp2p/compare/v0.12.2...v0.12.3) (2021-06-14)
