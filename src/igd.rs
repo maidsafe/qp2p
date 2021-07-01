@@ -32,7 +32,7 @@ pub async fn forward_port(
 
             loop {
                 let _ = timer.tick().await;
-                if let Err(TryRecvError::Empty) = termination_rx.try_recv() {
+                if termination_rx.try_recv() != Err(TryRecvError::Empty) {
                     break;
                 }
                 debug!("Renewing IGD lease for port {}", local_addr);
