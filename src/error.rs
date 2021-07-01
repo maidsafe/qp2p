@@ -69,6 +69,9 @@ pub enum Error {
     /// Failed to decode a base64-encoded string.
     #[error("Base64 decode")]
     Base64Decode(#[from] base64::DecodeError),
+    /// Cannot assign port to endpoint
+    #[error("Cannot assign port to endpoint {0}")]
+    CannotAssignPort(u16),
     /// An error occurred which could be resolved by changing some config value.
     #[error("Configuration {0}")]
     Configuration(String),
