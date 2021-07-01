@@ -326,10 +326,10 @@ fn bind(
                 Error::Endpoint(e)
             })
         }
-        Err(err) => Err(Error::Configuration(format!(
-            "Could not bind to address: {}! Error: {}",
-            local_addr, err
-        ))),
+        Err(err) => {
+            error!("{}", err);
+            Err(Error::CannotAssignPort(local_addr.port()))
+        }
     }
 }
 
