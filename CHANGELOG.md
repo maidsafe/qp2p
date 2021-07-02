@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.12.6](https://github.com/maidsafe/qp2p/compare/v0.12.5...v0.12.6) (2021-07-02)
+
+
+### Bug Fixes
+
+* **igd:** Fix the condition for terminating the IGD renewal loop ([295626c](https://github.com/maidsafe/qp2p/commit/295626c7dc326ec880124df49bcb1571d7a86b9e))
+
 ### [0.12.5](https://github.com/maidsafe/qp2p/compare/v0.12.4...v0.12.5) (2021-07-01)
 
 
