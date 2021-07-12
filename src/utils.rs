@@ -27,34 +27,3 @@ pub fn bin_data_format(data: &[u8]) -> String {
         data[len - 1]
     )
 }
-
-#[cfg(test)]
-pub(crate) fn init_logging() {
-    use flexi_logger::{DeferredNow, Logger};
-    use log::Record;
-    use std::io::Write;
-
-    // Custom formatter for logs
-    let do_format = move |writer: &mut dyn Write, clock: &mut DeferredNow, record: &Record| {
-        let handle = std::thread::current();
-        write!(
-            writer,
-            "[{}] {} {} [{}:{}] {}",
-            handle
-                .name()
-                .unwrap_or(&format!("Thread-{:?}", handle.id())),
-            record.level(),
-            clock.now().to_rfc3339(),
-            record.file().unwrap_or_default(),
-            record.line().unwrap_or_default(),
-            record.args()
-        )
-    };
-
-    Logger::with_env()
-        .format(do_format)
-        .suppress_timestamp()
-        .start()
-        .map(|_| ())
-        .unwrap_or(());
-}

@@ -8,7 +8,6 @@
 // Software.
 
 use super::{new_qp2p, new_qp2p_with_hcc, random_msg};
-use crate::utils;
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use futures::future;
@@ -18,14 +17,13 @@ use std::{
 };
 use tiny_keccak::{Hasher, Sha3};
 use tokio::time::timeout;
-
+use tracing_test::traced_test;
 /// SHA3-256 hash digest.
 type Digest256 = [u8; 32];
 
 #[tokio::test]
+#[traced_test]
 async fn successful_connection() -> Result<()> {
-    utils::init_logging();
-
     let qp2p = new_qp2p()?;
     let (peer1, mut peer1_incoming_connections, _, _) = qp2p.new_endpoint().await?;
     let peer1_addr = peer1.socket_addr();
@@ -44,9 +42,8 @@ async fn successful_connection() -> Result<()> {
 }
 
 #[tokio::test]
+#[traced_test]
 async fn single_message() -> Result<()> {
-    utils::init_logging();
-
     let qp2p = new_qp2p()?;
     let (peer1, mut peer1_incoming_connections, mut peer1_incoming_messages, _) =
         qp2p.new_endpoint().await?;
@@ -80,9 +77,8 @@ async fn single_message() -> Result<()> {
 }
 
 #[tokio::test]
+#[traced_test]
 async fn reuse_outgoing_connection() -> Result<()> {
-    utils::init_logging();
-
     let qp2p = new_qp2p()?;
     let (alice, _, _, _) = qp2p.new_endpoint().await?;
     let alice_addr = alice.socket_addr();
@@ -132,9 +128,8 @@ async fn reuse_outgoing_connection() -> Result<()> {
 }
 
 #[tokio::test]
+#[traced_test]
 async fn reuse_incoming_connection() -> Result<()> {
-    utils::init_logging();
-
     let qp2p = new_qp2p()?;
     let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _) =
         qp2p.new_endpoint().await?;
@@ -186,9 +181,8 @@ async fn reuse_incoming_connection() -> Result<()> {
 }
 
 #[tokio::test]
+#[traced_test]
 async fn disconnection() -> Result<()> {
-    utils::init_logging();
-
     let qp2p = new_qp2p()?;
     let (alice, mut alice_incoming_connections, _, mut alice_disconnections) =
         qp2p.new_endpoint().await?;
@@ -235,12 +229,11 @@ async fn disconnection() -> Result<()> {
 }
 
 #[tokio::test]
+#[traced_test]
 async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     // If both peers call `connect_to` simultaneously (that is, before any of them receives the
     // others connection first), two separate connections are created. This test verifies that
     // everything still works correctly even in this case.
-
-    utils::init_logging();
 
     let qp2p = new_qp2p()?;
     let (
@@ -321,9 +314,8 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
 }
 
 #[tokio::test]
+#[traced_test]
 async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
-    utils::init_logging();
-
     let qp2p = new_qp2p()?;
     let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _) =
         qp2p.new_endpoint().await?;
@@ -383,10 +375,9 @@ fn hash(bytes: &Bytes) -> Digest256 {
 }
 
 #[tokio::test]
+#[traced_test]
 async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     use futures::future;
-
-    utils::init_logging();
 
     let num_senders: usize = 10;
     let num_messages_each: usize = 100;
@@ -408,7 +399,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
             let mut sending_tasks = Vec::new();
 
             while let Some((src, msg)) = recv_incoming_messages.next().await {
-                log::info!("received from {:?} with message size {}", src, msg.len());
+                tracing::info!("received from {:?} with message size {}", src, msg.len());
                 assert_eq!(msg.len(), test_msgs[0].len());
 
                 let sending_endpoint = server_endpoint.clone();
@@ -451,23 +442,23 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 
             async move {
                 let mut hash_results = BTreeSet::new();
-                log::info!("connecting {}", id);
+                tracing::info!("connecting {}", id);
                 send_endpoint.connect_to(&server_addr).await?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
                     let _ = hash_results.insert(hash(&message));
-                    log::info!("sender #{} sending message #{}", id, index);
+                    tracing::info!("sender #{} sending message #{}", id, index);
                     send_endpoint
                         .send_message(message.clone(), &server_addr)
                         .await?;
                 }
 
-                log::info!(
+                tracing::info!(
                     "sender #{} completed sending messages, starts listening",
                     id
                 );
 
                 while let Some((src, msg)) = recv_incoming_messages.next().await {
-                    log::info!(
+                    tracing::info!(
                         "#{} received from server {:?} with message size {}",
                         id,
                         src,
@@ -489,11 +480,10 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 }
 
 #[tokio::test]
+#[traced_test]
 async fn many_messages() -> Result<()> {
     use futures::future;
     use std::{convert::TryInto, sync::Arc};
-
-    utils::init_logging();
 
     let num_messages: usize = 10_000;
 
@@ -513,11 +503,11 @@ async fn many_messages() -> Result<()> {
         tasks.push(tokio::spawn({
             let endpoint = send_endpoint.clone();
             async move {
-                log::info!("sending {}", id);
+                tracing::info!("sending {}", id);
                 let msg = id.to_le_bytes().to_vec().into();
                 endpoint.connect_to(&recv_addr).await?;
                 endpoint.send_message(msg, &recv_addr).await?;
-                log::info!("sent {}", id);
+                tracing::info!("sent {}", id);
 
                 Ok::<_, anyhow::Error>(())
             }
@@ -532,7 +522,7 @@ async fn many_messages() -> Result<()> {
             while let Some((src, msg)) = recv_incoming_messages.next().await {
                 let id = usize::from_le_bytes(msg[..].try_into().unwrap());
                 assert_eq!(src, send_addr);
-                log::info!("received {}", id);
+                tracing::info!("received {}", id);
 
                 num_received += 1;
 
@@ -553,8 +543,8 @@ async fn many_messages() -> Result<()> {
 // that succeeds. We should still be able to establish a connection with the rest of the
 // bootstrap contacts later.
 #[tokio::test]
+#[traced_test]
 async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()> {
-    utils::init_logging();
     let qp2p = new_qp2p()?;
 
     let (ep1, _, _, _) = qp2p.new_endpoint().await?;
