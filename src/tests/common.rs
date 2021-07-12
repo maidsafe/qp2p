@@ -10,13 +10,14 @@
 use super::{new_qp2p, new_qp2p_with_hcc, random_msg};
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
-use futures::future;
+use futures::{future, stream::FuturesUnordered, StreamExt};
 use std::{
     collections::{BTreeSet, HashSet},
     time::Duration,
 };
 use tiny_keccak::{Hasher, Sha3};
 use tokio::time::timeout;
+use tracing::{debug, info};
 use tracing_test::traced_test;
 /// SHA3-256 hash digest.
 type Digest256 = [u8; 32];
@@ -399,7 +400,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
             let mut sending_tasks = Vec::new();
 
             while let Some((src, msg)) = recv_incoming_messages.next().await {
-                tracing::info!("received from {:?} with message size {}", src, msg.len());
+                info!("received from {:?} with message size {}", src, msg.len());
                 assert_eq!(msg.len(), test_msgs[0].len());
 
                 let sending_endpoint = server_endpoint.clone();
@@ -442,23 +443,23 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 
             async move {
                 let mut hash_results = BTreeSet::new();
-                tracing::info!("connecting {}", id);
+                info!("connecting {}", id);
                 send_endpoint.connect_to(&server_addr).await?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
                     let _ = hash_results.insert(hash(&message));
-                    tracing::info!("sender #{} sending message #{}", id, index);
+                    info!("sender #{} sending message #{}", id, index);
                     send_endpoint
                         .send_message(message.clone(), &server_addr)
                         .await?;
                 }
 
-                tracing::info!(
+                info!(
                     "sender #{} completed sending messages, starts listening",
                     id
                 );
 
                 while let Some((src, msg)) = recv_incoming_messages.next().await {
-                    tracing::info!(
+                    info!(
                         "#{} received from server {:?} with message size {}",
                         id,
                         src,
@@ -482,11 +483,11 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 #[tokio::test]
 #[traced_test]
 async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<()> {
-    use futures::future;
+    // use futures::future;
 
-    let num_senders: usize = 500;
-    let num_messages_each: usize = 100;
-    let num_messages_total: usize = 10000;
+    let num_senders: usize = 100;
+    let num_messages_each: usize = 50;
+    let num_messages_total: usize = num_senders * num_messages_each;
 
     let qp2p = new_qp2p()?;
     let (server_endpoint, _, mut recv_incoming_messages, _) = qp2p.new_endpoint().await?;
@@ -497,57 +498,49 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
         .collect();
     let sending_msgs = test_msgs.clone();
 
-    let mut tasks = Vec::new();
+    let mut tasks = FuturesUnordered::new();
 
-    // Receiver
+    // Receiver + Hasher
     tasks.push(tokio::spawn({
         async move {
             let mut num_received = 0;
-            let mut sending_tasks = Vec::new();
             assert!(!logs_contain("error"));
 
             while let Some((src, msg)) = recv_incoming_messages.next().await {
-                tracing::info!("received from {:?} with message size {}", src, msg.len());
+                info!("received from {:?} with message size {}", src, msg.len());
                 assert!(!logs_contain("error"));
 
                 assert_eq!(msg.len(), test_msgs[0].len());
 
                 let sending_endpoint = server_endpoint.clone();
 
-                let handle = tokio::spawn({
-                    async move {
-                        // Hash the inputs for couple times to simulate certain workload.
-                        let hash_result = hash(&msg);
-                        for _ in 0..5 {
-                            let _ = hash(&msg);
-                        }
-                        // Send the hash result back.
-                        sending_endpoint.connect_to(&src).await?;
-                        sending_endpoint
-                            .send_message(hash_result.to_vec().into(), &src)
-                            .await?;
-                        assert!(!logs_contain("error"));
+                let hash_result = hash(&msg);
+                for _ in 0..5 {
+                    let _ = hash(&msg);
+                }
 
-                        Ok::<_, anyhow::Error>(())
-                    }
-                });
-
-                sending_tasks.push(handle);
+                debug!("hashed");
+                // Send the hash result back.
+                sending_endpoint
+                    .send_message(hash_result.to_vec().into(), &src)
+                    .await?;
+                assert!(!logs_contain("error"));
 
                 num_received += 1;
+                println!("COUNT: {}", num_received);
                 if num_received >= num_messages_total {
+                    debug!(">>>>>>>>>>> GOT MORE RECEIVED THAN LIMIT< BREAKING HERE");
                     break;
                 }
             }
 
-            let _ = future::try_join_all(sending_tasks).await?;
             assert!(!logs_contain("error"));
 
             Ok(())
         }
     }));
 
-    // Sender
+    // Sender + Verifier
     for id in 0..num_senders {
         let messages = sending_msgs.clone();
         assert!(!logs_contain("error"));
@@ -558,17 +551,19 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
 
             async move {
                 let mut hash_results = BTreeSet::new();
-                tracing::info!("connecting {}", id);
+                info!("connecting {}", id);
                 send_endpoint.connect_to(&server_addr).await?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
-                    let _ = hash_results.insert(hash(&message));
-                    tracing::info!("sender #{} sending message #{}", id, index);
+                    let hash = hash(&message);
+                    let already_existed = hash_results.insert(hash);
+                    info!("{:?} did this NOT exist??? {:?}", hash, already_existed);
+                    info!("sender #{} sending message #{}", id, index);
                     send_endpoint
                         .send_message(message.clone(), &server_addr)
                         .await?;
                 }
 
-                tracing::info!(
+                info!(
                     "sender #{} completed sending messages, starts listening",
                     id
                 );
@@ -576,15 +571,19 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                 assert!(!logs_contain("error"));
 
                 while let Some((src, msg)) = recv_incoming_messages.next().await {
-                    assert!(!logs_contain("error"));
+                    // assert!(!logs_contain("error"));
 
-                    tracing::info!(
-                        "#{} received from server {:?} with message size {}",
-                        id,
-                        src,
-                        msg.len()
+                    info!(
+                        "#{} received from server {:?} with message size {:?}",
+                        id, src, msg
                     );
-                    assert!(hash_results.remove(&msg[..]));
+                    info!("pending hash_results len BEFORE: {:?}", hash_results.len());
+
+                    let existed = hash_results.remove(&msg[..]);
+
+                    info!(" {:?} >>>>> the result existed?? {:?}", msg, existed);
+
+                    info!("pending hash_results len: {:?}", hash_results.len());
                     if hash_results.is_empty() {
                         break;
                     }
@@ -595,7 +594,12 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
         }));
     }
 
-    let _ = future::try_join_all(tasks).await?;
+    while let Some(result) = tasks.next().await {
+        match result {
+            Ok(Ok(())) => (),
+            other => anyhow::bail!("OTHER: {:?}", other??),
+        }
+    }
     Ok(())
 }
 
@@ -623,11 +627,11 @@ async fn many_messages() -> Result<()> {
         tasks.push(tokio::spawn({
             let endpoint = send_endpoint.clone();
             async move {
-                tracing::info!("sending {}", id);
+                info!("sending {}", id);
                 let msg = id.to_le_bytes().to_vec().into();
                 endpoint.connect_to(&recv_addr).await?;
                 endpoint.send_message(msg, &recv_addr).await?;
-                tracing::info!("sent {}", id);
+                info!("sent {}", id);
 
                 Ok::<_, anyhow::Error>(())
             }
@@ -642,7 +646,7 @@ async fn many_messages() -> Result<()> {
             while let Some((src, msg)) = recv_incoming_messages.next().await {
                 let id = usize::from_le_bytes(msg[..].try_into().unwrap());
                 assert_eq!(src, send_addr);
-                tracing::info!("received {}", id);
+                info!("received {}", id);
 
                 num_received += 1;
 
