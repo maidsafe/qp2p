@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.12.7](https://github.com/maidsafe/qp2p/compare/v0.12.6...v0.12.7) (2021-07-12)
+
+
+### Features
+
+* use tracing for logging ([d65285b](https://github.com/maidsafe/qp2p/commit/d65285b0d42673c8d11c4ff3b6a5d19b4a46e029))
+
 ### [0.12.6](https://github.com/maidsafe/qp2p/compare/v0.12.5...v0.12.6) (2021-07-02)
 
 
