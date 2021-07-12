@@ -15,8 +15,8 @@ use super::{
     connection_deduplicator::ConnectionDeduplicator,
     connection_pool::ConnectionPool,
     connections::{
-        listen_for_incoming_connections, listen_for_incoming_messages, Connection, RecvStream,
-        SendStream,
+        listen_for_incoming_connections, listen_for_incoming_messages, Connection,
+        DisconnectSender, DisconnectionEvents, RecvStream, SendStream,
     },
     error::Result,
     Config,
@@ -25,7 +25,6 @@ use bytes::Bytes;
 use std::{net::SocketAddr, time::Duration};
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender};
-
 use tokio::time::timeout;
 use tracing::{debug, error, info, trace, warn};
 
@@ -64,16 +63,6 @@ impl IncomingConnections {
     }
 }
 
-/// Disconnection
-pub struct DisconnectionEvents(pub(crate) MpscReceiver<SocketAddr>);
-
-impl DisconnectionEvents {
-    /// Blocks until there is a disconnection event and returns the address of the disconnected peer
-    pub async fn next(&mut self) -> Option<SocketAddr> {
-        self.0.recv().await
-    }
-}
-
 /// Endpoint instance which can be used to create connections to peers,
 /// and listen to incoming messages from other peers.
 #[derive(Clone)]
@@ -82,7 +71,7 @@ pub struct Endpoint {
     public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
     message_tx: MpscSender<(SocketAddr, Bytes)>,
-    disconnection_tx: MpscSender<SocketAddr>,
+    disconnection_tx: DisconnectSender,
     client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
     qp2p_config: Config,
