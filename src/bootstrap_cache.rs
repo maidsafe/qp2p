@@ -12,7 +12,6 @@
 use crate::error::{Error, Result};
 use bincode::{deserialize_from, serialize_into};
 use dirs_next::home_dir;
-use log::warn;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
     collections::{HashSet, VecDeque},
@@ -24,6 +23,7 @@ use std::{
     fs::File,
     io::{BufReader, BufWriter},
 };
+use tracing::warn;
 
 /// Maximum peers in the cache.
 const MAX_CACHE_SIZE: usize = 200;

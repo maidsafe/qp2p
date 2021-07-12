@@ -15,10 +15,10 @@ use super::{
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
 use futures::future;
-use log::{debug, error, info, trace};
 use std::collections::HashSet;
 use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
+use tracing::{debug, error, info, trace};
 
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.

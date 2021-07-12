@@ -9,11 +9,11 @@
 
 use crate::error::{Error, Result};
 use igd::SearchOptions;
-use log::{debug, info, warn};
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::sync::broadcast::{error::TryRecvError, Receiver};
 use tokio::time::{self, Instant};
+use tracing::{debug, info, warn};
 
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
 pub async fn forward_port(

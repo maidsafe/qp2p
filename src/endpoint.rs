@@ -22,11 +22,11 @@ use super::{
     Config,
 };
 use bytes::Bytes;
-use log::{debug, error, info, trace, warn};
 use std::{net::SocketAddr, time::Duration};
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::time::timeout;
+use tracing::{debug, error, info, trace, warn};
 
 /// Host name of the Quic communication certificate used by peers
 // FIXME: make it configurable

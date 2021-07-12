@@ -16,10 +16,10 @@ use super::{
 };
 use bytes::Bytes;
 use futures::{future, stream::StreamExt};
-use log::{error, trace, warn};
 use std::net::SocketAddr;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::time::{timeout, Duration};
+use tracing::{error, trace, warn};
 
 /// Connection instance to a node which can be used to send messages to it
 #[derive(Clone)]
@@ -199,7 +199,7 @@ pub(super) fn listen_for_incoming_messages(
         )
         .await;
 
-        log::trace!("The connection to {:?} has been terminated.", src);
+        tracing::trace!("The connection to {:?} has been terminated.", src);
         let _ = disconnection_tx.send(src);
         remover.remove().await;
     });
