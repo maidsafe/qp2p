@@ -17,7 +17,7 @@ use std::{
 };
 use tiny_keccak::{Hasher, Sha3};
 use tokio::time::timeout;
-use tracing::{debug, info};
+use tracing::info;
 use tracing_test::traced_test;
 /// SHA3-256 hash digest.
 type Digest256 = [u8; 32];
@@ -205,13 +205,13 @@ async fn disconnection() -> Result<()> {
     // After Alice disconnects from Bob both peers should receive the disconnected event.
     alice.disconnect_from(&bob_addr).await?;
 
-    if let Some((disconnected_peer, _res)) = alice_disconnections.next().await {
+    if let Some(disconnected_peer) = alice_disconnections.next().await {
         assert_eq!(disconnected_peer, bob_addr);
     } else {
         anyhow!("Missing disconnection event");
     }
 
-    if let Some((disconnected_peer, _res)) = bob_disconnections.next().await {
+    if let Some(disconnected_peer) = bob_disconnections.next().await {
         assert_eq!(disconnected_peer, alice_addr);
     } else {
         anyhow!("Missing disconnection event");
@@ -287,7 +287,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     bob.disconnect_from(&alice_addr).await?;
 
     // It should be closed on Alice's side too.
-    if let Some((disconnected_peer, _)) = alice_disconnections.next().await {
+    if let Some(disconnected_peer) = alice_disconnections.next().await {
         assert_eq!(disconnected_peer, bob_addr);
     } else {
         anyhow!("Missing disconnection event");
@@ -443,7 +443,6 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 
             async move {
                 let mut hash_results = BTreeSet::new();
-                info!("connecting {}", id);
                 send_endpoint.connect_to(&server_addr).await?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
                     let _ = hash_results.insert(hash(&message));
@@ -465,7 +464,11 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                         src,
                         msg.len()
                     );
+
+                    info!("Hash len before: {:?}", hash_results.len());
                     assert!(hash_results.remove(&msg[..]));
+                    info!("Hash len after: {:?}", hash_results.len());
+
                     if hash_results.is_empty() {
                         break;
                     }
@@ -483,10 +486,8 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 #[tokio::test]
 #[traced_test]
 async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<()> {
-    // use futures::future;
-
-    let num_senders: usize = 100;
-    let num_messages_each: usize = 50;
+    let num_senders: usize = 10;
+    let num_messages_each: usize = 100;
     let num_messages_total: usize = num_senders * num_messages_each;
 
     let qp2p = new_qp2p()?;
@@ -519,17 +520,16 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                     let _ = hash(&msg);
                 }
 
-                debug!("hashed");
                 // Send the hash result back.
                 sending_endpoint
                     .send_message(hash_result.to_vec().into(), &src)
                     .await?;
+
                 assert!(!logs_contain("error"));
 
                 num_received += 1;
-                println!("COUNT: {}", num_received);
+                println!("Server received count: {}", num_received);
                 if num_received >= num_messages_total {
-                    debug!(">>>>>>>>>>> GOT MORE RECEIVED THAN LIMIT< BREAKING HERE");
                     break;
                 }
             }
@@ -551,12 +551,11 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
 
             async move {
                 let mut hash_results = BTreeSet::new();
-                info!("connecting {}", id);
+
                 send_endpoint.connect_to(&server_addr).await?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
-                    let hash = hash(&message);
-                    let already_existed = hash_results.insert(hash);
-                    info!("{:?} did this NOT exist??? {:?}", hash, already_existed);
+                    let _ = hash_results.insert(hash(&message));
+
                     info!("sender #{} sending message #{}", id, index);
                     send_endpoint
                         .send_message(message.clone(), &server_addr)
@@ -568,22 +567,18 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                     id
                 );
 
-                assert!(!logs_contain("error"));
-
                 while let Some((src, msg)) = recv_incoming_messages.next().await {
-                    // assert!(!logs_contain("error"));
+                    assert!(!logs_contain("error"));
 
                     info!(
-                        "#{} received from server {:?} with message size {:?}",
+                        "sender #{} received from server {:?} with message size {:?}",
                         id, src, msg
                     );
-                    info!("pending hash_results len BEFORE: {:?}", hash_results.len());
 
-                    let existed = hash_results.remove(&msg[..]);
+                    info!("Hash len before: {:?}", hash_results.len());
+                    assert!(hash_results.remove(&msg[..]));
+                    info!("Hash len after: {:?}", hash_results.len());
 
-                    info!(" {:?} >>>>> the result existed?? {:?}", msg, existed);
-
-                    info!("pending hash_results len: {:?}", hash_results.len());
                     if hash_results.is_empty() {
                         break;
                     }
@@ -597,7 +592,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
     while let Some(result) = tasks.next().await {
         match result {
             Ok(Ok(())) => (),
-            other => anyhow::bail!("OTHER: {:?}", other??),
+            other => anyhow::bail!("Error from test threads: {:?}", other??),
         }
     }
     Ok(())

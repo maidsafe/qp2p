@@ -73,7 +73,7 @@ impl ConnectionDeduplicator {
 pub(crate) enum Error {
     #[error("Connect error")]
     Connect(#[from] quinn::ConnectError),
-    #[error("Connection error")]
+    #[error("Quinn Connection error during deduplication")]
     Connection(#[from] quinn::ConnectionError),
 }
 
@@ -81,7 +81,7 @@ impl From<Error> for crate::error::Error {
     fn from(src: Error) -> Self {
         match src {
             Error::Connect(source) => Self::Connect(source),
-            Error::Connection(source) => Self::Connection(source),
+            Error::Connection(_) => Self::QuinnConnectionClosed,
         }
     }
 }

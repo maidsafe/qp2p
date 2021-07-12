@@ -16,16 +16,17 @@ use super::{
     connection_pool::ConnectionPool,
     connections::{
         listen_for_incoming_connections, listen_for_incoming_messages, Connection,
-        DisconnectSender, DisconnectionEvents, RecvStream, SendStream,
+        DisconnectionEvents, RecvStream, SendStream,
     },
     error::Result,
     Config,
 };
 use bytes::Bytes;
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
+
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender};
-use tokio::time::timeout;
+use tokio::time::{sleep, timeout, Duration};
 use tracing::{debug, error, info, trace, warn};
 
 /// Host name of the Quic communication certificate used by peers
@@ -40,7 +41,10 @@ const PORT_FORWARD_TIMEOUT: u64 = 30;
 const ECHO_SERVICE_QUERY_TIMEOUT: u64 = 30;
 
 /// Standard size of our channel bounds
-const STANDARD_CHANNEL_SIZE: usize = 1000;
+const STANDARD_CHANNEL_SIZE: usize = 10000;
+
+/// Max number of attempts for connection retries
+const MAX_ATTEMPTS: usize = 10;
 
 /// Channel on which incoming messages can be listened to
 pub struct IncomingMessages(pub(crate) MpscReceiver<(SocketAddr, Bytes)>);
@@ -71,7 +75,8 @@ pub struct Endpoint {
     public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
     message_tx: MpscSender<(SocketAddr, Bytes)>,
-    disconnection_tx: DisconnectSender,
+    disconnection_tx: MpscSender<SocketAddr>,
+
     client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
     qp2p_config: Config,
@@ -347,34 +352,21 @@ impl Endpoint {
             None => {}
         }
 
-        // This is the first attempt - proceed with establishing the connection now.
-        let connecting = match self.quic_endpoint.connect_with(
-            self.client_cfg.clone(),
-            node_addr,
-            CERT_SERVER_NAME,
-        ) {
-            Ok(connecting) => connecting,
-            Err(error) => {
-                self.connection_deduplicator
-                    .complete(node_addr, Err(error.clone().into()))
-                    .await;
-                return Err(error.into());
-            }
-        };
+        let mut attempts: usize = 0;
 
-        let new_conn = match connecting.await {
-            Ok(new_conn) => new_conn,
-            Err(error) => {
-                self.connection_deduplicator
-                    .complete(node_addr, Err(error.clone().into()))
-                    .await;
-                return Err(error.into());
-            }
-        };
+        let mut connecting = self.attempt_connection(node_addr).await;
+
+        while connecting.is_err() && attempts < MAX_ATTEMPTS {
+            sleep(Duration::from_millis(500)).await;
+            connecting = self.attempt_connection(node_addr).await;
+            attempts += 1;
+        }
+
+        let final_conn = connecting?;
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        self.add_new_connection_to_pool(new_conn).await;
+        self.add_new_connection_to_pool(final_conn).await;
 
         self.connection_deduplicator
             .complete(node_addr, Ok(()))
@@ -383,12 +375,41 @@ impl Endpoint {
         Ok(())
     }
 
+    /// Attempt a connection to a node_addr
+    async fn attempt_connection(&self, node_addr: &SocketAddr) -> Result<quinn::NewConnection> {
+        trace!("Attempting connecton to {:?}", node_addr);
+        let connecting = self.quic_endpoint.connect_with(
+            self.client_cfg.clone(),
+            node_addr,
+            CERT_SERVER_NAME,
+        )?;
+
+        match connecting.await {
+            Ok(new_conn) => Ok(new_conn),
+            Err(error) => {
+                self.connection_deduplicator
+                    .complete(node_addr, Err(error.clone().into()))
+                    .await;
+
+                Err(Error::QuinnConnectionClosed)
+            }
+        }
+    }
+
     /// Verify if an address is publicly reachable. This will attempt to create
     /// a new connection and use it to exchange a message and verify that the node
     /// can be reached.
     pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<()> {
+        trace!("Checking is reachable");
         let new_connection = self.create_new_connection(peer_addr).await?;
-        let (mut send_stream, mut recv_stream) = new_connection.connection.open_bi().await?;
+        let (mut send_stream, mut recv_stream) = match new_connection.connection.open_bi().await {
+            Ok(cool) => cool,
+            Err(error) => {
+                error!("Reachablity check errored with: {:?}", error);
+                return Err(Error::QuinnConnectionClosed);
+            }
+        };
+
         let message = WireMsg::EndpointEchoReq;
         message.write_to_stream(&mut send_stream).await?;
 
@@ -422,10 +443,17 @@ impl Endpoint {
         &self,
         peer_addr: &SocketAddr,
     ) -> Result<quinn::NewConnection> {
-        let new_connection = self
+        let new_connection = match self
             .quic_endpoint
             .connect_with(self.client_cfg.clone(), peer_addr, CERT_SERVER_NAME)?
-            .await?;
+            .await
+        {
+            Ok(new_connection) => new_connection,
+            Err(error) => {
+                debug!("create new connection check error: {:?}", error);
+                return Err(Error::QuinnConnectionClosed);
+            }
+        };
 
         trace!("Successfully created new connection to peer: {}", peer_addr);
         Ok(new_connection)
@@ -489,7 +517,18 @@ impl Endpoint {
             return Ok(());
         }
         self.connect_to(dest).await?;
-        self.try_send_message(msg, dest).await
+
+        let mut attempts: usize = 0;
+        let mut res = self.try_send_message(msg.clone(), dest).await;
+
+        while attempts < MAX_ATTEMPTS && res.is_err() {
+            trace!("send attempt # {:?}", attempts);
+            attempts += 1;
+            sleep(Duration::from_millis(500)).await;
+            res = self.try_send_message(msg.clone(), dest).await;
+        }
+
+        res
     }
 
     /// Close all the connections of this endpoint immediately and stop accepting new connections.

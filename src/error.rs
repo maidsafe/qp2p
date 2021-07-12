@@ -18,9 +18,12 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// Error joining a thread
-    #[error("Problem spawning thread")]
-    ThreadError,
+    /// quinn connection closed
+    #[error("Connection was closed by underlying quinn library")]
+    QuinnConnectionClosed,
+    /// tokio channel error when trying to send disconnect notificaiton
+    #[error("Could not send disconnect notification")]
+    DisconnectionNotification,
     /// Error occurred when attempting to connect to any
     /// of the peers provided as a list of contacts.
     #[error("Network bootstrap failed")]
@@ -41,7 +44,7 @@ pub enum Error {
     #[error("Establishing connection")]
     Connect(#[from] quinn::ConnectError),
     /// An existing connection with another peer has been lost.
-    #[error("Connection lost")]
+    #[error("Quinn Connection lost")]
     Connection(#[from] quinn::ConnectionError),
     /// Failed to create a new endpoint.
     #[error("Creating endpoint")]
