@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.12.9](https://github.com/maidsafe/qp2p/compare/v0.12.8...v0.12.9) (2021-07-13)
+
+
+### Bug Fixes
+
+* increase channel size ([fa581ae](https://github.com/maidsafe/qp2p/commit/fa581ae1d7445bf6e09f827b3b68b556f057aa7d))
+
 ### [0.12.8](https://github.com/maidsafe/qp2p/compare/v0.12.7...v0.12.8) (2021-07-13)
 
 ### [0.12.7](https://github.com/maidsafe/qp2p/compare/v0.12.6...v0.12.7) (2021-07-12)
