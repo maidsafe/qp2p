@@ -41,7 +41,7 @@ const PORT_FORWARD_TIMEOUT: u64 = 30;
 const ECHO_SERVICE_QUERY_TIMEOUT: u64 = 30;
 
 /// Standard size of our channel bounds
-const STANDARD_CHANNEL_SIZE: usize = 5;
+const STANDARD_CHANNEL_SIZE: usize = 1000;
 
 /// Channel on which incoming messages can be listened to
 pub struct IncomingMessages(pub(crate) MpscReceiver<(SocketAddr, Bytes)>);
