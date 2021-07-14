@@ -7,15 +7,15 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use super::{hash, new_qp2p, new_qp2p_with_hcc, random_msg};
 use anyhow::{anyhow, Result};
 use futures::{future, stream::FuturesUnordered, StreamExt};
-use super::{hash, new_qp2p, new_qp2p_with_hcc, random_msg};
 use std::{
     collections::{BTreeSet, HashSet},
     time::Duration,
 };
-use tracing::info;
 use tokio::time::timeout;
+use tracing::info;
 use tracing_test::traced_test;
 
 #[tokio::test]

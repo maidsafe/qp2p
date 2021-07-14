@@ -1,16 +1,19 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use super::{hash, random_msg};
 use crate::{api::bind, config::SerialisableCertificate, peer_config};
 use anyhow::Result;
 use bytes::Bytes;
+use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use tracing::{error, trace, warn, info};
-use tracing_test::traced_test;
 use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
 use std::collections::BTreeSet;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
+use tracing::{error, info, trace, warn};
+use tracing_test::traced_test;
 
 const DOMAIN: &str = "quinn.test";
 
@@ -19,6 +22,7 @@ struct Peer {
     endpoint: quinn::Endpoint,
     client_cfg: quinn::ClientConfig,
     message_tx: UnboundedSender<(SocketAddr, Bytes)>,
+    connections: Arc<RwLock<Vec<quinn::NewConnection>>>,
 }
 
 impl Peer {
@@ -76,6 +80,7 @@ impl Peer {
                 endpoint,
                 client_cfg,
                 message_tx,
+                connections: Arc::new(RwLock::new(Vec::new())),
             },
             message_rx,
         ))
@@ -85,14 +90,15 @@ impl Peer {
         Ok(self.endpoint.local_addr()?)
     }
 
-    async fn send_message(&self, addr: &SocketAddr, msg: Bytes) -> Result<()> {
+    async fn send_message(&mut self, addr: &SocketAddr, msg: Bytes) -> Result<()> {
         let new_conn = self
             .endpoint
             .connect_with(self.client_cfg.clone(), &addr, DOMAIN)?
             .await?;
         let mut stream = new_conn.connection.open_uni().await?;
-        let _ = stream.write(&msg).await?;
+        let _ = stream.write_all(&msg).await?;
         stream.finish().await?;
+        self.connections.write().await.push(new_conn);
         Ok(())
     }
 }
@@ -141,10 +147,9 @@ async fn read_from_stream(
 async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     use futures::future;
 
-
-    let num_senders: usize = 10;
+    let num_senders: usize = 330;
     let num_messages_each: usize = 100;
-    let num_messages_total: usize = 1000;
+    let num_messages_total: usize = num_senders * num_messages_each;
 
     let (server_endpoint, mut recv_incoming_messages) = Peer::new()?;
     let server_addr = server_endpoint.socket_addr()?;
@@ -152,19 +157,19 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     let test_msgs: Vec<_> = (0..num_messages_each).map(|_| random_msg(1024)).collect();
     let sending_msgs = test_msgs.clone();
 
-    let mut tasks = Vec::new();
+    let mut tasks = FuturesUnordered::new();
 
-    // let message_sender = message_tx.clone();
+    let server = server_endpoint.clone();
     // Receiver
     tasks.push(tokio::spawn(async move {
         let mut num_received = 0;
-        let mut sending_tasks = Vec::new();
 
         while let Some((src, msg)) = recv_incoming_messages.recv().await {
+            let mut sending_tasks = Vec::new();
             info!("received from {:?} with message size {}", src, msg.len());
             assert_eq!(msg.len(), test_msgs[0].len());
 
-            let sending_endpoint = server_endpoint.clone();
+            let mut sending_endpoint = server.clone();
 
             sending_tasks.push(tokio::spawn({
                 async move {
@@ -175,63 +180,71 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                     }
                     sending_endpoint
                         .send_message(&src, hash_result.to_vec().into())
-                        .await?;
+                        .await
+                        .map_err(|err| anyhow::anyhow!("Error here: {:?}", err))?;
 
                     Ok::<_, anyhow::Error>(())
                 }
             }));
 
+            let results = future::try_join_all(sending_tasks).await?;
+            for result in results.iter() {
+                println!("Result1: {:?}", result);
+            }
+
             num_received += 1;
+            println!("COUNT: {}", num_received);
             if num_received >= num_messages_total {
                 break;
             }
         }
 
-        let _ = future::try_join_all(sending_tasks).await?;
-
         Ok(())
     }));
 
+    let mut senders: Vec<Peer> = Vec::new();
     // Sender
     for id in 0..num_senders {
         let messages = sending_msgs.clone();
-        tasks.push(tokio::spawn({
-            let (send_endpoint, mut recv_incoming_messages) = Peer::new()?;
-
-            async move {
-                let mut hash_results = BTreeSet::new();
-                info!("connecting {}", id);
-                for (index, message) in messages.iter().enumerate().take(num_messages_each) {
-                    let _ = hash_results.insert(hash(&message));
-                    info!("sender #{} sending message #{}", id, index);
-                    send_endpoint
-                        .send_message(&server_addr, message.clone())
-                        .await?;
-                }
-
-                info!(
-                    "sender #{} completed sending messages, starts listening",
-                    id
-                );
-
-                while let Some((src, msg)) = recv_incoming_messages.recv().await {
-                    info!(
-                        "#{} received from server {:?} with message size {}",
-                        id,
-                        src,
-                        msg.len()
-                    );
-                    assert!(hash_results.remove(&msg[..]));
-                    if hash_results.is_empty() {
-                        break;
-                    }
-                }
-
-                Ok::<_, anyhow::Error>(())
+        let (mut send_endpoint, mut recv_incoming_messages) = Peer::new()?;
+        senders.push(send_endpoint.clone());
+        tasks.push(tokio::spawn(async move {
+            let mut hash_results = BTreeSet::new();
+            info!("connecting {}", id);
+            for (index, message) in messages.iter().enumerate().take(num_messages_each) {
+                let _ = hash_results.insert(hash(&message));
+                info!("sender #{} sending message #{}", id, index);
+                send_endpoint
+                    .send_message(&server_addr, message.clone())
+                    .await
+                    .map_err(|err| anyhow::anyhow!("Error now here: {:?}", err))?;
             }
+
+            info!(
+                "sender #{} completed sending messages, starts listening",
+                id
+            );
+
+            while let Some((src, msg)) = recv_incoming_messages.recv().await {
+                info!(
+                    "#{} received from server {:?} with message size {}",
+                    id,
+                    src,
+                    msg.len()
+                );
+                assert!(hash_results.remove(&msg[..]));
+                if hash_results.is_empty() {
+                    break;
+                }
+            }
+
+            Ok::<_, anyhow::Error>(())
         }));
     }
 
-    let _ = future::try_join_all(tasks).await?;
+    // let results = future::try_join_all(tasks).await?;
+    while let Some(result) = tasks.next().await {
+        println!("Result2: {:?}", result);
+    }
     Ok(())
 }
