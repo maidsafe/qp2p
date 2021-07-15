@@ -13,8 +13,6 @@ on:
       - master
 
 env:
-  # Run all cargo commands with --verbose.
-  CARGO_TERM_VERBOSE: true
   RUST_BACKTRACE: 1
 
 jobs:
