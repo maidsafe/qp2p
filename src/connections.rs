@@ -52,7 +52,7 @@ impl Connection {
     /// Send message to peer using a uni-directional stream.
     pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
         let mut send_stream = self.handle_error(self.quic_conn.open_uni().await).await?;
-        self.handle_error(send_msg(&mut send_stream, msg.clone()).await)
+        self.handle_error(send_msg(&mut send_stream, msg).await)
             .await?;
 
         trace!("Message sent");
