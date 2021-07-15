@@ -80,6 +80,9 @@ pub struct Config {
     /// Duration of a UPnP port mapping.
     #[structopt(long)]
     pub upnp_lease_duration: Option<u32>,
+    /// Duration to wait before retrying to resend / reconnect
+    #[structopt(long, default_value = "500")]
+    pub retry_interval: u64,
 }
 
 /// To be used to read and write our certificate and private key to disk esp. as a part of our
