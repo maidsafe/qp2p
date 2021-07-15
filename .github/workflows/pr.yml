@@ -8,8 +8,6 @@ name: PR
 on: pull_request
 
 env:
-  # Run all cargo commands with --verbose.
-  CARGO_TERM_VERBOSE: true
   RUST_BACKTRACE: 1
   # Deny all compiler warnings.
   RUSTFLAGS: "-D warnings -C opt-level=2 -C codegen-units=8"
@@ -93,7 +91,7 @@ jobs:
       - name: rust-tarpaulin code coverage check
         uses: actions-rs/tarpaulin@v0.1
         with:
-          args: '-v --release --out Lcov -- --skip echo_service' # test would timeout on CI
+          args: '-v --release --out Lcov -- --skip echo_service --skip reachability' # tests would timeout on CI
       - name: Push code coverage results to coveralls.io
         uses: coverallsapp/github-action@master
         with:
