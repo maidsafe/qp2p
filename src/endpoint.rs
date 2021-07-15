@@ -46,9 +46,6 @@ const STANDARD_CHANNEL_SIZE: usize = 10000;
 /// Max number of attempts for connection retries
 const MAX_ATTEMPTS: usize = 5;
 
-/// How long to wait (ms) between retry attempts
-const RETRY_INTERVAL: u64 = 500;
-
 /// Channel on which incoming messages can be listened to
 pub struct IncomingMessages(pub(crate) MpscReceiver<(SocketAddr, Bytes)>);
 
@@ -360,7 +357,7 @@ impl Endpoint {
         let mut connecting = self.attempt_connection(node_addr).await;
 
         while connecting.is_err() && attempts < MAX_ATTEMPTS {
-            sleep(Duration::from_millis(RETRY_INTERVAL)).await;
+            sleep(Duration::from_millis(self.qp2p_config.retry_interval)).await;
             connecting = self.attempt_connection(node_addr).await;
             attempts += 1;
         }
@@ -527,7 +524,7 @@ impl Endpoint {
         while attempts < MAX_ATTEMPTS && res.is_err() {
             trace!("send attempt # {:?}", attempts);
             attempts += 1;
-            sleep(Duration::from_millis(RETRY_INTERVAL)).await;
+            sleep(Duration::from_millis(self.qp2p_config.retry_interval)).await;
             res = self.try_send_message(msg.clone(), dest).await;
         }
 
