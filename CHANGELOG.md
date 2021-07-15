@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.12.10](https://github.com/maidsafe/qp2p/compare/v0.12.9...v0.12.10) (2021-07-15)
+
+
+### Features
+
+* Add config option for retry interval ([6bba5ec](https://github.com/maidsafe/qp2p/commit/6bba5ec176363490f3ea7f60be2e1a9bf9df63fa))
+* retry on connect, retry on send ([94bfb8b](https://github.com/maidsafe/qp2p/commit/94bfb8b84e87bb536e4288798c7330a8bd69b60f))
+
 ### [0.12.9](https://github.com/maidsafe/qp2p/compare/v0.12.8...v0.12.9) (2021-07-13)
 
 
