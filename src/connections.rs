@@ -55,8 +55,6 @@ impl Connection {
         self.handle_error(send_msg(&mut send_stream, msg).await)
             .await?;
 
-        trace!("Message sent");
-
         // We try to make sure the stream is gracefully closed and the bytes get sent,
         // but if it was already closed (perhaps by the peer) then we
         // don't remove the connection from the pool.
