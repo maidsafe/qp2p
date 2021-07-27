@@ -10,15 +10,16 @@
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
+    connection_pool::Id,
     connections::DisconnectionEvents,
     endpoint::{Endpoint, IncomingConnections, IncomingMessages},
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
 use futures::future;
-use std::collections::HashSet;
 use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
+use std::{collections::HashSet, marker::PhantomData};
 use tracing::{debug, error, info, trace};
 
 /// In the absence of a port supplied by the user via the config we will first try using this
@@ -32,16 +33,17 @@ const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
 #[derive(Debug, Clone)]
-pub struct QuicP2p {
+pub struct QuicP2p<I: Id> {
     local_addr: SocketAddr,
     allow_random_port: bool,
     bootstrap_cache: BootstrapCache,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
     qp2p_config: Config,
+    phantom: PhantomData<I>,
 }
 
-impl QuicP2p {
+impl<I: Id> QuicP2p<I> {
     /// Construct `QuicP2p` with supplied parameters, ready to be used.
     /// If config is not specified it'll call `Config::read_or_construct_default()`
     ///
@@ -53,14 +55,23 @@ impl QuicP2p {
     /// # Example
     ///
     /// ```
-    /// use qp2p::{QuicP2p, Config};
+    /// use qp2p::{QuicP2p, Config, Id};
     /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    ///
+    /// # #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
+    /// # struct ConnId(pub [u8; 32]);
+    /// #
+    /// # impl Id for ConnId {
+    /// #     fn generate(_socket_addr: &SocketAddr) -> Self {
+    /// #         ConnId(rand::random())
+    /// #     }
+    /// # }
     ///
     /// let mut config = Config::default();
     /// config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     /// config.local_port = Some(3000);
     /// let hcc = &["127.0.0.1:8080".parse().unwrap()];
-    /// let quic_p2p = QuicP2p::with_config(Some(config), hcc, true).expect("Error initializing QuicP2p");
+    /// let quic_p2p = QuicP2p::<ConnId>::with_config(Some(config), hcc, true).expect("Error initializing QuicP2p");
     /// ```
     pub fn with_config(
         cfg: Option<Config>,
@@ -128,6 +139,7 @@ impl QuicP2p {
             endpoint_cfg,
             client_cfg,
             qp2p_config,
+            phantom: PhantomData::default(),
         })
     }
 
@@ -142,21 +154,29 @@ impl QuicP2p {
     /// # Example
     ///
     /// ```
-    /// use qp2p::{QuicP2p, Config, Error};
+    /// use qp2p::{QuicP2p, Config, Error, Id};
     /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    ///
+    /// # #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
+    /// # struct ConnId(pub [u8; 32]);
+    /// #
+    /// # impl Id for ConnId {
+    /// #     fn generate(_socket_addr: &SocketAddr) -> Self {
+    /// #         ConnId(rand::random())
+    /// #     }
+    /// # }
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Error> {
-    ///
     ///     let mut config = Config::default();
     ///     config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     config.local_port = Some(3000);
-    ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
+    ///     let mut quic_p2p = QuicP2p::<ConnId>::with_config(Some(config.clone()), Default::default(), true)?;
     ///     let (mut endpoint, _, _, _) = quic_p2p.new_endpoint().await?;
     ///     let peer_addr = endpoint.socket_addr();
     ///
     ///     config.local_port = Some(3001);
-    ///     let mut quic_p2p = QuicP2p::with_config(Some(config), &[peer_addr], true)?;
+    ///     let mut quic_p2p = QuicP2p::<ConnId>::with_config(Some(config), &[peer_addr], true)?;
     ///     let endpoint = quic_p2p.bootstrap().await?;
     ///     Ok(())
     /// }
@@ -164,7 +184,7 @@ impl QuicP2p {
     pub async fn bootstrap(
         &self,
     ) -> Result<(
-        Endpoint,
+        Endpoint<I>,
         IncomingConnections,
         IncomingMessages,
         DisconnectionEvents,
@@ -192,14 +212,23 @@ impl QuicP2p {
     /// # Example
     ///
     /// ```
-    /// use qp2p::{QuicP2p, Config, Error};
+    /// use qp2p::{QuicP2p, Config, Error, Id};
     /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    ///
+    /// # #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
+    /// # struct ConnId(pub [u8; 32]);
+    /// #
+    /// # impl Id for ConnId {
+    /// #     fn generate(_socket_addr: &SocketAddr) -> Self {
+    /// #         ConnId(rand::random())
+    /// #     }
+    /// # }
+    ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Error> {
-    ///
     ///     let mut config = Config::default();
     ///     config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    ///     let mut quic_p2p = QuicP2p::with_config(Some(config.clone()), Default::default(), true)?;
+    ///     let mut quic_p2p = QuicP2p::<ConnId>::with_config(Some(config.clone()), Default::default(), true)?;
     ///     let (endpoint, incoming_connections, incoming_messages, disconnections) = quic_p2p.new_endpoint().await?;
     ///     Ok(())
     /// }
@@ -207,7 +236,7 @@ impl QuicP2p {
     pub async fn new_endpoint(
         &self,
     ) -> Result<(
-        Endpoint,
+        Endpoint<I>,
         IncomingConnections,
         IncomingMessages,
         DisconnectionEvents,
@@ -248,7 +277,7 @@ impl QuicP2p {
 
     async fn bootstrap_with(
         &self,
-        endpoint: &Endpoint,
+        endpoint: &Endpoint<I>,
         bootstrap_nodes: &[SocketAddr],
     ) -> Result<SocketAddr> {
         trace!("Bootstrapping with nodes {:?}", bootstrap_nodes);
@@ -278,7 +307,7 @@ impl QuicP2p {
     /// Rebootstrap
     pub async fn rebootstrap(
         &mut self,
-        endpoint: &Endpoint,
+        endpoint: &Endpoint<I>,
         bootstrap_nodes: &[SocketAddr],
     ) -> Result<SocketAddr> {
         // Clear existing bootstrap cache

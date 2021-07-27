@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{Config, QuicP2p};
+use crate::{Config, Id, QuicP2p};
 use anyhow::Result;
 use bytes::Bytes;
 use std::{
@@ -17,13 +17,19 @@ use std::{
 
 mod common;
 
+impl Id for [u8; 32] {
+    fn generate(_socket_addr: &SocketAddr) -> Self {
+        rand::random()
+    }
+}
+
 /// Constructs a `QuicP2p` node with some sane defaults for testing.
-pub fn new_qp2p() -> Result<QuicP2p> {
+pub fn new_qp2p() -> Result<QuicP2p<[u8; 32]>> {
     new_qp2p_with_hcc(HashSet::default())
 }
 
-pub fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> Result<QuicP2p> {
-    let qp2p = QuicP2p::with_config(
+pub fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> Result<QuicP2p<[u8; 32]>> {
+    let qp2p = QuicP2p::<[u8; 32]>::with_config(
         Some(Config {
             local_port: Some(0),
             local_ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
