@@ -14,9 +14,18 @@
 
 use anyhow::Result;
 use bytes::Bytes;
-use qp2p::{Config, QuicP2p};
+use qp2p::{Config, Id, QuicP2p};
 use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+#[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
+struct ConnId(pub [u8; 32]);
+
+impl Id for ConnId {
+    fn generate(_socket_addr: &SocketAddr) -> Self {
+        ConnId(rand::random())
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,7 +36,7 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     // instantiate QuicP2p with custom config
-    let qp2p = QuicP2p::with_config(
+    let qp2p: QuicP2p<ConnId> = QuicP2p::with_config(
         Some(Config {
             local_ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             idle_timeout_msec: Some(1000 * 3600), // 1 hour idle timeout.

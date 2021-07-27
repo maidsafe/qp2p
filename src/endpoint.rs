@@ -7,6 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use crate::connection_pool::Id;
+
 use super::error::Error;
 use super::wire_msg::WireMsg;
 #[cfg(not(feature = "no-igd"))]
@@ -68,22 +70,21 @@ impl IncomingConnections {
 /// Endpoint instance which can be used to create connections to peers,
 /// and listen to incoming messages from other peers.
 #[derive(Clone)]
-pub struct Endpoint {
+pub struct Endpoint<I: Id> {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
     message_tx: MpscSender<(SocketAddr, Bytes)>,
     disconnection_tx: MpscSender<SocketAddr>,
-
     client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
     qp2p_config: Config,
     termination_tx: Sender<()>,
-    connection_pool: ConnectionPool,
+    connection_pool: ConnectionPool<I>,
     connection_deduplicator: ConnectionDeduplicator,
 }
 
-impl std::fmt::Debug for Endpoint {
+impl<I: Id> std::fmt::Debug for Endpoint<I> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
@@ -93,7 +94,7 @@ impl std::fmt::Debug for Endpoint {
     }
 }
 
-impl Endpoint {
+impl<I: Id> Endpoint<I> {
     pub(crate) async fn new(
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,
@@ -338,7 +339,7 @@ impl Endpoint {
     /// from the pool and the subsequent call to `connect_to` is guaranteed to reopen new connection
     /// too.
     pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<()> {
-        if self.connection_pool.has(node_addr).await {
+        if self.connection_pool.has_addr(node_addr).await {
             trace!("We are already connected to this peer: {}", node_addr);
             return Ok(());
         }
@@ -452,9 +453,10 @@ impl Endpoint {
     }
 
     pub(crate) async fn add_new_connection_to_pool(&self, conn: quinn::NewConnection) {
+        let id = Id::generate(&conn.connection.remote_address());
         let guard = self
             .connection_pool
-            .insert(conn.connection.remote_address(), conn.connection)
+            .insert(id, conn.connection.remote_address(), conn.connection)
             .await;
 
         listen_for_incoming_messages(
@@ -468,8 +470,8 @@ impl Endpoint {
     }
 
     /// Get an existing connection for the peer address.
-    pub(crate) async fn get_connection(&self, peer_addr: &SocketAddr) -> Option<Connection> {
-        if let Some((conn, guard)) = self.connection_pool.get(peer_addr).await {
+    pub(crate) async fn get_connection(&self, peer_addr: &SocketAddr) -> Option<Connection<I>> {
+        if let Some((conn, guard)) = self.connection_pool.get_by_addr(peer_addr).await {
             trace!("Connection exists in the connection pool: {}", peer_addr);
             Some(Connection::new(conn, guard))
         } else {

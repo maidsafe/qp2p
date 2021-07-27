@@ -10,22 +10,22 @@
 use crate::Endpoint;
 
 use super::{
-    connection_pool::{ConnectionPool, ConnectionRemover},
+    connection_pool::{ConnectionPool, ConnectionRemover, Id},
     error::{Error, Result},
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
 use futures::{future, stream::StreamExt};
-use std::net::SocketAddr;
+use std::{fmt::Debug, net::SocketAddr};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{timeout, Duration};
 use tracing::{trace, warn};
 
 /// Connection instance to a node which can be used to send messages to it
 #[derive(Clone)]
-pub(crate) struct Connection {
+pub(crate) struct Connection<I: Id> {
     quic_conn: quinn::Connection,
-    remover: ConnectionRemover,
+    remover: ConnectionRemover<I>,
 }
 
 /// Disconnection events, and the result that led to disconnection.
@@ -39,8 +39,8 @@ impl DisconnectionEvents {
     }
 }
 
-impl Connection {
-    pub(crate) fn new(quic_conn: quinn::Connection, remover: ConnectionRemover) -> Self {
+impl<I: Id> Connection<I> {
+    pub(crate) fn new(quic_conn: quinn::Connection, remover: ConnectionRemover<I>) -> Self {
         Self { quic_conn, remover }
     }
 
@@ -96,7 +96,7 @@ impl RecvStream {
     }
 }
 
-impl std::fmt::Debug for RecvStream {
+impl Debug for RecvStream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "RecvStream {{ .. }} ")
     }
@@ -129,7 +129,7 @@ impl SendStream {
     }
 }
 
-impl std::fmt::Debug for SendStream {
+impl Debug for SendStream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "SendStream {{ .. }} ")
     }
@@ -147,13 +147,13 @@ pub async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Re
     Ok(())
 }
 
-pub(super) fn listen_for_incoming_connections(
+pub(super) fn listen_for_incoming_connections<I: Id>(
     mut quinn_incoming: quinn::Incoming,
-    connection_pool: ConnectionPool,
+    connection_pool: ConnectionPool<I>,
     message_tx: Sender<(SocketAddr, Bytes)>,
     connection_tx: Sender<SocketAddr>,
     disconnection_tx: Sender<SocketAddr>,
-    endpoint: Endpoint,
+    endpoint: Endpoint<I>,
 ) {
     let _ = tokio::spawn(async move {
         loop {
@@ -166,7 +166,9 @@ pub(super) fn listen_for_incoming_connections(
                         ..
                     }) => {
                         let peer_address = connection.remote_address();
-                        let pool_handle = connection_pool.insert(peer_address, connection).await;
+                        let id = Id::generate(&peer_address);
+                        let pool_handle =
+                            connection_pool.insert(id, peer_address, connection).await;
                         let _ = connection_tx.send(peer_address).await;
                         listen_for_incoming_messages(
                             uni_streams,
@@ -191,13 +193,13 @@ pub(super) fn listen_for_incoming_connections(
     });
 }
 
-pub(super) fn listen_for_incoming_messages(
+pub(super) fn listen_for_incoming_messages<I: Id>(
     mut uni_streams: quinn::IncomingUniStreams,
     mut bi_streams: quinn::IncomingBiStreams,
-    remover: ConnectionRemover,
+    remover: ConnectionRemover<I>,
     message_tx: Sender<(SocketAddr, Bytes)>,
     disconnection_tx: Sender<SocketAddr>,
-    endpoint: Endpoint,
+    endpoint: Endpoint<I>,
 ) {
     let src = *remover.remote_addr();
     let _ = tokio::spawn(async move {
@@ -267,11 +269,11 @@ async fn read_on_uni_streams(
 }
 
 // Read messages sent by peer in a bidirectional stream.
-async fn read_on_bi_streams(
+async fn read_on_bi_streams<I: Id>(
     bi_streams: &mut quinn::IncomingBiStreams,
     peer_addr: SocketAddr,
     message_tx: Sender<(SocketAddr, Bytes)>,
-    endpoint: &Endpoint,
+    endpoint: &Endpoint<I>,
 ) -> Result<()> {
     while let Some(result) = bi_streams.next().await {
         match result {
@@ -352,11 +354,11 @@ async fn handle_endpoint_echo_req(
     Ok(())
 }
 
-async fn handle_endpoint_verification_req(
+async fn handle_endpoint_verification_req<I: Id>(
     peer_addr: SocketAddr,
     addr_sent: SocketAddr,
     send_stream: &mut quinn::SendStream,
-    endpoint: &Endpoint,
+    endpoint: &Endpoint<I>,
 ) -> Result<()> {
     trace!(
         "Received Endpoint verification request {:?} from {:?}",
@@ -390,15 +392,14 @@ async fn handle_endpoint_verification_req(
 
 #[cfg(test)]
 mod tests {
-    use anyhow::anyhow;
-
     use crate::api::QuicP2p;
     use crate::{config::Config, wire_msg::WireMsg, Error};
+    use anyhow::anyhow;
     use std::net::{IpAddr, Ipv4Addr};
 
     #[tokio::test]
     async fn echo_service() -> Result<(), Error> {
-        let qp2p = QuicP2p::with_config(
+        let qp2p = QuicP2p::<[u8; 32]>::with_config(
             Some(Config {
                 local_port: None,
                 local_ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
