@@ -349,13 +349,7 @@ impl Endpoint {
             Some(Err(error)) => return Err(error.into()),
             None => {}
         }
-        let final_conn = retry(ExponentialBackoff::default(), || async {
-            Ok(self.attempt_connection(node_addr).await?)
-        })
-        .await?;
-
-        // self.attempt_connection(node_addr)try_with_backoff( || self.attempt_connection(node_addr)).await?;
-        // let final_conn = try_with_backoff( || self.attempt_connection(node_addr)).await?;
+        let final_conn = self.attempt_connection(node_addr).await?;
 
         trace!("Successfully connected to peer: {}", node_addr);
 
@@ -368,25 +362,40 @@ impl Endpoint {
         Ok(())
     }
 
-    /// Attempt a connection to a node_addr
+    /// Attempt a connection to a node_addr using exponential backoff
     async fn attempt_connection(&self, node_addr: &SocketAddr) -> Result<quinn::NewConnection> {
-        trace!("Attempting connecton to {:?}", node_addr);
-        let connecting = self.quic_endpoint.connect_with(
-            self.client_cfg.clone(),
-            node_addr,
-            CERT_SERVER_NAME,
-        )?;
+        retry(ExponentialBackoff::default(), || async {
+            trace!("Attempting to connect to {:?}", node_addr);
+            let connecting = match self.quic_endpoint.connect_with(
+                self.client_cfg.clone(),
+                node_addr,
+                CERT_SERVER_NAME,
+            ) {
+                Ok(conn) => Ok(conn),
+                Err(error) => {
+                    warn!("Connection attempt failed due to {:?}", error);
+                    Err(Error::from(error))
+                }
+            }?;
 
-        match connecting.await {
-            Ok(new_conn) => Ok(new_conn),
-            Err(error) => {
-                self.connection_deduplicator
-                    .complete(node_addr, Err(error.clone().into()))
-                    .await;
+            let new_conn = match connecting.await {
+                Ok(new_conn) => {
+                    debug!("okay was had");
+                    Ok(new_conn)
+                }
+                Err(error) => {
+                    error!("some error: {:?}", error);
+                    self.connection_deduplicator
+                        .complete(node_addr, Err(error.clone().into()))
+                        .await;
 
-                Err(Error::QuinnConnectionClosed)
-            }
-        }
+                    Err(Error::from(error))
+                }
+            }?;
+
+            Ok(new_conn)
+        })
+        .await
     }
 
     /// Verify if an address is publicly reachable. This will attempt to create
@@ -436,10 +445,7 @@ impl Endpoint {
         &self,
         peer_addr: &SocketAddr,
     ) -> Result<quinn::NewConnection> {
-        let new_connection = retry(ExponentialBackoff::default(), || async {
-            Ok(self.attempt_connection(peer_addr).await?)
-        })
-        .await?;
+        let new_connection = self.attempt_connection(peer_addr).await?;
 
         trace!("Successfully created new connection to peer: {}", peer_addr);
         Ok(new_connection)
