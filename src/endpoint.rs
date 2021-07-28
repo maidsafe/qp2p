@@ -302,7 +302,7 @@ impl Endpoint {
         Ok(())
     }
 
-    /// Connects to another peer.
+    /// Connects to another peer, retries X times if the connection fails for any reason
     ///
     /// Returns `Connection` which is a handle for sending messages to the peer and
     /// `IncomingMessages` which is a stream of messages received from the peer.
@@ -443,17 +443,30 @@ impl Endpoint {
         &self,
         peer_addr: &SocketAddr,
     ) -> Result<quinn::NewConnection> {
-        let new_connection = match self
+        let mut attempts = 0;
+
+        let mut new_connection = self
             .quic_endpoint
             .connect_with(self.client_cfg.clone(), peer_addr, CERT_SERVER_NAME)?
-            .await
-        {
-            Ok(new_connection) => new_connection,
-            Err(error) => {
-                debug!("create new connection check error: {:?}", error);
-                return Err(Error::QuinnConnectionClosed);
-            }
-        };
+            .await;
+
+        while new_connection.is_err() && attempts < MAX_ATTEMPTS {
+            attempts += 1;
+
+            new_connection = match self
+                .quic_endpoint
+                .connect_with(self.client_cfg.clone(), peer_addr, CERT_SERVER_NAME)?
+                .await
+            {
+                Ok(new_connection) => Ok(new_connection),
+                Err(error) => {
+                    debug!("create new connection check error: {:?}", error);
+                    Err(error)
+                }
+            };
+        }
+
+        let new_connection = new_connection?;
 
         trace!("Successfully created new connection to peer: {}", peer_addr);
         Ok(new_connection)
