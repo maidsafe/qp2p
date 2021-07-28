@@ -6,7 +6,7 @@ homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/maidsafe/qp2p"
-version = "0.12.10"
+version = "0.12.11"
 authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 keywords = [ "quic" ]
 edition = "2018"
@@ -21,7 +21,10 @@ structopt = "~0.3.15"
 thiserror = "1.0.23"
 webpki = "~0.21.3"
 tracing = "~0.1.26"
-backoff = {version="0.3.0", features = ["tokio"] }
+
+  [dependencies.backoff]
+  version = "0.3.0"
+  features = [ "tokio" ]
 
   [dependencies.bytes]
   version = "1.0.1"
