@@ -28,6 +28,10 @@ pub fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> Result<Qui
             local_port: Some(0),
             local_ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             hard_coded_contacts,
+            // turn down the retry duration - we won't live forever
+            // note that this would just limit retries, UDP connection attempts seem to take 60s to
+            // timeout
+            retry_duration_msec: 500,
             ..Config::default()
         }),
         // Make sure we start with an empty cache. Otherwise, we might get into unexpected state.
