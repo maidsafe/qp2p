@@ -18,9 +18,6 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// Coudl not connect even after retries
-    #[error("Connection could not be established after {0} attempts")]
-    ConnectionFailed(u32),
     /// quinn connection closed
     #[error("Connection was closed by underlying quinn library")]
     QuinnConnectionClosed,

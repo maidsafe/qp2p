@@ -510,22 +510,10 @@ impl Endpoint {
         }
         self.connect_to(dest).await?;
 
-        let res = retry(ExponentialBackoff::default(), || async {
+        retry(ExponentialBackoff::default(), || async {
             Ok(self.try_send_message(msg.clone(), dest).await?)
         })
-        .await;
-
-        // let mut attempts: usize = 0;
-        // let mut res = self.try_send_message(msg.clone(), dest).await;
-
-        // while attempts < MAX_ATTEMPTS as usize && res.is_err() {
-        //     trace!("send attempt # {:?}", attempts);
-        //     attempts += 1;
-        //     sleep(Duration::from_millis(self.qp2p_config.retry_interval)).await;
-        //     res = self.try_send_message(msg.clone(), dest).await;
-        // }
-
-        res
+        .await
     }
 
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
