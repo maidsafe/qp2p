@@ -300,7 +300,7 @@ impl Endpoint {
         Ok(())
     }
 
-    /// Connects to another peer, retries X times if the connection fails for any reason
+    /// Connects to another peer, retries for `config.retry_duration_msec` if the connection fails.
     ///
     /// Returns `Connection` which is a handle for sending messages to the peer and
     /// `IncomingMessages` which is a stream of messages received from the peer.
@@ -364,7 +364,7 @@ impl Endpoint {
 
     /// Attempt a connection to a node_addr using exponential backoff
     async fn attempt_connection(&self, node_addr: &SocketAddr) -> Result<quinn::NewConnection> {
-        retry(ExponentialBackoff::default(), || async {
+        self.retry(|| async {
             trace!("Attempting to connect to {:?}", node_addr);
             let connecting = match self.quic_endpoint.connect_with(
                 self.client_cfg.clone(),
@@ -510,10 +510,8 @@ impl Endpoint {
         }
         self.connect_to(dest).await?;
 
-        retry(ExponentialBackoff::default(), || async {
-            Ok(self.try_send_message(msg.clone(), dest).await?)
-        })
-        .await
+        self.retry(|| async { Ok(self.try_send_message(msg.clone(), dest).await?) })
+            .await
     }
 
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
@@ -563,5 +561,17 @@ impl Endpoint {
     /// and the bootstrap cache (if enabled)
     pub fn bootstrap_nodes(&self) -> &[SocketAddr] {
         &self.bootstrap_nodes
+    }
+
+    fn retry<I, E, Fn, Fut>(&self, op: Fn) -> impl futures::Future<Output = Result<I, E>>
+    where
+        Fn: FnMut() -> Fut,
+        Fut: futures::Future<Output = Result<I, backoff::Error<E>>>,
+    {
+        let backoff = ExponentialBackoff {
+            max_elapsed_time: Some(Duration::from_millis(self.qp2p_config.retry_duration_msec)),
+            ..Default::default()
+        };
+        retry(backoff, op)
     }
 }

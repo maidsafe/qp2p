@@ -80,6 +80,11 @@ pub struct Config {
     /// Duration of a UPnP port mapping.
     #[structopt(long)]
     pub upnp_lease_duration: Option<u32>,
+    /// How long to retry establishing connections and sending messages.
+    ///
+    /// The duration is in milliseconds. Setting this to 0 will effectively disable retries.
+    #[structopt(long, default_value = "30000")]
+    pub retry_duration_msec: u64,
 }
 
 /// To be used to read and write our certificate and private key to disk esp. as a part of our
