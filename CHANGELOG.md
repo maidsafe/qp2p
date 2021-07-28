@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.12.11](https://github.com/maidsafe/qp2p/compare/v0.12.10...v0.12.11) (2021-07-28)
+
+
+### Features
+
+* Make total backoff duration configurable ([75d26ea](https://github.com/maidsafe/qp2p/commit/75d26ea2b8336fdf5a50cd758422e0b402737f8f))
+* retry connection attempts for new connections too ([fef624d](https://github.com/maidsafe/qp2p/commit/fef624de060e10353e7ec6f7006d660696bd4e63))
+* use backoff w/ jitter for retries ([fec5d07](https://github.com/maidsafe/qp2p/commit/fec5d07a7204e48d0957c9c745264dcbf4e94818))
+
 ### [0.12.10](https://github.com/maidsafe/qp2p/compare/v0.12.9...v0.12.10) (2021-07-15)
 
 
