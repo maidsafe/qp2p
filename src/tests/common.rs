@@ -687,6 +687,7 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
 }
 
 #[tokio::test]
+#[traced_test]
 async fn reachability() -> Result<()> {
     let qp2p = new_qp2p()?;
 
