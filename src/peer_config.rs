@@ -55,8 +55,7 @@ pub fn new_our_cfg(
         quinn::ServerConfigBuilder::new(our_cfg)
     };
     let _ = our_cfg_builder
-        .certificate(quinn::CertificateChain::from_certs(vec![our_cert]), our_key)?
-        .use_stateless_retry(true);
+        .certificate(quinn::CertificateChain::from_certs(vec![our_cert]), our_key)?;
 
     Ok(our_cfg_builder.build())
 }
