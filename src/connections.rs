@@ -398,7 +398,7 @@ mod tests {
     use anyhow::anyhow;
     use std::net::{IpAddr, Ipv4Addr};
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn echo_service() -> Result<(), Error> {
         let qp2p = QuicP2p::<[u8; 32]>::with_config(
             Some(Config {

@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
-use tracing::{error, trace, warn};
+use tracing::{error, info, trace, warn};
 
 const DOMAIN: &str = "quinn.test";
 const MESSAGE_LEN: usize = 1024;
@@ -197,14 +197,8 @@ async fn read_from_stream(
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
-    use tracing_subscriber::EnvFilter;
-
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
     let num_senders: usize = 150;
     let num_messages_each: usize = 100;
     let num_messages_total: usize = num_senders * num_messages_each;
@@ -217,16 +211,16 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     let server = server_endpoint.clone();
     // UnboundedReceiver
     let server_handle = tokio::spawn(async move {
-        println!("Server started");
+        info!("Server started");
         let mut num_received = 0;
         while let Some((src, msg)) = recv_incoming_messages.recv().await {
-            println!("{} Got message at server. Processing...", num_received);
+            info!("{} Got message at server. Processing...", num_received);
             assert_eq!(msg.len(), MESSAGE_LEN);
 
             let mut sending_endpoint = server.clone();
 
             let _ = tokio::spawn(async move {
-                println!("{} Hashing and responding...", num_received);
+                info!("{} Hashing and responding...", num_received);
                 // Hash the inputs for couple times to simulate certain workload.
                 let hash_result = hash(&msg);
                 for _ in 0..5 {
@@ -241,7 +235,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
             });
 
             num_received += 1;
-            println!("COUNT: {}", num_received);
+            info!("COUNT: {}", num_received);
             if num_received >= num_messages_total {
                 break;
             }
@@ -254,7 +248,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 
     // UnboundedSender
     for id in 0..num_senders {
-        println!("Sender #{}", id);
+        info!("Sender #{}", id);
         let (send_endpoint, mut recv_incoming_messages) = Peer::new(CHANNEL_SIZE)?;
         let hash_results = Arc::new(RwLock::new(BTreeSet::new()));
 
@@ -262,7 +256,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
         let sender = send_endpoint.clone();
         tasks.push(tokio::spawn(async move {
             while let Some((src, msg)) = recv_incoming_messages.recv().await {
-                println!(
+                info!(
                     "#{} received from server {:?} with message size {}. {} left!",
                     id,
                     src,
@@ -274,7 +268,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                     break;
                 }
             }
-            println!("Sender #{} recv complete", id);
+            info!("Sender #{} recv complete", id);
             sender.close();
             Ok::<_, anyhow::Error>(())
         }));
@@ -291,14 +285,14 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                     .await
                     .map_err(|err| anyhow::anyhow!("Error now here: {:?}", err))?;
             }
-            println!("Sender #{} send complete", id);
+            info!("Sender #{} send complete", id);
 
             Ok::<_, anyhow::Error>(())
         }));
     }
     tasks.push(server_handle);
     while let Some(result) = tasks.next().await {
-        println!("{:?}", result);
+        result??
     }
     Ok(())
 }
