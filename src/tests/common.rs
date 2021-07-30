@@ -18,8 +18,7 @@ use tokio::time::timeout;
 use tracing::info;
 use tracing_test::traced_test;
 
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn successful_connection() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (peer1, mut peer1_incoming_connections, _, _) = qp2p.new_endpoint().await?;
@@ -38,8 +37,7 @@ async fn successful_connection() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn single_message() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (peer1, mut peer1_incoming_connections, mut peer1_incoming_messages, _) =
@@ -73,8 +71,7 @@ async fn single_message() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn reuse_outgoing_connection() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (alice, _, _, _) = qp2p.new_endpoint().await?;
@@ -124,8 +121,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn reuse_incoming_connection() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _) =
@@ -177,8 +173,7 @@ async fn reuse_incoming_connection() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn disconnection() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (alice, mut alice_incoming_connections, _, mut alice_disconnections) =
@@ -225,8 +220,7 @@ async fn disconnection() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     // If both peers call `connect_to` simultaneously (that is, before any of them receives the
     // others connection first), two separate connections are created. This test verifies that
@@ -310,8 +304,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _) =
@@ -363,8 +356,7 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     use futures::future;
 
@@ -471,7 +463,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 #[traced_test]
 async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<()> {
     let num_senders: usize = 10;
@@ -516,7 +508,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                 assert!(!logs_contain("error"));
 
                 num_received += 1;
-                println!("Server received count: {}", num_received);
+                // println!("Server received count: {}", num_received);
                 if num_received >= num_messages_total {
                     break;
                 }
@@ -586,8 +578,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
     Ok(())
 }
 
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn many_messages() -> Result<()> {
     use futures::future;
     use std::{convert::TryInto, sync::Arc};
@@ -649,8 +640,7 @@ async fn many_messages() -> Result<()> {
 // When we bootstrap with multiple bootstrap contacts, we will use the first connection
 // that succeeds. We should still be able to establish a connection with the rest of the
 // bootstrap contacts later.
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()> {
     let qp2p = new_qp2p()?;
 
@@ -674,8 +664,7 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
     Ok(())
 }
 
-#[tokio::test]
-#[traced_test]
+#[tokio::test(flavor = "multi_thread")]
 async fn reachability() -> Result<()> {
     let qp2p = new_qp2p()?;
 
