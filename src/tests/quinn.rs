@@ -144,7 +144,7 @@ impl Peer {
     async fn send_message(&mut self, addr: &SocketAddr, msg: Bytes) -> Result<()> {
         let new_conn = self
             .endpoint
-            .connect_with(self.client_cfg.clone(), &addr, DOMAIN)?
+            .connect_with(self.client_cfg.clone(), addr, DOMAIN)?
             .await?;
         let mut stream = new_conn.connection.open_uni().await?;
         let _ = stream.write_all(&msg).await?;
