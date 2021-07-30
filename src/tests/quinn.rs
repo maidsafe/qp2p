@@ -198,6 +198,7 @@ async fn read_from_stream(
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "Will run into OOM on CI"]
 async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     let num_senders: usize = 150;
     let num_messages_each: usize = 100;
