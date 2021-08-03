@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.14.0](https://github.com/maidsafe/qp2p/compare/v0.13.0...v0.14.0) (2021-08-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **quinn:** config change
+
+### Bug Fixes
+
+* **ci:** ignore quinn test on CI ([5f7b9f0](https://github.com/maidsafe/qp2p/commit/5f7b9f0e51c94a87aa3dbc0a1462c6c91e8fd3e0))
+* **clippy:** update to use latest version of rust ([18d48c4](https://github.com/maidsafe/qp2p/commit/18d48c4ac449a9927667287e31e17bcf759f6283))
+* **disconnections:** remove connection from pool before signalling disconnection event ([d45204c](https://github.com/maidsafe/qp2p/commit/d45204c3b854802bdd4b4d028a230e9c6b93caac))
+* **quinn:** disable stateless retry in quinn config ([0f5df36](https://github.com/maidsafe/qp2p/commit/0f5df36d2f9ed77660c05cd0b4860f34b36502a7))
+
 ## [0.13.0](https://github.com/maidsafe/qp2p/compare/v0.12.11...v0.13.0) (2021-08-03)
 
 
