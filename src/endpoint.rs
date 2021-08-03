@@ -8,6 +8,7 @@
 // Software.
 
 use crate::connection_pool::ConnId;
+use crate::wire_msg::{write_to_stream, EndpointMsg, ECHO_SRVC_MSG_FLAG};
 
 use super::error::Error;
 use super::wire_msg::WireMsg;
@@ -145,21 +146,31 @@ impl<I: ConnId> Endpoint<I> {
                     .await
                     .ok_or(Error::MissingConnection)?;
                 let (mut send, mut recv) = connection.open_bi().await?;
-                send.send(WireMsg::EndpointVerificationReq(addr)).await?;
+                send.send(&WireMsg::from_ep_msg(&EndpointMsg::VerificationReq(addr))?)
+                    .await?;
                 let response = timeout(
                     Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
                     WireMsg::read_from_stream(&mut recv.quinn_recv_stream),
                 )
                 .await;
                 match response {
-                    Ok(Ok(WireMsg::EndpointVerificationResp(valid))) => {
-                        if valid {
-                            info!("Endpoint verification successful! {} is reachable.", addr);
-                        } else {
-                            error!("Endpoint verification failed! {} is not reachable.", addr);
-                            return Err(Error::IncorrectPublicAddress);
+                    Ok(Ok(WireMsg::Echo(bytes))) => match bincode::deserialize(&bytes)? {
+                        EndpointMsg::VerificationResp(valid) => {
+                            if valid {
+                                info!("Endpoint verification successful! {} is reachable.", addr);
+                            } else {
+                                error!("Endpoint verification failed! {} is not reachable.", addr);
+                                return Err(Error::IncorrectPublicAddress);
+                            }
                         }
-                    }
+                        other => {
+                            error!(
+                                "Unexpected message when verifying public endpoint: {}",
+                                other
+                            );
+                            return Err(Error::UnexpectedMessageType(WireMsg::Echo(bytes)));
+                        }
+                    },
                     Ok(Ok(other)) => {
                         error!(
                             "Unexpected message when verifying public endpoint: {}",
@@ -413,32 +424,39 @@ impl<I: ConnId> Endpoint<I> {
             }
         };
 
-        let message = WireMsg::EndpointEchoReq;
-        message.write_to_stream(&mut send_stream).await?;
+        let bytes = WireMsg::to_bytes(&EndpointMsg::EchoReq)?;
+        write_to_stream(&bytes, ECHO_SRVC_MSG_FLAG, &mut send_stream).await?;
 
-        match timeout(
+        let msg = match timeout(
             Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
             WireMsg::read_from_stream(&mut recv_stream),
         )
         .await
         {
-            Ok(Ok(WireMsg::EndpointEchoResp(_))) => Ok(()),
-            Ok(Ok(other)) => {
-                info!(
-                    "Unexpected message type when verifying reachability: {}",
-                    &other
-                );
-                Ok(())
-            }
+            Ok(Ok(msg)) => msg,
             Ok(Err(err)) => {
                 info!("Unable to contact peer: {:?}", err);
-                Err(err)
+                return Err(err);
             }
             Err(err) => {
                 info!("Unable to contact peer: {:?}", err);
-                Err(Error::NoEchoServiceResponse)
+                return Err(Error::NoEchoServiceResponse);
             }
-        }
+        };
+
+        let other = match msg {
+            WireMsg::Echo(bytes) => match bincode::deserialize(&bytes)? {
+                EndpointMsg::EchoResp(_) => return Ok(()),
+                _ => WireMsg::Echo(bytes),
+            },
+            other => other,
+        };
+
+        info!(
+            "Unexpected message type when verifying reachability: {}",
+            &other
+        );
+        Ok(())
     }
 
     /// Creates a fresh connection without looking at the connection pool and connection duplicator.
@@ -515,7 +533,7 @@ impl<I: ConnId> Endpoint<I> {
 
     /// Sends a message to a peer. This will attempt to use an existing connection
     /// to the destination  peer. If a connection does not exist, this will fail with `Error::MissingConnection`
-    pub async fn try_send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
+    pub async fn try_send_message(&self, msg: &Bytes, dest: &SocketAddr) -> Result<()> {
         let connection = self
             .get_connection(dest)
             .await
@@ -527,13 +545,13 @@ impl<I: ConnId> Endpoint<I> {
     /// Sends a message to a peer. This will attempt to use an existing connection
     /// to the peer first. If this connection is broken or doesn't exist
     /// a new connection is created and the message is sent.
-    pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
-        if self.try_send_message(msg.clone(), dest).await.is_ok() {
+    pub async fn send_message(&self, msg: &Bytes, dest: &SocketAddr) -> Result<()> {
+        if self.try_send_message(msg, dest).await.is_ok() {
             return Ok(());
         }
         self.connect_to(dest).await?;
 
-        self.retry(|| async { Ok(self.try_send_message(msg.clone(), dest).await?) })
+        self.retry(|| async { Ok(self.try_send_message(msg, dest).await?) })
             .await
     }
 
@@ -561,9 +579,14 @@ impl<I: ConnId> Endpoint<I> {
                     .await
                     .ok_or(Error::MissingConnection)?;
                 let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
-                send_stream.send(WireMsg::EndpointEchoReq).await?;
+                send_stream
+                    .send(&WireMsg::from_ep_msg(&EndpointMsg::EchoReq)?)
+                    .await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
-                    Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
+                    Ok(WireMsg::Echo(bytes)) => match bincode::deserialize(&bytes)? {
+                        EndpointMsg::EchoResp(socket_addr) => Ok(socket_addr),
+                        _ => Err(Error::UnexpectedMessageType(WireMsg::Echo(bytes))),
+                    },
                     Ok(msg) => Err(Error::UnexpectedMessageType(msg)),
                     Err(err) => Err(err),
                 }

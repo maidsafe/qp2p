@@ -7,7 +7,10 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::Endpoint;
+use crate::{
+    wire_msg::{write_to_stream, EndpointMsg, ECHO_SRVC_MSG_FLAG, USER_MSG_FLAG},
+    Endpoint,
+};
 
 use super::{
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
@@ -50,7 +53,7 @@ impl<I: ConnId> Connection<I> {
     }
 
     /// Send message to peer using a uni-directional stream.
-    pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
+    pub async fn send_uni(&self, msg: &Bytes) -> Result<()> {
         let mut send_stream = self.handle_error(self.quic_conn.open_uni().await).await?;
         self.handle_error(send_msg(&mut send_stream, msg).await)
             .await?;
@@ -113,13 +116,17 @@ impl SendStream {
     }
 
     /// Send a message using the stream created by the initiator
-    pub async fn send_user_msg(&mut self, msg: Bytes) -> Result<()> {
-        send_msg(&mut self.quinn_send_stream, msg).await
+    pub async fn send_user_msg(&mut self, msg: &Bytes) -> Result<()> {
+        write_to_stream(msg, USER_MSG_FLAG, &mut self.quinn_send_stream).await
     }
 
     /// Send a wire message
-    pub async fn send(&mut self, msg: WireMsg) -> Result<()> {
-        msg.write_to_stream(&mut self.quinn_send_stream).await
+    pub async fn send(&mut self, msg: &WireMsg) -> Result<()> {
+        let (bytes, flag) = match msg {
+            WireMsg::UserMsg(bytes) => (bytes, USER_MSG_FLAG),
+            WireMsg::Echo(bytes) => (bytes, ECHO_SRVC_MSG_FLAG),
+        };
+        write_to_stream(bytes, flag, &mut self.quinn_send_stream).await
     }
 
     /// Gracefully finish current stream
@@ -141,10 +148,8 @@ pub async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg> {
 }
 
 // Helper to send bytes to peer using the provided stream.
-pub async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()> {
-    let wire_msg = WireMsg::UserMsg(msg);
-    wire_msg.write_to_stream(&mut send_stream).await?;
-    Ok(())
+pub async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: &Bytes) -> Result<()> {
+    write_to_stream(msg, USER_MSG_FLAG, &mut send_stream).await
 }
 
 pub(super) fn listen_for_incoming_connections<I: ConnId>(
@@ -296,36 +301,46 @@ async fn read_on_bi_streams<I: ConnId>(
                     Ok(WireMsg::UserMsg(bytes)) => {
                         let _ = message_tx.send((peer_addr, bytes)).await;
                     }
-                    Ok(WireMsg::EndpointEchoReq) => {
-                        if let Err(error) = handle_endpoint_echo_req(peer_addr, &mut send).await {
+                    Ok(WireMsg::Echo(bytes)) => match bincode::deserialize(&bytes) {
+                        Ok(EndpointMsg::EchoReq) => {
+                            if let Err(error) = handle_endpoint_echo_req(peer_addr, &mut send).await
+                            {
+                                warn!(
+                                    "Failed to handle Echo Request for peer {:?} with: {:?}",
+                                    peer_addr, error
+                                );
+
+                                return Err(error);
+                            }
+                        }
+                        Ok(EndpointMsg::VerificationReq(address_sent)) => {
+                            if let Err(error) = handle_endpoint_verification_req(
+                                peer_addr,
+                                address_sent,
+                                &mut send,
+                                endpoint,
+                            )
+                            .await
+                            {
+                                warn!("Failed to handle Endpoint verification request for peer {:?} with: {:?}", peer_addr, error);
+
+                                return Err(error);
+                            }
+                        }
+                        Ok(msg) => {
                             warn!(
-                                "Failed to handle Echo Request for peer {:?} with: {:?}",
-                                peer_addr, error
+                                "Unexpected message type from peer {:?}: {:?}",
+                                peer_addr, msg
                             );
-
-                            return Err(error);
                         }
-                    }
-                    Ok(WireMsg::EndpointVerificationReq(address_sent)) => {
-                        if let Err(error) = handle_endpoint_verification_req(
-                            peer_addr,
-                            address_sent,
-                            &mut send,
-                            endpoint,
-                        )
-                        .await
-                        {
-                            warn!("Failed to handle Endpoint verification request for peer {:?} with: {:?}", peer_addr, error);
-
-                            return Err(error);
+                        Err(err) => {
+                            warn!(
+                                    "Failed deserializing msg from a bi-stream for peer {:?} with: {:?}",
+                                    peer_addr, err
+                                );
+                            break;
                         }
-                    }
-                    Ok(msg) => {
-                        warn!(
-                            "Unexpected message type from peer {:?}: {:?}",
-                            peer_addr, msg
-                        );
-                    }
+                    },
                     Err(Error::StreamRead(quinn::ReadExactError::FinishedEarly)) => {
                         warn!("Stream finished early");
                         break;
@@ -350,8 +365,11 @@ async fn handle_endpoint_echo_req(
     send_stream: &mut quinn::SendStream,
 ) -> Result<()> {
     trace!("Received Echo Request from peer {:?}", peer_addr);
-    let message = WireMsg::EndpointEchoResp(peer_addr);
-    message.write_to_stream(send_stream).await?;
+    let msg = WireMsg::Echo(From::from(bincode::serialize(&EndpointMsg::EchoResp(
+        peer_addr,
+    ))?));
+    let bytes = From::from(bincode::serialize(&msg)?);
+    write_to_stream(&bytes, ECHO_SRVC_MSG_FLAG, send_stream).await?;
     trace!("Responded to Echo request from peer {:?}", peer_addr);
     Ok(())
 }
@@ -369,21 +387,25 @@ async fn handle_endpoint_verification_req<I: ConnId>(
     );
     // Verify if the peer's endpoint is reachable via EchoServiceReq
     let (mut temp_send, mut temp_recv) = endpoint.open_bidirectional_stream(&addr_sent).await?;
-    let message = WireMsg::EndpointEchoReq;
-    message
-        .write_to_stream(&mut temp_send.quinn_send_stream)
-        .await?;
-    let verified = matches!(
-        timeout(
-            Duration::from_secs(30),
-            WireMsg::read_from_stream(&mut temp_recv.quinn_recv_stream)
-        )
-        .await,
-        Ok(Ok(WireMsg::EndpointEchoResp(_)))
-    );
 
-    let message = WireMsg::EndpointVerificationResp(verified);
-    message.write_to_stream(send_stream).await?;
+    let bytes = WireMsg::to_bytes(&EndpointMsg::EchoReq)?;
+    write_to_stream(&bytes, ECHO_SRVC_MSG_FLAG, &mut temp_send.quinn_send_stream).await?;
+
+    let verified = match timeout(
+        Duration::from_secs(30),
+        WireMsg::read_from_stream(&mut temp_recv.quinn_recv_stream),
+    )
+    .await
+    {
+        Ok(Ok(WireMsg::Echo(m))) => {
+            matches!(bincode::deserialize(&m)?, EndpointMsg::EchoResp(_))
+        }
+        _ => false,
+    };
+
+    let bytes = WireMsg::to_bytes(&EndpointMsg::VerificationResp(verified))?;
+    write_to_stream(&bytes, ECHO_SRVC_MSG_FLAG, send_stream).await?;
+
     trace!(
         "Responded to Endpoint verification request from {:?}",
         peer_addr
@@ -395,6 +417,7 @@ async fn handle_endpoint_verification_req<I: ConnId>(
 #[cfg(test)]
 mod tests {
     use crate::api::QuicP2p;
+    use crate::wire_msg::{write_to_stream, EndpointMsg, ECHO_SRVC_MSG_FLAG};
     use crate::{config::Config, wire_msg::WireMsg, Error};
     use anyhow::anyhow;
     use std::net::{IpAddr, Ipv4Addr};
@@ -429,13 +452,20 @@ mod tests {
             .await
             .ok_or(Error::MissingConnection)?;
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
-        let message = WireMsg::EndpointEchoReq;
-        message
-            .write_to_stream(&mut send_stream.quinn_send_stream)
-            .await?;
-        let message = WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await?;
-        if let WireMsg::EndpointEchoResp(addr) = message {
-            assert_eq!(addr, peer1_addr);
+        let bytes = WireMsg::to_bytes(&EndpointMsg::EchoReq)?;
+        write_to_stream(
+            &bytes,
+            ECHO_SRVC_MSG_FLAG,
+            &mut send_stream.quinn_send_stream,
+        )
+        .await?;
+        let msg = WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await?;
+        if let WireMsg::Echo(bytes) = msg {
+            if let EndpointMsg::EchoResp(addr) = bincode::deserialize(&bytes)? {
+                assert_eq!(addr, peer1_addr);
+            } else {
+                anyhow!("Unexpected response to EchoService request");
+            }
         } else {
             anyhow!("Unexpected response to EchoService request");
         }

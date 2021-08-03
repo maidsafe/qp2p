@@ -22,17 +22,30 @@ const MSG_PROTOCOL_VERSION: u16 = 0x0001;
 /// Final type serialised and sent on the wire by `QuicP2p`
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum WireMsg {
-    EndpointEchoReq,
-    EndpointEchoResp(SocketAddr),
-    EndpointVerificationReq(SocketAddr),
-    EndpointVerificationResp(bool),
+    Echo(Bytes),
     UserMsg(Bytes),
 }
 
-const USER_MSG_FLAG: u8 = 0x00;
-const ECHO_SRVC_MSG_FLAG: u8 = 0x01;
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum EndpointMsg {
+    EchoReq,
+    EchoResp(SocketAddr),
+    VerificationReq(SocketAddr),
+    VerificationResp(bool),
+}
+
+pub const USER_MSG_FLAG: u8 = 0x00;
+pub const ECHO_SRVC_MSG_FLAG: u8 = 0x01;
 
 impl WireMsg {
+    pub fn from_ep_msg(msg: &EndpointMsg) -> Result<Self> {
+        Ok(WireMsg::Echo(From::from(bincode::serialize(msg)?)))
+    }
+
+    pub fn to_bytes(msg: &EndpointMsg) -> Result<Bytes> {
+        Ok(From::from(bincode::serialize(&WireMsg::from_ep_msg(msg)?)?))
+    }
+
     // Read a message's bytes from the provided stream
     pub async fn read_from_stream(recv: &mut quinn::RecvStream) -> Result<Self> {
         let mut header_bytes = [0; MSG_HEADER_LEN];
@@ -64,31 +77,29 @@ impl WireMsg {
         } else if msg_flag == USER_MSG_FLAG {
             Ok(WireMsg::UserMsg(From::from(data)))
         } else if msg_flag == ECHO_SRVC_MSG_FLAG {
-            Ok(bincode::deserialize(&data)?)
+            Ok(WireMsg::Echo(From::from(data)))
         } else {
             Err(Error::InvalidMsgFlag(msg_flag))
         }
     }
+}
 
-    // Helper to write WireMsg bytes to the provided stream.
-    pub async fn write_to_stream(&self, send_stream: &mut quinn::SendStream) -> Result<()> {
-        // Let's generate the message bytes
-        let (msg_bytes, msg_flag) = match self {
-            WireMsg::UserMsg(ref m) => (m.clone(), USER_MSG_FLAG),
-            _ => (From::from(bincode::serialize(&self)?), ECHO_SRVC_MSG_FLAG),
-        };
+// Helper to write WireMsg bytes to the provided stream.
+pub async fn write_to_stream(
+    msg_bytes: &Bytes,
+    msg_flag: u8,
+    send_stream: &mut quinn::SendStream,
+) -> Result<()> {
+    let msg_header = MsgHeader::new(msg_bytes, msg_flag)?;
+    let header_bytes = msg_header.to_bytes();
 
-        let msg_header = MsgHeader::new(&msg_bytes, msg_flag)?;
-        let header_bytes = msg_header.to_bytes();
+    // Send the header bytes over QUIC
+    send_stream.write_all(&header_bytes).await?;
 
-        // Send the header bytes over QUIC
-        send_stream.write_all(&header_bytes).await?;
+    // Send message bytes over QUIC
+    send_stream.write_all(msg_bytes).await?;
 
-        // Send message bytes over QUIC
-        send_stream.write_all(&msg_bytes[..]).await?;
-
-        Ok(())
-    }
+    Ok(())
 }
 
 impl fmt::Display for WireMsg {
@@ -97,14 +108,26 @@ impl fmt::Display for WireMsg {
             WireMsg::UserMsg(ref m) => {
                 write!(f, "WireMsg::UserMsg({})", utils::bin_data_format(&*m))
             }
-            WireMsg::EndpointEchoReq => write!(f, "WireMsg::EndpointEchoReq"),
-            WireMsg::EndpointEchoResp(ref sa) => write!(f, "WireMsg::EndpointEchoResp({})", sa),
-            WireMsg::EndpointVerificationReq(ref sa) => {
-                write!(f, "WireMsg::EndpointVerificationReq({})", sa)
+            WireMsg::Echo(ref m) => {
+                write!(f, "WireMsg::Echo({})", utils::bin_data_format(&*m))
             }
-            WireMsg::EndpointVerificationResp(valid) => write!(
+        }
+    }
+}
+
+impl fmt::Display for EndpointMsg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            EndpointMsg::EchoReq => write!(f, "EndpointMsg::EchoReq"),
+            EndpointMsg::EchoResp(ref sa) => {
+                write!(f, "EndpointMsg::EchoResp({})", sa)
+            }
+            EndpointMsg::VerificationReq(ref sa) => {
+                write!(f, "EndpointMsg::VerificationReq({})", sa)
+            }
+            EndpointMsg::VerificationResp(valid) => write!(
                 f,
-                "WireMsg::EndpointEchoResp({})",
+                "EndpointMsg::EchoResp({})",
                 if valid { "Valid" } else { "Invalid" }
             ),
         }

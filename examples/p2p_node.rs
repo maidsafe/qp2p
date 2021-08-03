@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
             let msg = Bytes::from(MSG_MARCO);
             println!("Sending to {:?} --> {:?}\n", peer, msg);
             node.connect_to(&peer).await?;
-            node.send_message(msg.clone(), &peer).await?;
+            node.send_message(&msg, &peer).await?;
         }
     }
 
@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
         println!("Received from {:?} --> {:?}", socket_addr, bytes);
         if bytes == *MSG_MARCO {
             let reply = Bytes::from(MSG_POLO);
-            node.send_message(reply.clone(), &socket_addr).await?;
+            node.send_message(&reply, &socket_addr).await?;
             println!("Replied to {:?} --> {:?}", socket_addr, reply);
         }
         println!();
