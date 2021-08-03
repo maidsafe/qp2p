@@ -586,10 +586,10 @@ impl<I: ConnId> Endpoint<I> {
         &self.bootstrap_nodes
     }
 
-    fn retry<I, E, Fn, Fut>(&self, op: Fn) -> impl futures::Future<Output = Result<I, E>>
+    fn retry<R, E, Fn, Fut>(&self, op: Fn) -> impl futures::Future<Output = Result<R, E>>
     where
         Fn: FnMut() -> Fut,
-        Fut: futures::Future<Output = Result<I, backoff::Error<E>>>,
+        Fut: futures::Future<Output = Result<R, backoff::Error<E>>>,
     {
         let backoff = ExponentialBackoff {
             max_elapsed_time: Some(Duration::from_millis(self.qp2p_config.retry_duration_msec)),
