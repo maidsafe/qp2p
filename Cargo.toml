@@ -20,7 +20,9 @@ serde_json = "1.0.59"
 structopt = "~0.3.15"
 thiserror = "1.0.23"
 webpki = "~0.21.3"
+tiny-keccak = "2.0.2"
 tracing = "~0.1.26"
+xor_name = "1.2.1"
 
   [dependencies.backoff]
   version = "0.3.0"
@@ -62,7 +64,7 @@ tracing = "~0.1.26"
 
 [dev-dependencies]
 anyhow = "1.0.36"
-rand = "~0.8.4"
+rand = "~0.7.3"
 tracing-test = "0.1"
 
   [dev-dependencies.tiny-keccak]

@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::connection_pool::Id;
+use crate::connection_pool::ConnId;
 
 use super::error::Error;
 use super::wire_msg::WireMsg;
@@ -70,7 +70,7 @@ impl IncomingConnections {
 /// Endpoint instance which can be used to create connections to peers,
 /// and listen to incoming messages from other peers.
 #[derive(Clone)]
-pub struct Endpoint<I: Id> {
+pub struct Endpoint<I: ConnId> {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
@@ -84,7 +84,7 @@ pub struct Endpoint<I: Id> {
     connection_deduplicator: ConnectionDeduplicator,
 }
 
-impl<I: Id> std::fmt::Debug for Endpoint<I> {
+impl<I: ConnId> std::fmt::Debug for Endpoint<I> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
@@ -94,7 +94,7 @@ impl<I: Id> std::fmt::Debug for Endpoint<I> {
     }
 }
 
-impl<I: Id> Endpoint<I> {
+impl<I: ConnId> Endpoint<I> {
     pub(crate) async fn new(
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,
@@ -141,7 +141,7 @@ impl<I: Id> Endpoint<I> {
                 info!("Verifying provided public IP address");
                 endpoint.connect_to(contact).await?;
                 let connection = endpoint
-                    .get_connection(&contact)
+                    .get_connection(contact)
                     .await
                     .ok_or(Error::MissingConnection)?;
                 let (mut send, mut recv) = connection.open_bi().await?;
@@ -354,7 +354,7 @@ impl<I: Id> Endpoint<I> {
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        self.add_new_connection_to_pool(final_conn).await;
+        self.add_new_connection_to_pool(final_conn).await?;
 
         self.connection_deduplicator
             .complete(node_addr, Ok(()))
@@ -452,8 +452,12 @@ impl<I: Id> Endpoint<I> {
         Ok(new_connection)
     }
 
-    pub(crate) async fn add_new_connection_to_pool(&self, conn: quinn::NewConnection) {
-        let id = Id::generate(&conn.connection.remote_address());
+    pub(crate) async fn add_new_connection_to_pool(
+        &self,
+        conn: quinn::NewConnection,
+    ) -> Result<()> {
+        let id = ConnId::generate(&conn.connection.remote_address())
+            .map_err(|err| Error::ConnectionIdGeneration(err.to_string()))?;
         let guard = self
             .connection_pool
             .insert(id, conn.connection.remote_address(), conn.connection)
@@ -467,6 +471,7 @@ impl<I: Id> Endpoint<I> {
             self.disconnection_tx.clone(),
             self.clone(),
         );
+        Ok(())
     }
 
     /// Get an existing connection for the peer address.
@@ -477,6 +482,22 @@ impl<I: Id> Endpoint<I> {
         } else {
             None
         }
+    }
+
+    /// Get the connection ID of an existing connection with the provided socket address
+    pub async fn get_connection_id(&self, addr: &SocketAddr) -> Option<I> {
+        self.connection_pool
+            .get_by_addr(addr)
+            .await
+            .map(|(_, remover)| remover.id())
+    }
+
+    /// Get the SocketAddr of a connection using the connection ID
+    pub async fn get_socket_addr_by_id(&self, addr: &I) -> Option<SocketAddr> {
+        self.connection_pool
+            .get_by_id(addr)
+            .await
+            .map(|(_, remover)| *remover.remote_addr())
     }
 
     /// Open a bi-directional peer with a given peer

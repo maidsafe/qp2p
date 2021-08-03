@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{Config, Id, QuicP2p};
+use crate::{Config, ConnId, QuicP2p};
 use anyhow::Result;
 use bytes::Bytes;
 use std::{
@@ -17,9 +17,9 @@ use std::{
 
 mod common;
 
-impl Id for [u8; 32] {
-    fn generate(_socket_addr: &SocketAddr) -> Self {
-        rand::random()
+impl ConnId for [u8; 32] {
+    fn generate(_socket_addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(rand::random())
     }
 }
 

@@ -445,7 +445,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                 let mut hash_results = BTreeSet::new();
                 send_endpoint.connect_to(&server_addr).await?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
-                    let _ = hash_results.insert(hash(&message));
+                    let _ = hash_results.insert(hash(message));
                     info!("sender #{} sending message #{}", id, index);
                     send_endpoint
                         .send_message(message.clone(), &server_addr)
@@ -554,7 +554,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
 
                 send_endpoint.connect_to(&server_addr).await?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
-                    let _ = hash_results.insert(hash(&message));
+                    let _ = hash_results.insert(hash(message));
 
                     info!("sender #{} sending message #{}", id, index);
                     send_endpoint
