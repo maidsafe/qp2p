@@ -198,9 +198,8 @@ async fn read_from_stream(
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "Will run into OOM on CI"]
 async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
-    let num_senders: usize = 150;
+    let num_senders: usize = 10;
     let num_messages_each: usize = 100;
     let num_messages_total: usize = num_senders * num_messages_each;
 
@@ -210,7 +209,6 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     let mut tasks = FuturesUnordered::new();
 
     let server = server_endpoint.clone();
-    // UnboundedReceiver
     let server_handle = tokio::spawn(async move {
         info!("Server started");
         let mut num_received = 0;
