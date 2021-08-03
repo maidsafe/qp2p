@@ -34,7 +34,6 @@
     unused_parens,
     while_true,
     clippy::unicode_not_nfc,
-    clippy::wrong_pub_self_convention,
     warnings
 )]
 #![warn(
@@ -65,7 +64,7 @@ mod wire_msg;
 
 pub use api::QuicP2p;
 pub use config::Config;
-pub use connection_pool::Id;
+pub use connection_pool::ConnId;
 pub use connections::{DisconnectionEvents, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
 pub use error::{Error, Result};

@@ -10,7 +10,7 @@
 use super::{
     bootstrap_cache::BootstrapCache,
     config::{Config, SerialisableCertificate},
-    connection_pool::Id,
+    connection_pool::ConnId,
     connections::DisconnectionEvents,
     endpoint::{Endpoint, IncomingConnections, IncomingMessages},
     error::{Error, Result},
@@ -33,7 +33,7 @@ const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
 #[derive(Debug, Clone)]
-pub struct QuicP2p<I: Id> {
+pub struct QuicP2p<I: ConnId> {
     local_addr: SocketAddr,
     allow_random_port: bool,
     bootstrap_cache: BootstrapCache,
@@ -43,7 +43,7 @@ pub struct QuicP2p<I: Id> {
     phantom: PhantomData<I>,
 }
 
-impl<I: Id> QuicP2p<I> {
+impl<I: ConnId> QuicP2p<I> {
     /// Construct `QuicP2p` with supplied parameters, ready to be used.
     /// If config is not specified it'll call `Config::read_or_construct_default()`
     ///
@@ -55,15 +55,15 @@ impl<I: Id> QuicP2p<I> {
     /// # Example
     ///
     /// ```
-    /// use qp2p::{QuicP2p, Config, Id};
+    /// use qp2p::{QuicP2p, Config, ConnId};
     /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     ///
     /// # #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
-    /// # struct ConnId(pub [u8; 32]);
+    /// # struct XId(pub [u8; 32]);
     /// #
-    /// # impl Id for ConnId {
-    /// #     fn generate(_socket_addr: &SocketAddr) -> Self {
-    /// #         ConnId(rand::random())
+    /// # impl ConnId for XId {
+    /// #     fn generate(_socket_addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
+    /// #         Ok(XId(rand::random()))
     /// #     }
     /// # }
     ///
@@ -71,7 +71,7 @@ impl<I: Id> QuicP2p<I> {
     /// config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     /// config.local_port = Some(3000);
     /// let hcc = &["127.0.0.1:8080".parse().unwrap()];
-    /// let quic_p2p = QuicP2p::<ConnId>::with_config(Some(config), hcc, true).expect("Error initializing QuicP2p");
+    /// let quic_p2p = QuicP2p::<XId>::with_config(Some(config), hcc, true).expect("Error initializing QuicP2p");
     /// ```
     pub fn with_config(
         cfg: Option<Config>,
@@ -154,15 +154,15 @@ impl<I: Id> QuicP2p<I> {
     /// # Example
     ///
     /// ```
-    /// use qp2p::{QuicP2p, Config, Error, Id};
+    /// use qp2p::{QuicP2p, Config, Error, ConnId};
     /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     ///
     /// # #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
-    /// # struct ConnId(pub [u8; 32]);
+    /// # struct XId(pub [u8; 32]);
     /// #
-    /// # impl Id for ConnId {
-    /// #     fn generate(_socket_addr: &SocketAddr) -> Self {
-    /// #         ConnId(rand::random())
+    /// # impl ConnId for XId {
+    /// #     fn generate(_socket_addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
+    /// #         Ok(XId(rand::random()))
     /// #     }
     /// # }
     ///
@@ -171,12 +171,12 @@ impl<I: Id> QuicP2p<I> {
     ///     let mut config = Config::default();
     ///     config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
     ///     config.local_port = Some(3000);
-    ///     let mut quic_p2p = QuicP2p::<ConnId>::with_config(Some(config.clone()), Default::default(), true)?;
+    ///     let mut quic_p2p = QuicP2p::<XId>::with_config(Some(config.clone()), Default::default(), true)?;
     ///     let (mut endpoint, _, _, _) = quic_p2p.new_endpoint().await?;
     ///     let peer_addr = endpoint.socket_addr();
     ///
     ///     config.local_port = Some(3001);
-    ///     let mut quic_p2p = QuicP2p::<ConnId>::with_config(Some(config), &[peer_addr], true)?;
+    ///     let mut quic_p2p = QuicP2p::<XId>::with_config(Some(config), &[peer_addr], true)?;
     ///     let endpoint = quic_p2p.bootstrap().await?;
     ///     Ok(())
     /// }
@@ -212,15 +212,15 @@ impl<I: Id> QuicP2p<I> {
     /// # Example
     ///
     /// ```
-    /// use qp2p::{QuicP2p, Config, Error, Id};
+    /// use qp2p::{QuicP2p, Config, Error, ConnId};
     /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     ///
     /// # #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
-    /// # struct ConnId(pub [u8; 32]);
+    /// # struct XId(pub [u8; 32]);
     /// #
-    /// # impl Id for ConnId {
-    /// #     fn generate(_socket_addr: &SocketAddr) -> Self {
-    /// #         ConnId(rand::random())
+    /// # impl ConnId for XId {
+    /// #     fn generate(_socket_addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
+    /// #         Ok(XId(rand::random()))
     /// #     }
     /// # }
     ///
@@ -228,7 +228,7 @@ impl<I: Id> QuicP2p<I> {
     /// async fn main() -> Result<(), Error> {
     ///     let mut config = Config::default();
     ///     config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    ///     let mut quic_p2p = QuicP2p::<ConnId>::with_config(Some(config.clone()), Default::default(), true)?;
+    ///     let mut quic_p2p = QuicP2p::<XId>::with_config(Some(config.clone()), Default::default(), true)?;
     ///     let (endpoint, incoming_connections, incoming_messages, disconnections) = quic_p2p.new_endpoint().await?;
     ///     Ok(())
     /// }
@@ -300,7 +300,7 @@ impl<I: Id> QuicP2p<I> {
         let bootstrapped_peer = successful_connection.connection.remote_address();
         endpoint
             .add_new_connection_to_pool(successful_connection)
-            .await;
+            .await?;
         Ok(bootstrapped_peer)
     }
 

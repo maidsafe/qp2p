@@ -10,7 +10,7 @@
 use crate::Endpoint;
 
 use super::{
-    connection_pool::{ConnectionPool, ConnectionRemover, Id},
+    connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
     error::{Error, Result},
     wire_msg::WireMsg,
 };
@@ -23,7 +23,7 @@ use tracing::{trace, warn};
 
 /// Connection instance to a node which can be used to send messages to it
 #[derive(Clone)]
-pub(crate) struct Connection<I: Id> {
+pub(crate) struct Connection<I: ConnId> {
     quic_conn: quinn::Connection,
     remover: ConnectionRemover<I>,
 }
@@ -39,7 +39,7 @@ impl DisconnectionEvents {
     }
 }
 
-impl<I: Id> Connection<I> {
+impl<I: ConnId> Connection<I> {
     pub(crate) fn new(quic_conn: quinn::Connection, remover: ConnectionRemover<I>) -> Self {
         Self { quic_conn, remover }
     }
@@ -147,7 +147,7 @@ pub async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Re
     Ok(())
 }
 
-pub(super) fn listen_for_incoming_connections<I: Id>(
+pub(super) fn listen_for_incoming_connections<I: ConnId>(
     mut quinn_incoming: quinn::Incoming,
     connection_pool: ConnectionPool<I>,
     message_tx: Sender<(SocketAddr, Bytes)>,
@@ -166,7 +166,8 @@ pub(super) fn listen_for_incoming_connections<I: Id>(
                         ..
                     }) => {
                         let peer_address = connection.remote_address();
-                        let id = Id::generate(&peer_address);
+                        let id = ConnId::generate(&peer_address)
+                            .map_err(|err| Error::ConnectionIdGeneration(err.to_string()))?;
                         let pool_handle =
                             connection_pool.insert(id, peer_address, connection).await;
                         let _ = connection_tx.send(peer_address).await;
@@ -193,7 +194,7 @@ pub(super) fn listen_for_incoming_connections<I: Id>(
     });
 }
 
-pub(super) fn listen_for_incoming_messages<I: Id>(
+pub(super) fn listen_for_incoming_messages<I: ConnId>(
     mut uni_streams: quinn::IncomingUniStreams,
     mut bi_streams: quinn::IncomingBiStreams,
     remover: ConnectionRemover<I>,
@@ -269,7 +270,7 @@ async fn read_on_uni_streams(
 }
 
 // Read messages sent by peer in a bidirectional stream.
-async fn read_on_bi_streams<I: Id>(
+async fn read_on_bi_streams<I: ConnId>(
     bi_streams: &mut quinn::IncomingBiStreams,
     peer_addr: SocketAddr,
     message_tx: Sender<(SocketAddr, Bytes)>,
@@ -354,7 +355,7 @@ async fn handle_endpoint_echo_req(
     Ok(())
 }
 
-async fn handle_endpoint_verification_req<I: Id>(
+async fn handle_endpoint_verification_req<I: ConnId>(
     peer_addr: SocketAddr,
     addr_sent: SocketAddr,
     send_stream: &mut quinn::SendStream,

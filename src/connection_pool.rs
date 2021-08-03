@@ -9,16 +9,18 @@
 
 use std::{collections::BTreeMap, net::SocketAddr, sync::Arc};
 
+use tiny_keccak::{Hasher, Sha3};
 use tokio::sync::RwLock;
+use xor_name::XorName;
 
 // Pool for keeping open connections. Pooled connections are associated with a `ConnectionRemover`
 // which can be used to remove them from the pool.
 #[derive(Clone)]
-pub(crate) struct ConnectionPool<T: Id> {
-    store: Arc<RwLock<Store<T>>>,
+pub(crate) struct ConnectionPool<I: ConnId> {
+    store: Arc<RwLock<Store<I>>>,
 }
 
-impl<T: Id> ConnectionPool<T> {
+impl<I: ConnId> ConnectionPool<I> {
     pub fn new() -> Self {
         Self {
             store: Arc::new(RwLock::new(Store::default())),
@@ -27,10 +29,10 @@ impl<T: Id> ConnectionPool<T> {
 
     pub async fn insert(
         &self,
-        id: T,
+        id: I,
         addr: SocketAddr,
         conn: quinn::Connection,
-    ) -> ConnectionRemover<T> {
+    ) -> ConnectionRemover<I> {
         let mut store = self.store.write().await;
 
         let key = Key {
@@ -59,7 +61,7 @@ impl<T: Id> ConnectionPool<T> {
     }
 
     #[allow(unused)]
-    pub async fn has_id(&self, id: &T) -> bool {
+    pub async fn has_id(&self, id: &I) -> bool {
         let store = self.store.read().await;
 
         store.id_map.contains_key(id)
@@ -77,14 +79,28 @@ impl<T: Id> ConnectionPool<T> {
 
         keys_to_remove
             .iter()
-            .filter_map(|key| store.key_map.remove(&key).map(|entry| entry.0))
+            .filter_map(|key| store.key_map.remove(key).map(|entry| entry.0))
             .collect::<Vec<_>>()
+    }
+
+    pub async fn get_by_id(&self, addr: &I) -> Option<(quinn::Connection, ConnectionRemover<I>)> {
+        let store = self.store.read().await;
+
+        let (conn, key) = store.id_map.get(addr)?;
+
+        let remover = ConnectionRemover {
+            store: self.store.clone(),
+            key: *key,
+            id: *addr,
+        };
+
+        Some((conn.clone(), remover))
     }
 
     pub async fn get_by_addr(
         &self,
         addr: &SocketAddr,
-    ) -> Option<(quinn::Connection, ConnectionRemover<T>)> {
+    ) -> Option<(quinn::Connection, ConnectionRemover<I>)> {
         let store = self.store.read().await;
 
         // Efficiently fetch the first entry whose key is equal to `key`.
@@ -106,13 +122,13 @@ impl<T: Id> ConnectionPool<T> {
 
 // Handle for removing a connection from the pool.
 #[derive(Clone)]
-pub(crate) struct ConnectionRemover<T: Id> {
-    store: Arc<RwLock<Store<T>>>,
+pub(crate) struct ConnectionRemover<I: ConnId> {
+    store: Arc<RwLock<Store<I>>>,
     key: Key,
-    id: T,
+    id: I,
 }
 
-impl<T: Id> ConnectionRemover<T> {
+impl<I: ConnId> ConnectionRemover<I> {
     // Remove the connection from the pool.
     pub async fn remove(&self) {
         let mut store = self.store.write().await;
@@ -123,22 +139,37 @@ impl<T: Id> ConnectionRemover<T> {
     pub fn remote_addr(&self) -> &SocketAddr {
         &self.key.addr
     }
+
+    pub fn id(&self) -> I {
+        self.id
+    }
 }
 
 #[derive(Default)]
-struct Store<T: Id> {
-    id_map: BTreeMap<T, (quinn::Connection, Key)>,
-    key_map: BTreeMap<Key, (quinn::Connection, T)>,
+struct Store<I: ConnId> {
+    id_map: BTreeMap<I, (quinn::Connection, Key)>,
+    key_map: BTreeMap<Key, (quinn::Connection, I)>,
     id_gen: IdGen,
 }
 
 /// Unique key identifying a connection. Two connections will always have distict keys even if they
 /// have the same socket address.
-pub trait Id:
+pub trait ConnId:
     Clone + Copy + Eq + PartialEq + Ord + PartialOrd + Default + Send + Sync + 'static
 {
     /// Generate
-    fn generate(socket_addr: &SocketAddr) -> Self;
+    fn generate(socket_addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>>;
+}
+
+impl ConnId for XorName {
+    fn generate(addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
+        let data = bincode::serialize(addr)?;
+        let mut hasher = Sha3::v256();
+        let mut output = [0u8; 32];
+        hasher.update(&data);
+        hasher.finalize(&mut output);
+        Ok(XorName(output))
+    }
 }
 
 // Unique key identifying a connection. Two connections will always have distict keys even if they

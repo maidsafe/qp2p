@@ -130,4 +130,7 @@ pub enum Error {
     /// Couldn't resolve Public IP address
     #[error("Unresolved Public IP address")]
     UnresolvedPublicIp,
+    /// Couldn't generate connection ID
+    #[error("Couldn't generate connection ID")]
+    ConnectionIdGeneration(String),
 }
