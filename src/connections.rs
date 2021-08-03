@@ -211,16 +211,17 @@ pub(super) fn listen_for_incoming_messages<I: ConnId>(
         .await
         {
             Ok(_) => {
+                remover.remove().await;
                 let _ = disconnection_tx.send(src).await;
             }
             Err(error) => {
                 trace!("Issue on stream reading from: {:?} :: {:?}", src, error);
+                remover.remove().await;
                 let _ = disconnection_tx.send(src).await;
             }
         }
 
         trace!("The connection to {:?} has been terminated.", src);
-        remover.remove().await;
     });
 }
 
