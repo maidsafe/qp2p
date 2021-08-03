@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.13.0](https://github.com/maidsafe/qp2p/compare/v0.12.11...v0.13.0) (2021-08-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **id:** introduces generic type to Qp2p and Endpoint
+
+### Features
+
+* **id:** keep a track of connections using a connection ID within qp2p ([10c8ea0](https://github.com/maidsafe/qp2p/commit/10c8ea036305f3b71dd2acbb2712ad2e104ddfd7))
+
+
+### Bug Fixes
+
+* **api:** rename type parameter after rebase ([8b2ad02](https://github.com/maidsafe/qp2p/commit/8b2ad026438a003536f39d83ddb8a55cac2564a8))
+
 ### [0.12.11](https://github.com/maidsafe/qp2p/compare/v0.12.10...v0.12.11) (2021-07-28)
 
 
