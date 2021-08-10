@@ -9,7 +9,7 @@
 
 /// Convert binary data to a diplay-able format
 #[inline]
-pub fn bin_data_format(data: &[u8]) -> String {
+pub(crate) fn bin_data_format(data: &[u8]) -> String {
     let len = data.len();
     if len < 8 {
         return format!("[ {:?} ]", data);

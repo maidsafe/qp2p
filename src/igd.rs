@@ -16,7 +16,7 @@ use tokio::time::{self, Instant};
 use tracing::{debug, info, warn};
 
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
-pub async fn forward_port(
+pub(crate) async fn forward_port(
     local_addr: SocketAddr,
     lease_duration: u32,
     mut termination_rx: Receiver<()>,

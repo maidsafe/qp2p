@@ -21,13 +21,13 @@ pub(crate) struct ConnectionPool<I: ConnId> {
 }
 
 impl<I: ConnId> ConnectionPool<I> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             store: Arc::new(RwLock::new(Store::default())),
         }
     }
 
-    pub async fn insert(
+    pub(crate) async fn insert(
         &self,
         id: I,
         addr: SocketAddr,
@@ -49,7 +49,7 @@ impl<I: ConnId> ConnectionPool<I> {
         }
     }
 
-    pub async fn has_addr(&self, addr: &SocketAddr) -> bool {
+    pub(crate) async fn has_addr(&self, addr: &SocketAddr) -> bool {
         let store = self.store.read().await;
 
         // Efficiently fetch the first entry whose key is equal to `key` and check if it exists
@@ -61,13 +61,13 @@ impl<I: ConnId> ConnectionPool<I> {
     }
 
     #[allow(unused)]
-    pub async fn has_id(&self, id: &I) -> bool {
+    pub(crate) async fn has_id(&self, id: &I) -> bool {
         let store = self.store.read().await;
 
         store.id_map.contains_key(id)
     }
 
-    pub async fn remove(&self, addr: &SocketAddr) -> Vec<quinn::Connection> {
+    pub(crate) async fn remove(&self, addr: &SocketAddr) -> Vec<quinn::Connection> {
         let mut store = self.store.write().await;
 
         let keys_to_remove = store
@@ -83,7 +83,10 @@ impl<I: ConnId> ConnectionPool<I> {
             .collect::<Vec<_>>()
     }
 
-    pub async fn get_by_id(&self, addr: &I) -> Option<(quinn::Connection, ConnectionRemover<I>)> {
+    pub(crate) async fn get_by_id(
+        &self,
+        addr: &I,
+    ) -> Option<(quinn::Connection, ConnectionRemover<I>)> {
         let store = self.store.read().await;
 
         let (conn, key) = store.id_map.get(addr)?;
@@ -97,7 +100,7 @@ impl<I: ConnId> ConnectionPool<I> {
         Some((conn.clone(), remover))
     }
 
-    pub async fn get_by_addr(
+    pub(crate) async fn get_by_addr(
         &self,
         addr: &SocketAddr,
     ) -> Option<(quinn::Connection, ConnectionRemover<I>)> {
@@ -130,17 +133,17 @@ pub(crate) struct ConnectionRemover<I: ConnId> {
 
 impl<I: ConnId> ConnectionRemover<I> {
     // Remove the connection from the pool.
-    pub async fn remove(&self) {
+    pub(crate) async fn remove(&self) {
         let mut store = self.store.write().await;
         let _ = store.key_map.remove(&self.key);
         let _ = store.id_map.remove(&self.id);
     }
 
-    pub fn remote_addr(&self) -> &SocketAddr {
+    pub(crate) fn remote_addr(&self) -> &SocketAddr {
         &self.key.addr
     }
 
-    pub fn id(&self) -> I {
+    pub(crate) fn id(&self) -> I {
         self.id
     }
 }

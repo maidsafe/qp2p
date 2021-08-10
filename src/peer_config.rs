@@ -16,14 +16,14 @@ use std::{sync::Arc, time::Duration};
 /// see no conversation between them.
 ///
 /// The value is in milliseconds.
-pub const DEFAULT_IDLE_TIMEOUT_MSEC: u64 = 60_000; // 60secs
+pub(crate) const DEFAULT_IDLE_TIMEOUT_MSEC: u64 = 60_000; // 60secs
 /// Default Interval to send keep-alives if we are idling so that the peer does not disconnect from
 /// us declaring us offline. If none is supplied we'll default to the documented constant.
 ///
 /// The value is in milliseconds.
-pub const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 20_000; // 20secs
+pub(crate) const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 20_000; // 20secs
 
-pub fn new_client_cfg(
+pub(crate) fn new_client_cfg(
     idle_timeout_msec: u64,
     keep_alive_interval_msec: u32,
 ) -> Result<quinn::ClientConfig> {
@@ -39,7 +39,7 @@ pub fn new_client_cfg(
     Ok(config)
 }
 
-pub fn new_our_cfg(
+pub(crate) fn new_our_cfg(
     idle_timeout_msec: u64,
     keep_alive_interval_msec: u32,
     our_cert: quinn::Certificate,

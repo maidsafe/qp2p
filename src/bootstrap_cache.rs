@@ -30,7 +30,7 @@ const MAX_CACHE_SIZE: usize = 200;
 
 /// A very simple LRU like struct that writes itself to disk every 10 entries added.
 #[derive(Debug, Clone)]
-pub struct BootstrapCache {
+pub(crate) struct BootstrapCache {
     peers: VecDeque<SocketAddr>,
     cache_path: PathBuf,
     add_count: u8,
@@ -45,7 +45,7 @@ impl BootstrapCache {
     ///
     /// - hard_coded_contacts: these peers are hard coded into the binary and should
     ///   not be cached upon successful connection.
-    pub fn new(
+    pub(crate) fn new(
         hard_coded_contacts: HashSet<SocketAddr>,
         user_override: Option<&PathBuf>,
     ) -> Result<BootstrapCache> {
@@ -78,20 +78,20 @@ impl BootstrapCache {
         })
     }
 
-    pub fn peers_mut(&mut self) -> &mut VecDeque<SocketAddr> {
+    pub(crate) fn peers_mut(&mut self) -> &mut VecDeque<SocketAddr> {
         &mut self.peers
     }
 
-    pub fn peers(&self) -> &VecDeque<SocketAddr> {
+    pub(crate) fn peers(&self) -> &VecDeque<SocketAddr> {
         &self.peers
     }
 
-    pub fn hard_coded_contacts(&self) -> &HashSet<SocketAddr> {
+    pub(crate) fn hard_coded_contacts(&self) -> &HashSet<SocketAddr> {
         &self.hard_coded_contacts
     }
 
     /// Caches given peer if it's not in hard coded contacts.
-    pub fn add_peer(&mut self, peer: SocketAddr) {
+    pub(crate) fn add_peer(&mut self, peer: SocketAddr) {
         if self.hard_coded_contacts.contains(&peer) {
             return;
         }
@@ -112,7 +112,7 @@ impl BootstrapCache {
         self.try_sync_to_disk(false);
     }
 
-    pub fn clear_from_disk(user_override: Option<&PathBuf>) -> Result<()> {
+    pub(crate) fn clear_from_disk(user_override: Option<&PathBuf>) -> Result<()> {
         let get_cache_path = |dir: &PathBuf| dir.join("bootstrap_cache");
 
         let cache_path = user_override.map_or_else(

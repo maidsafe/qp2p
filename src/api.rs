@@ -24,10 +24,10 @@ use tracing::{debug, error, info, trace};
 
 /// In the absence of a port supplied by the user via the config we will first try using this
 /// before using a random port.
-pub const DEFAULT_PORT_TO_TRY: u16 = 0;
+const DEFAULT_PORT_TO_TRY: u16 = 0;
 
 /// Default duration of a UPnP lease, in seconds.
-pub const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
+pub(crate) const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
 
 const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 

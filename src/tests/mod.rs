@@ -29,11 +29,13 @@ impl ConnId for [u8; 32] {
 }
 
 /// Constructs a `QuicP2p` node with some sane defaults for testing.
-pub fn new_qp2p() -> Result<QuicP2p<[u8; 32]>> {
+pub(crate) fn new_qp2p() -> Result<QuicP2p<[u8; 32]>> {
     new_qp2p_with_hcc(HashSet::default())
 }
 
-pub fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> Result<QuicP2p<[u8; 32]>> {
+pub(crate) fn new_qp2p_with_hcc(
+    hard_coded_contacts: HashSet<SocketAddr>,
+) -> Result<QuicP2p<[u8; 32]>> {
     let qp2p = QuicP2p::<[u8; 32]>::with_config(
         Some(Config {
             local_port: Some(0),
@@ -53,12 +55,12 @@ pub fn new_qp2p_with_hcc(hard_coded_contacts: HashSet<SocketAddr>) -> Result<Qui
     Ok(qp2p)
 }
 
-pub fn random_msg(size: usize) -> Bytes {
+pub(crate) fn random_msg(size: usize) -> Bytes {
     let random_bytes: Vec<u8> = (0..size).map(|_| rand::random::<u8>()).collect();
     Bytes::from(random_bytes)
 }
 
-pub fn hash(bytes: &Bytes) -> Digest256 {
+pub(crate) fn hash(bytes: &Bytes) -> Digest256 {
     let mut hasher = Sha3::v256();
     let mut hash = Digest256::default();
     hasher.update(bytes);
