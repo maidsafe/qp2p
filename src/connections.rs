@@ -233,10 +233,13 @@ async fn read_on_uni_streams(
 ) -> Result<()> {
     while let Some(result) = uni_streams.next().await {
         match result {
-            Err(quinn::ConnectionError::ConnectionClosed(_))
-            | Err(quinn::ConnectionError::ApplicationClosed(_)) => {
+            Err(quinn::ConnectionError::ConnectionClosed(close)) => {
+                trace!("Connection closed by peer {:?}", peer_addr);
+                return Err(Error::ConnectionClosed(close.into()));
+            }
+            Err(quinn::ConnectionError::ApplicationClosed(close)) => {
                 trace!("Connection closed by peer {:?}.", peer_addr);
-                return Err(Error::QuinnConnectionClosed);
+                return Err(Error::ConnectionClosed(close.into()));
             }
             Err(err) => {
                 warn!(
@@ -279,10 +282,13 @@ async fn read_on_bi_streams<I: ConnId>(
 ) -> Result<()> {
     while let Some(result) = bi_streams.next().await {
         match result {
-            Err(quinn::ConnectionError::ConnectionClosed(_))
-            | Err(quinn::ConnectionError::ApplicationClosed(_)) => {
+            Err(quinn::ConnectionError::ConnectionClosed(close)) => {
+                trace!("Connection closed by peer {:?}", peer_addr);
+                return Err(Error::ConnectionClosed(close.into()));
+            }
+            Err(quinn::ConnectionError::ApplicationClosed(close)) => {
                 trace!("Connection closed by peer {:?}.", peer_addr);
-                return Err(Error::QuinnConnectionClosed);
+                return Err(Error::ConnectionClosed(close.into()));
             }
             Err(err) => {
                 warn!(

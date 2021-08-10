@@ -81,7 +81,7 @@ impl From<Error> for crate::error::Error {
     fn from(src: Error) -> Self {
         match src {
             Error::Connect(source) => Self::Connect(source),
-            Error::Connection(source) => Self::Connection(source),
+            Error::Connection(source) => source.into(),
         }
     }
 }
