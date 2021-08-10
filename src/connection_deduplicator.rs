@@ -25,7 +25,7 @@ pub(crate) struct ConnectionDeduplicator {
 }
 
 impl ConnectionDeduplicator {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             map: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -35,7 +35,7 @@ impl ConnectionDeduplicator {
     // If this is the first connect attempt, it returns `None` and we should proceed with
     // establishing the connection and then call `complete` with the result.
     // For any subsequent connect attempt this returns `Some` with the result of that attempt.
-    pub async fn query(&self, addr: &SocketAddr) -> Option<Result> {
+    pub(crate) async fn query(&self, addr: &SocketAddr) -> Option<Result> {
         let mut rx = match self.map.lock().await.entry(*addr) {
             Entry::Occupied(entry) => entry.get().subscribe(),
             Entry::Vacant(entry) => {
@@ -61,7 +61,7 @@ impl ConnectionDeduplicator {
 
     // Signal completion of a connect attempt. This causes all the pending `query` calls for the
     // same `addr` to return `result`.
-    pub async fn complete(&self, addr: &SocketAddr, result: Result) {
+    pub(crate) async fn complete(&self, addr: &SocketAddr, result: Result) {
         let tx = self.map.lock().await.remove(addr);
         if let Some(tx) = tx {
             let _ = tx.send(result);

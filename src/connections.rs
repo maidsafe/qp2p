@@ -44,13 +44,13 @@ impl<I: ConnId> Connection<I> {
         Self { quic_conn, remover }
     }
 
-    pub async fn open_bi(&self) -> Result<(SendStream, RecvStream)> {
+    pub(crate) async fn open_bi(&self) -> Result<(SendStream, RecvStream)> {
         let (send_stream, recv_stream) = self.handle_error(self.quic_conn.open_bi().await).await?;
         Ok((SendStream::new(send_stream), RecvStream::new(recv_stream)))
     }
 
     /// Send message to peer using a uni-directional stream.
-    pub async fn send_uni(&self, msg: Bytes) -> Result<()> {
+    pub(crate) async fn send_uni(&self, msg: Bytes) -> Result<()> {
         let mut send_stream = self.handle_error(self.quic_conn.open_uni().await).await?;
         self.handle_error(send_msg(&mut send_stream, msg).await)
             .await?;
@@ -136,12 +136,12 @@ impl Debug for SendStream {
 }
 
 // Helper to read the message's bytes from the provided stream
-pub async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg> {
+async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg> {
     WireMsg::read_from_stream(recv).await
 }
 
 // Helper to send bytes to peer using the provided stream.
-pub async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()> {
+async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()> {
     let wire_msg = WireMsg::UserMsg(msg);
     wire_msg.write_to_stream(&mut send_stream).await?;
     Ok(())

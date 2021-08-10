@@ -125,7 +125,7 @@ struct MsgHeader {
 }
 
 impl MsgHeader {
-    pub fn new(msg: &Bytes, usr_msg_flag: u8) -> Result<Self> {
+    fn new(msg: &Bytes, usr_msg_flag: u8) -> Result<Self> {
         match u32::try_from(msg.len()) {
             Err(_) => Err(Error::MaxLengthExceeded(msg.len())),
             Ok(data_len) => Ok(Self {
@@ -137,15 +137,15 @@ impl MsgHeader {
         }
     }
 
-    pub fn data_len(&self) -> u32 {
+    fn data_len(&self) -> u32 {
         self.data_len
     }
 
-    pub fn usr_msg_flag(&self) -> u8 {
+    fn usr_msg_flag(&self) -> u8 {
         self.usr_msg_flag
     }
 
-    pub fn to_bytes(&self) -> [u8; MSG_HEADER_LEN] {
+    fn to_bytes(&self) -> [u8; MSG_HEADER_LEN] {
         let version = self.version.to_be_bytes();
         let data_len = self.data_len.to_be_bytes();
         [
@@ -161,7 +161,7 @@ impl MsgHeader {
         ]
     }
 
-    pub fn from_bytes(bytes: [u8; MSG_HEADER_LEN]) -> Self {
+    fn from_bytes(bytes: [u8; MSG_HEADER_LEN]) -> Self {
         let version = u16::from_be_bytes([bytes[0], bytes[1]]);
         let data_len = u32::from_be_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]);
         let usr_msg_flag = bytes[6];
