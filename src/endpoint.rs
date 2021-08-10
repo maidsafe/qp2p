@@ -405,13 +405,7 @@ impl<I: ConnId> Endpoint<I> {
     pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<()> {
         trace!("Checking is reachable");
         let new_connection = self.create_new_connection(peer_addr).await?;
-        let (mut send_stream, mut recv_stream) = match new_connection.connection.open_bi().await {
-            Ok(cool) => cool,
-            Err(error) => {
-                error!("Reachablity check errored with: {:?}", error);
-                return Err(Error::QuinnConnectionClosed);
-            }
-        };
+        let (mut send_stream, mut recv_stream) = new_connection.connection.open_bi().await?;
 
         let message = WireMsg::EndpointEchoReq;
         message.write_to_stream(&mut send_stream).await?;
