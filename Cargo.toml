@@ -22,7 +22,7 @@ thiserror = "1.0.23"
 webpki = "~0.21.3"
 tiny-keccak = "2.0.2"
 tracing = "~0.1.26"
-xor_name = "1.2.1"
+xor_name = "2.0.0"
 
   [dependencies.backoff]
   version = "0.3.0"
