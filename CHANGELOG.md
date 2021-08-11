@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.15.2](https://github.com/maidsafe/qp2p/compare/v0.15.1...v0.15.2) (2021-08-11)
+
+
+### Features
+
+* **priority:** allow setting priority of a stream ([a0cf893](https://github.com/maidsafe/qp2p/commit/a0cf8938d02b9a7644c70951e6a9c8ab24339c82))
+
 ### [0.15.1](https://github.com/maidsafe/qp2p/compare/v0.15.0...v0.15.1) (2021-08-11)
 
 ## [0.15.0](https://github.com/maidsafe/qp2p/compare/v0.14.1...v0.15.0) (2021-08-11)
