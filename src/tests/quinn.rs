@@ -9,9 +9,10 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
 use std::collections::BTreeSet;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
-use tokio::sync::RwLock;
+use tokio::sync::{
+    mpsc::{channel, unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender},
+    Notify, RwLock,
+};
 use tracing::{error, info, trace, warn};
 
 const DOMAIN: &str = "quinn.test";
@@ -249,10 +250,12 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     for id in 0..num_senders {
         info!("Sender #{}", id);
         let (send_endpoint, mut recv_incoming_messages) = Peer::new(CHANNEL_SIZE)?;
+        let send_complete = Arc::new(Notify::new());
         let hash_results = Arc::new(RwLock::new(BTreeSet::new()));
 
         let hashes = hash_results.clone();
         let sender = send_endpoint.clone();
+        let send_complete_rx = Arc::clone(&send_complete);
         tasks.push(tokio::spawn(async move {
             while let Some((src, msg)) = recv_incoming_messages.recv().await {
                 info!(
@@ -268,6 +271,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                 }
             }
             info!("Sender #{} recv complete", id);
+            send_complete_rx.notified().await;
             sender.close();
             Ok::<_, anyhow::Error>(())
         }));
@@ -285,6 +289,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                     .map_err(|err| anyhow::anyhow!("Error now here: {:?}", err))?;
             }
             info!("Sender #{} send complete", id);
+            send_complete.notify_one();
 
             Ok::<_, anyhow::Error>(())
         }));
