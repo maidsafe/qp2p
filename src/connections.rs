@@ -44,14 +44,22 @@ impl<I: ConnId> Connection<I> {
         Self { quic_conn, remover }
     }
 
-    pub(crate) async fn open_bi(&self) -> Result<(SendStream, RecvStream)> {
+    /// Priority default is 0. Both lower and higher can be passed in.
+    pub(crate) async fn open_bi(&self, priority: i32) -> Result<(SendStream, RecvStream)> {
         let (send_stream, recv_stream) = self.handle_error(self.quic_conn.open_bi().await).await?;
-        Ok((SendStream::new(send_stream), RecvStream::new(recv_stream)))
+        let send_stream = SendStream::new(send_stream);
+        send_stream.set_priority(priority)?;
+        Ok((send_stream, RecvStream::new(recv_stream)))
     }
 
     /// Send message to peer using a uni-directional stream.
-    pub(crate) async fn send_uni(&self, msg: Bytes) -> Result<()> {
+    /// Priority default is 0. Both lower and higher can be passed in.
+    pub(crate) async fn send_uni(&self, msg: Bytes, priority: i32) -> Result<()> {
         let mut send_stream = self.handle_error(self.quic_conn.open_uni().await).await?;
+        send_stream
+            .set_priority(priority)
+            .map_err(|_| Error::UnknownStream)?;
+
         self.handle_error(send_msg(&mut send_stream, msg).await)
             .await?;
 
@@ -110,6 +118,27 @@ pub struct SendStream {
 impl SendStream {
     pub(crate) fn new(quinn_send_stream: quinn::SendStream) -> Self {
         Self { quinn_send_stream }
+    }
+
+    /// Set the priority of the send stream
+    ///
+    /// Every send stream has an initial priority of 0. Locally buffered data from streams with
+    /// higher priority will be transmitted before data from streams with lower priority. Changing
+    /// the priority of a stream with pending data may only take effect after that data has been
+    /// transmitted. Using many different priority levels per connection may have a negative
+    /// impact on performance.
+    pub fn set_priority(&self, priority: i32) -> Result<()> {
+        self.quinn_send_stream
+            .set_priority(priority)
+            .map_err(|_| Error::UnknownStream)?;
+        Ok(())
+    }
+
+    /// Get the priority of the send stream
+    pub fn priority(&self) -> Result<i32> {
+        self.quinn_send_stream
+            .priority()
+            .map_err(|_| Error::UnknownStream)
     }
 
     /// Send a message using the stream created by the initiator
@@ -374,7 +403,7 @@ async fn handle_endpoint_verification_req<I: ConnId>(
         peer_addr
     );
     // Verify if the peer's endpoint is reachable via EchoServiceReq
-    let (mut temp_send, mut temp_recv) = endpoint.open_bidirectional_stream(&addr_sent).await?;
+    let (mut temp_send, mut temp_recv) = endpoint.open_bidirectional_stream(&addr_sent, 0).await?;
     let message = WireMsg::EndpointEchoReq;
     message
         .write_to_stream(&mut temp_send.quinn_send_stream)
@@ -434,7 +463,7 @@ mod tests {
             .get_connection(&peer2_addr)
             .await
             .ok_or(Error::MissingConnection)?;
-        let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
+        let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
         let message = WireMsg::EndpointEchoReq;
         message
             .write_to_stream(&mut send_stream.quinn_send_stream)

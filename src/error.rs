@@ -50,6 +50,9 @@ pub enum Error {
     /// Failed to create a new endpoint.
     #[error("Creating endpoint")]
     Endpoint(#[from] quinn::EndpointError),
+    /// Failed to set/get priority of stream.
+    #[error("Unknown stream, cannot set/get priority.")]
+    UnknownStream,
     /// Certificate for secure communication couldn't be parsed.
     #[error("Cannot parse certificate ")]
     CertificateParse,

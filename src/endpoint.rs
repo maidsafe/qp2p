@@ -144,7 +144,7 @@ impl<I: ConnId> Endpoint<I> {
                     .get_connection(contact)
                     .await
                     .ok_or(Error::MissingConnection)?;
-                let (mut send, mut recv) = connection.open_bi().await?;
+                let (mut send, mut recv) = connection.open_bi(0).await?;
                 send.send(WireMsg::EndpointVerificationReq(addr)).await?;
                 let response = timeout(
                     Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
@@ -495,39 +495,52 @@ impl<I: ConnId> Endpoint<I> {
     }
 
     /// Open a bi-directional peer with a given peer
+    /// Priority default is 0. Both lower and higher can be passed in.
     pub async fn open_bidirectional_stream(
         &self,
         peer_addr: &SocketAddr,
+        priority: i32,
     ) -> Result<(SendStream, RecvStream)> {
         self.connect_to(peer_addr).await?;
         let connection = self
             .get_connection(peer_addr)
             .await
             .ok_or(Error::MissingConnection)?;
-        connection.open_bi().await
+        connection.open_bi(priority).await
     }
 
     /// Sends a message to a peer. This will attempt to use an existing connection
     /// to the destination  peer. If a connection does not exist, this will fail with `Error::MissingConnection`
-    pub async fn try_send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
+    /// Priority default is 0. Both lower and higher can be passed in.
+    pub async fn try_send_message(
+        &self,
+        msg: Bytes,
+        dest: &SocketAddr,
+        priority: i32,
+    ) -> Result<()> {
         let connection = self
             .get_connection(dest)
             .await
             .ok_or(Error::MissingConnection)?;
-        connection.send_uni(msg).await?;
+        connection.send_uni(msg, priority).await?;
         Ok(())
     }
 
     /// Sends a message to a peer. This will attempt to use an existing connection
     /// to the peer first. If this connection is broken or doesn't exist
     /// a new connection is created and the message is sent.
-    pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr) -> Result<()> {
-        if self.try_send_message(msg.clone(), dest).await.is_ok() {
+    /// Priority default is 0. Both lower and higher can be passed in.
+    pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr, priority: i32) -> Result<()> {
+        if self
+            .try_send_message(msg.clone(), dest, priority)
+            .await
+            .is_ok()
+        {
             return Ok(());
         }
         self.connect_to(dest).await?;
 
-        self.retry(|| async { Ok(self.try_send_message(msg.clone(), dest).await?) })
+        self.retry(|| async { Ok(self.try_send_message(msg.clone(), dest, priority).await?) })
             .await
     }
 
@@ -554,7 +567,7 @@ impl<I: ConnId> Endpoint<I> {
                     .get_connection(&node)
                     .await
                     .ok_or(Error::MissingConnection)?;
-                let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
+                let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
                     Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
