@@ -30,7 +30,6 @@ const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
 #[derive(Debug, Clone)]
 pub struct QuicP2p<I: ConnId> {
-    local_addr: SocketAddr,
     bootstrap_cache: BootstrapCache,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
@@ -74,15 +73,7 @@ impl<I: ConnId> QuicP2p<I> {
         use_bootstrap_cache: bool,
     ) -> Result<Self> {
         debug!("Config passed in to qp2p: {:?}", cfg);
-        let cfg = unwrap_config_or_default(cfg)?;
-        debug!(
-            "Config decided on after unwrap and IGD in to qp2p: {:?}",
-            cfg
-        );
-
-        let port = cfg.local_port.unwrap_or_default();
-
-        let ip = cfg.local_ip.ok_or(Error::UnspecifiedLocalIp)?;
+        let cfg = cfg.unwrap_or_default();
 
         let idle_timeout_msec = cfg.idle_timeout_msec.unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
 
@@ -118,8 +109,6 @@ impl<I: ConnId> QuicP2p<I> {
 
         let qp2p_config = InternalConfig {
             hard_coded_contacts: cfg.hard_coded_contacts,
-            local_port: port,
-            local_ip: ip,
             forward_port: cfg.forward_port,
             external_port: cfg.external_port,
             external_ip: cfg.external_ip,
@@ -128,7 +117,6 @@ impl<I: ConnId> QuicP2p<I> {
         };
 
         Ok(Self {
-            local_addr: SocketAddr::new(ip, port),
             bootstrap_cache,
             endpoint_cfg,
             client_cfg,
@@ -177,6 +165,7 @@ impl<I: ConnId> QuicP2p<I> {
     /// ```
     pub async fn bootstrap(
         &self,
+        local_addr: SocketAddr,
     ) -> Result<(
         Endpoint<I>,
         IncomingConnections,
@@ -185,7 +174,7 @@ impl<I: ConnId> QuicP2p<I> {
         SocketAddr,
     )> {
         let (endpoint, incoming_connections, incoming_message, disconnections) =
-            self.new_endpoint().await?;
+            self.new_endpoint(local_addr).await?;
 
         let bootstrapped_peer = self
             .bootstrap_with(&endpoint, endpoint.bootstrap_nodes())
@@ -229,6 +218,7 @@ impl<I: ConnId> QuicP2p<I> {
     /// ```
     pub async fn new_endpoint(
         &self,
+        local_addr: SocketAddr,
     ) -> Result<(
         Endpoint<I>,
         IncomingConnections,
@@ -246,7 +236,7 @@ impl<I: ConnId> QuicP2p<I> {
             .cloned()
             .collect();
 
-        let (quinn_endpoint, quinn_incoming) = bind(self.endpoint_cfg.clone(), self.local_addr)?;
+        let (quinn_endpoint, quinn_incoming) = bind(self.endpoint_cfg.clone(), local_addr)?;
 
         trace!(
             "Bound endpoint to local address: {}",
@@ -338,23 +328,4 @@ pub(crate) fn bind(
             Err(Error::CannotAssignPort(local_addr.port()))
         }
     }
-}
-
-fn unwrap_config_or_default(cfg: Option<Config>) -> Result<Config> {
-    let mut cfg = cfg.map_or(Config::default(), |cfg| cfg);
-
-    if cfg.local_ip.is_none() {
-        debug!("Realizing local IP by connecting to contacts");
-        let socket = UdpSocket::bind("0.0.0.0:0")?;
-        let mut local_ip = None;
-        for addr in cfg.hard_coded_contacts.iter() {
-            if let Ok(Ok(local_addr)) = socket.connect(addr).map(|()| socket.local_addr()) {
-                local_ip = Some(local_addr.ip());
-                break;
-            }
-        }
-        cfg.local_ip = local_ip;
-    };
-
-    Ok(cfg)
 }
