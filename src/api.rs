@@ -20,11 +20,7 @@ use futures::future;
 use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::{collections::HashSet, marker::PhantomData};
-use tracing::{debug, error, info, trace};
-
-/// In the absence of a port supplied by the user via the config we will first try using this
-/// before using a random port.
-const DEFAULT_PORT_TO_TRY: u16 = 0;
+use tracing::{debug, error, trace};
 
 /// Default duration of a UPnP lease, in seconds.
 pub(crate) const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
@@ -35,7 +31,6 @@ const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 #[derive(Debug, Clone)]
 pub struct QuicP2p<I: ConnId> {
     local_addr: SocketAddr,
-    allow_random_port: bool,
     bootstrap_cache: BootstrapCache,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
@@ -85,10 +80,7 @@ impl<I: ConnId> QuicP2p<I> {
             cfg
         );
 
-        let (port, allow_random_port) = cfg
-            .local_port
-            .map(|p| (p, false))
-            .unwrap_or((DEFAULT_PORT_TO_TRY, true));
+        let port = cfg.local_port.unwrap_or_default();
 
         let ip = cfg.local_ip.ok_or(Error::UnspecifiedLocalIp)?;
 
@@ -137,7 +129,6 @@ impl<I: ConnId> QuicP2p<I> {
 
         Ok(Self {
             local_addr: SocketAddr::new(ip, port),
-            allow_random_port,
             bootstrap_cache,
             endpoint_cfg,
             client_cfg,
@@ -255,11 +246,7 @@ impl<I: ConnId> QuicP2p<I> {
             .cloned()
             .collect();
 
-        let (quinn_endpoint, quinn_incoming) = bind(
-            self.endpoint_cfg.clone(),
-            self.local_addr,
-            self.allow_random_port,
-        )?;
+        let (quinn_endpoint, quinn_incoming) = bind(self.endpoint_cfg.clone(), self.local_addr)?;
 
         trace!(
             "Bound endpoint to local address: {}",
@@ -340,25 +327,12 @@ impl<I: ConnId> QuicP2p<I> {
 pub(crate) fn bind(
     endpoint_cfg: quinn::ServerConfig,
     local_addr: SocketAddr,
-    allow_random_port: bool,
 ) -> Result<(quinn::Endpoint, quinn::Incoming)> {
     let mut endpoint_builder = quinn::Endpoint::builder();
     let _ = endpoint_builder.listen(endpoint_cfg);
 
     match UdpSocket::bind(&local_addr) {
         Ok(udp) => endpoint_builder.with_socket(udp).map_err(Error::Endpoint),
-        Err(err) if allow_random_port => {
-            info!(
-                "Failed to bind to local address: {} - Error: {}. Trying random port instead.",
-                local_addr, err
-            );
-            let bind_addr = SocketAddr::new(local_addr.ip(), 0);
-
-            endpoint_builder.bind(&bind_addr).map_err(|e| {
-                error!("Failed to bind to random port too: {}", e);
-                Error::Endpoint(e)
-            })
-        }
         Err(err) => {
             error!("{}", err);
             Err(Error::CannotAssignPort(local_addr.port()))

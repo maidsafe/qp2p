@@ -80,7 +80,7 @@ impl Peer {
             DEFAULT_KEEP_ALIVE_INTERVAL_MSEC,
         )?;
 
-        let (endpoint, mut incoming) = bind(endpoint_cfg, "127.0.0.1:0".parse()?, true)?;
+        let (endpoint, mut incoming) = bind(endpoint_cfg, "127.0.0.1:0".parse()?)?;
 
         let (message_tx, message_rx) = if channel_size == 0 {
             let (message_tx, message_rx) = unbounded_channel();
