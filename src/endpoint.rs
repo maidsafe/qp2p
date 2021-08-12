@@ -10,10 +10,11 @@
 use crate::connection_pool::ConnId;
 
 use super::error::Error;
-use super::wire_msg::WireMsg;
 #[cfg(not(feature = "no-igd"))]
-use super::{api::DEFAULT_UPNP_LEASE_DURATION_SEC, igd::forward_port};
+use super::igd::forward_port;
+use super::wire_msg::WireMsg;
 use super::{
+    config::InternalConfig,
     connection_deduplicator::ConnectionDeduplicator,
     connection_pool::ConnectionPool,
     connections::{
@@ -21,7 +22,6 @@ use super::{
         DisconnectionEvents, RecvStream, SendStream,
     },
     error::Result,
-    Config,
 };
 use bytes::Bytes;
 use std::net::SocketAddr;
@@ -78,7 +78,7 @@ pub struct Endpoint<I: ConnId> {
     disconnection_tx: MpscSender<SocketAddr>,
     client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
-    qp2p_config: Config,
+    qp2p_config: InternalConfig,
     termination_tx: Sender<()>,
     connection_pool: ConnectionPool<I>,
     connection_deduplicator: ConnectionDeduplicator,
@@ -100,7 +100,7 @@ impl<I: ConnId> Endpoint<I> {
         quic_incoming: quinn::Incoming,
         client_cfg: quinn::ClientConfig,
         bootstrap_nodes: Vec<SocketAddr>,
-        qp2p_config: Config,
+        qp2p_config: InternalConfig,
     ) -> Result<(
         Self,
         IncomingConnections,
@@ -259,9 +259,7 @@ impl<I: ConnId> Endpoint<I> {
                 Duration::from_secs(PORT_FORWARD_TIMEOUT),
                 forward_port(
                     self.local_addr,
-                    self.qp2p_config
-                        .upnp_lease_duration
-                        .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC),
+                    self.qp2p_config.upnp_lease_duration,
                     termination_rx,
                 ),
             )

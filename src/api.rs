@@ -9,7 +9,7 @@
 
 use super::{
     bootstrap_cache::BootstrapCache,
-    config::{Config, SerialisableCertificate},
+    config::{Config, InternalConfig, SerialisableCertificate},
     connection_pool::ConnId,
     connections::DisconnectionEvents,
     endpoint::{Endpoint, IncomingConnections, IncomingMessages},
@@ -39,7 +39,7 @@ pub struct QuicP2p<I: ConnId> {
     bootstrap_cache: BootstrapCache,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
-    qp2p_config: Config,
+    qp2p_config: InternalConfig,
     phantom: PhantomData<I>,
 }
 
@@ -106,10 +106,8 @@ impl<I: ConnId> QuicP2p<I> {
 
         let custom_dirs = cfg.bootstrap_cache_dir.clone().map(PathBuf::from);
 
-        let mut qp2p_config = cfg.clone();
-
         let mut bootstrap_cache =
-            BootstrapCache::new(cfg.hard_coded_contacts, custom_dirs.as_ref())?;
+            BootstrapCache::new(cfg.hard_coded_contacts.clone(), custom_dirs.as_ref())?;
         trace!("Peers in bootstrap cache: {:?}", bootstrap_cache.peers());
         if !use_bootstrap_cache {
             let bootstrap_cache = bootstrap_cache.peers_mut();
@@ -126,11 +124,16 @@ impl<I: ConnId> QuicP2p<I> {
             .upnp_lease_duration
             .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC);
 
-        qp2p_config.local_ip = Some(ip);
-        qp2p_config.local_port = Some(port);
-        qp2p_config.keep_alive_interval_msec = Some(keep_alive_interval_msec);
-        qp2p_config.idle_timeout_msec = Some(idle_timeout_msec);
-        qp2p_config.upnp_lease_duration = Some(upnp_lease_duration);
+        let qp2p_config = InternalConfig {
+            hard_coded_contacts: cfg.hard_coded_contacts,
+            local_port: port,
+            local_ip: ip,
+            forward_port: cfg.forward_port,
+            external_port: cfg.external_port,
+            external_ip: cfg.external_ip,
+            upnp_lease_duration,
+            retry_duration_msec: cfg.retry_duration_msec,
+        };
 
         Ok(Self {
             local_addr: SocketAddr::new(ip, port),

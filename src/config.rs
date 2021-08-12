@@ -82,6 +82,21 @@ pub struct Config {
     pub retry_duration_msec: u64,
 }
 
+/// Config that has passed validation.
+///
+/// Generally this is a copy of [`Config`] without optional values where we would use defaults.
+#[derive(Clone, Debug)]
+pub(crate) struct InternalConfig {
+    pub(crate) hard_coded_contacts: HashSet<SocketAddr>,
+    pub(crate) local_port: u16,
+    pub(crate) local_ip: IpAddr,
+    pub(crate) forward_port: bool,
+    pub(crate) external_port: Option<u16>,
+    pub(crate) external_ip: Option<IpAddr>,
+    pub(crate) upnp_lease_duration: u32,
+    pub(crate) retry_duration_msec: u64,
+}
+
 /// To be used to read and write our certificate and private key to disk esp. as a part of our
 /// configuration file
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
