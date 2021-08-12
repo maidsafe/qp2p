@@ -56,11 +56,6 @@ pub struct Config {
     /// using the Echo service.
     #[structopt(long)]
     pub external_ip: Option<IpAddr>,
-    /// This is the maximum message size we'll allow the peer to send to us. Any bigger message and
-    /// we'll error out probably shutting down the connection to the peer. If none supplied we'll
-    /// default to the documented constant.
-    #[structopt(long)]
-    pub max_msg_size_allowed: Option<u32>,
     /// If we hear nothing from the peer in the given interval we declare it offline to us. If none
     /// supplied we'll default to the documented constant.
     ///
