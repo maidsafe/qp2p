@@ -430,16 +430,13 @@ async fn handle_endpoint_verification_req<I: ConnId>(
 #[cfg(test)]
 mod tests {
     use crate::api::QuicP2p;
-    use crate::{config::Config, wire_msg::WireMsg, Error};
+    use crate::{config::Config, tests::local_addr, wire_msg::WireMsg, Error};
     use anyhow::anyhow;
-    use std::net::{IpAddr, Ipv4Addr};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn echo_service() -> Result<(), Error> {
         let qp2p = QuicP2p::<[u8; 32]>::with_config(
             Some(Config {
-                local_port: None,
-                local_ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
                 ..Config::default()
             }),
             Default::default(),
@@ -447,10 +444,10 @@ mod tests {
         )?;
 
         // Create Endpoint
-        let (peer1, mut peer1_connections, _, _) = qp2p.new_endpoint().await?;
+        let (peer1, mut peer1_connections, _, _) = qp2p.new_endpoint(local_addr()).await?;
         let peer1_addr = peer1.socket_addr();
 
-        let (peer2, _, _, _) = qp2p.new_endpoint().await?;
+        let (peer2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
         let peer2_addr = peer2.socket_addr();
 
         peer2.connect_to(&peer1_addr).await?;

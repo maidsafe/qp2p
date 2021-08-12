@@ -12,7 +12,7 @@ use anyhow::Result;
 use bytes::Bytes;
 use std::{
     collections::HashSet,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, SocketAddr},
 };
 use tiny_keccak::{Hasher, Sha3};
 
@@ -33,13 +33,15 @@ pub(crate) fn new_qp2p() -> Result<QuicP2p<[u8; 32]>> {
     new_qp2p_with_hcc(HashSet::default())
 }
 
+pub(crate) fn local_addr() -> SocketAddr {
+    (Ipv4Addr::LOCALHOST, 0).into()
+}
+
 pub(crate) fn new_qp2p_with_hcc(
     hard_coded_contacts: HashSet<SocketAddr>,
 ) -> Result<QuicP2p<[u8; 32]>> {
     let qp2p = QuicP2p::<[u8; 32]>::with_config(
         Some(Config {
-            local_port: Some(0),
-            local_ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             hard_coded_contacts,
             // turn down the retry duration - we won't live forever
             // note that this would just limit retries, UDP connection attempts seem to take 60s to

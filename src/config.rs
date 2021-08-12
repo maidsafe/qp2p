@@ -33,15 +33,6 @@ pub struct Config {
         parse(try_from_str = serde_json::from_str)
     )]
     pub hard_coded_contacts: HashSet<SocketAddr>,
-    /// Port we want to reserve for QUIC. If none supplied we'll use the OS given random port.
-    /// If external port is provided it means that the user is carrying out manual port forwarding and this field is mandatory.
-    /// This will be the internal port number mapped to the process
-    #[structopt(long)]
-    pub local_port: Option<u16>,
-    /// IP address for the listener. If none is supplied and `forward_port` is enabled, we will use IGD to realize the
-    /// local IP address of the machine. If IGD fails the application will exit.
-    #[structopt(long)]
-    pub local_ip: Option<IpAddr>,
     /// Specify if port forwarding via UPnP should be done or not. This can be set to false if the network
     /// is run locally on the network loopback or on a local area network.
     #[structopt(long)]
@@ -88,8 +79,6 @@ pub struct Config {
 #[derive(Clone, Debug)]
 pub(crate) struct InternalConfig {
     pub(crate) hard_coded_contacts: HashSet<SocketAddr>,
-    pub(crate) local_port: u16,
-    pub(crate) local_ip: IpAddr,
     pub(crate) forward_port: bool,
     pub(crate) external_port: Option<u16>,
     pub(crate) external_ip: Option<IpAddr>,

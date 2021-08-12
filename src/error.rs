@@ -128,9 +128,6 @@ pub enum Error {
     /// A supposedly impossible internal error occurred
     #[error("Unexpected internal error: {0}")]
     UnexpectedError(String),
-    /// Unspecified local IP address
-    #[error("Unspecified Local IP address")]
-    UnspecifiedLocalIp,
     /// Couldn't resolve Public IP address
     #[error("Unresolved Public IP address")]
     UnresolvedPublicIp,

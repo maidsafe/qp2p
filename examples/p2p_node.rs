@@ -16,7 +16,7 @@ use anyhow::Result;
 use bytes::Bytes;
 use qp2p::{Config, ConnId, QuicP2p};
 use std::env;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{Ipv4Addr, SocketAddr};
 
 #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
 struct XId(pub [u8; 32]);
@@ -38,7 +38,6 @@ async fn main() -> Result<()> {
     // instantiate QuicP2p with custom config
     let qp2p: QuicP2p<XId> = QuicP2p::with_config(
         Some(Config {
-            local_ip: Some(IpAddr::V4(Ipv4Addr::LOCALHOST)),
             idle_timeout_msec: Some(1000 * 3600), // 1 hour idle timeout.
             ..Default::default()
         }),
@@ -48,7 +47,7 @@ async fn main() -> Result<()> {
 
     // create an endpoint for us to listen on and send from.
     let (node, _incoming_conns, mut incoming_messages, _disconnections) =
-        qp2p.new_endpoint().await?;
+        qp2p.new_endpoint((Ipv4Addr::LOCALHOST, 0).into()).await?;
 
     // if we received args then we parse them as SocketAddr and send a "marco" msg to each peer.
     if args.len() > 1 {
