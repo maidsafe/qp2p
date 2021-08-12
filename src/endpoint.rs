@@ -301,6 +301,10 @@ impl<I: ConnId> Endpoint<I> {
 
     /// Connects to another peer, retries for `config.retry_duration_msec` if the connection fails.
     ///
+    /// **Note:** this method is intended for use when it's necessary to connect to a specific peer.
+    /// See [`connect_to_any`](Self::connect_to_any) if you just need a connection with any of a set
+    /// of peers.
+    ///
     /// Returns `Connection` which is a handle for sending messages to the peer and
     /// `IncomingMessages` which is a stream of messages received from the peer.
     /// The incoming messages stream might be `None`. See the next section for more info.
@@ -359,6 +363,40 @@ impl<I: ConnId> Endpoint<I> {
             .await;
 
         Ok(())
+    }
+
+    /// Connect to any of the given peers.
+    ///
+    /// Often in peer-to-peer networks, it's sufficient to communicate to any node on the network,
+    /// rather than having to connect to specific nodes. This method will start connecting to every
+    /// peer in `peer_addrs`, and return the address of the first successfully established
+    /// connection (the rest are cancelled and discarded). All connection attempts will be retried
+    /// for `config.retry_duration_msec` on failure.
+    ///
+    /// The successful connection, if any, will be stored in the connection pool (see
+    /// [`connect_to`](Self::connect_to) for more info on connection pooling).
+    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Result<SocketAddr> {
+        trace!("Connecting to any of {:?}", peer_addrs);
+        if peer_addrs.is_empty() {
+            return Err(Error::EmptyBootstrapNodesList);
+        }
+
+        // Attempt to create a new connection to all nodes and return the first one to succeed
+        let tasks = peer_addrs
+            .iter()
+            .map(|addr| Box::pin(self.create_new_connection(addr)));
+
+        let successful_connection = futures::future::select_ok(tasks)
+            .await
+            .map_err(|err| {
+                error!("Failed to bootstrap to the network: {}", err);
+                Error::BootstrapFailure
+            })?
+            .0;
+        let bootstrapped_peer = successful_connection.connection.remote_address();
+        self.add_new_connection_to_pool(successful_connection)
+            .await?;
+        Ok(bootstrapped_peer)
     }
 
     /// Attempt a connection to a node_addr using exponential backoff
