@@ -8,7 +8,6 @@
 // Software.
 
 use super::{
-    bootstrap_cache::BootstrapCache,
     config::{Config, InternalConfig, SerialisableCertificate},
     connection_pool::ConnId,
     connections::DisconnectionEvents,
@@ -17,9 +16,8 @@ use super::{
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
 use futures::future;
+use std::marker::PhantomData;
 use std::net::{SocketAddr, UdpSocket};
-use std::path::PathBuf;
-use std::{collections::HashSet, marker::PhantomData};
 use tracing::{debug, error, trace};
 
 /// Default duration of a UPnP lease, in seconds.
@@ -30,7 +28,6 @@ const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
 #[derive(Debug, Clone)]
 pub struct QuicP2p<I: ConnId> {
-    bootstrap_cache: BootstrapCache,
     endpoint_cfg: quinn::ServerConfig,
     client_cfg: quinn::ClientConfig,
     qp2p_config: InternalConfig,
@@ -38,13 +35,9 @@ pub struct QuicP2p<I: ConnId> {
 }
 
 impl<I: ConnId> QuicP2p<I> {
-    /// Construct `QuicP2p` with supplied parameters, ready to be used.
-    /// If config is not specified it'll call `Config::read_or_construct_default()`
+    /// Construct `QuicP2p` with supplied configuration.
     ///
-    /// `bootstrap_nodes`: takes bootstrap nodes from the user.
-    ///
-    /// In addition to bootstrap nodes provided, optionally use the nodes found
-    /// in the bootstrap cache file (if such a file exists) or disable this feature.
+    /// If `config` is `None`, the default value will be used.
     ///
     /// # Example
     ///
@@ -61,17 +54,11 @@ impl<I: ConnId> QuicP2p<I> {
     /// #     }
     /// # }
     ///
-    /// let mut config = Config::default();
-    /// config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    /// config.local_port = Some(3000);
-    /// let hcc = &["127.0.0.1:8080".parse().unwrap()];
-    /// let quic_p2p = QuicP2p::<XId>::with_config(Some(config), hcc, true).expect("Error initializing QuicP2p");
+    /// let config = Config::default();
+    /// let quic_p2p = QuicP2p::<XId>::with_config(Some(config))
+    ///     .expect("Error initializing QuicP2p");
     /// ```
-    pub fn with_config(
-        cfg: Option<Config>,
-        bootstrap_nodes: &[SocketAddr],
-        use_bootstrap_cache: bool,
-    ) -> Result<Self> {
+    pub fn with_config(cfg: Option<Config>) -> Result<Self> {
         debug!("Config passed in to qp2p: {:?}", cfg);
         let cfg = cfg.unwrap_or_default();
 
@@ -87,17 +74,6 @@ impl<I: ConnId> QuicP2p<I> {
             our_complete_cert.obtain_priv_key_and_cert()?
         };
 
-        let custom_dirs = cfg.bootstrap_cache_dir.clone().map(PathBuf::from);
-
-        let mut bootstrap_cache =
-            BootstrapCache::new(cfg.hard_coded_contacts.clone(), custom_dirs.as_ref())?;
-        trace!("Peers in bootstrap cache: {:?}", bootstrap_cache.peers());
-        if !use_bootstrap_cache {
-            let bootstrap_cache = bootstrap_cache.peers_mut();
-            bootstrap_cache.clear();
-        }
-        bootstrap_cache.peers_mut().extend(bootstrap_nodes);
-
         let endpoint_cfg =
             peer_config::new_our_cfg(idle_timeout_msec, keep_alive_interval_msec, cert, key)?;
 
@@ -108,7 +84,6 @@ impl<I: ConnId> QuicP2p<I> {
             .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC);
 
         let qp2p_config = InternalConfig {
-            hard_coded_contacts: cfg.hard_coded_contacts,
             forward_port: cfg.forward_port,
             external_port: cfg.external_port,
             external_ip: cfg.external_ip,
@@ -117,7 +92,6 @@ impl<I: ConnId> QuicP2p<I> {
         };
 
         Ok(Self {
-            bootstrap_cache,
             endpoint_cfg,
             client_cfg,
             qp2p_config,
@@ -127,11 +101,8 @@ impl<I: ConnId> QuicP2p<I> {
 
     /// Bootstrap to the network.
     ///
-    /// Bootstrap concept is different from "connect" in several ways: `bootstrap()` will try to
-    /// connect to all peers which are specified in the config (`hard_coded_contacts`) or were
-    /// previously cached.
-    /// Once a connection with a peer succeeds, a `Connection` for such peer will be returned
-    /// and all other connections will be dropped.
+    /// Bootstrapping will attempt to connect to all the given peers. The first successful
+    /// connection to will be returned, and the others will be dropped.
     ///
     /// # Example
     ///
@@ -150,22 +121,21 @@ impl<I: ConnId> QuicP2p<I> {
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Error> {
-    ///     let mut config = Config::default();
-    ///     config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    ///     config.local_port = Some(3000);
-    ///     let mut quic_p2p = QuicP2p::<XId>::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let (mut endpoint, _, _, _) = quic_p2p.new_endpoint().await?;
+    ///     let config = Config::default();
+    ///     let local_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 3000).into();
+    ///     let quic_p2p = QuicP2p::<XId>::with_config(Some(config.clone()))?;
+    ///     let (mut endpoint, _, _, _) = quic_p2p.new_endpoint(local_addr).await?;
     ///     let peer_addr = endpoint.socket_addr();
     ///
-    ///     config.local_port = Some(3001);
-    ///     let mut quic_p2p = QuicP2p::<XId>::with_config(Some(config), &[peer_addr], true)?;
-    ///     let endpoint = quic_p2p.bootstrap().await?;
+    ///     let local_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 3001).into();
+    ///     let endpoint = quic_p2p.bootstrap(local_addr, vec![peer_addr]).await?;
     ///     Ok(())
     /// }
     /// ```
     pub async fn bootstrap(
         &self,
         local_addr: SocketAddr,
+        bootstrap_nodes: Vec<SocketAddr>,
     ) -> Result<(
         Endpoint<I>,
         IncomingConnections,
@@ -174,7 +144,7 @@ impl<I: ConnId> QuicP2p<I> {
         SocketAddr,
     )> {
         let (endpoint, incoming_connections, incoming_message, disconnections) =
-            self.new_endpoint(local_addr).await?;
+            self.new_endpoint_with(local_addr, bootstrap_nodes).await?;
 
         let bootstrapped_peer = self
             .bootstrap_with(&endpoint, endpoint.bootstrap_nodes())
@@ -189,8 +159,10 @@ impl<I: ConnId> QuicP2p<I> {
         ))
     }
 
-    /// Create a new `Endpoint`  which can be used to connect to peers and send
-    /// messages to them, as well as listen to messages incoming from other peers.
+    /// Create a new [`Endpoint`] which can be used to interact with a network.
+    ///
+    /// `Endpoint`s can send messages to reachable peers, as well as listen to messages incoming
+    /// from other peers.
     ///
     /// # Example
     ///
@@ -209,10 +181,10 @@ impl<I: ConnId> QuicP2p<I> {
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Error> {
-    ///     let mut config = Config::default();
-    ///     config.local_ip = Some(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    ///     let mut quic_p2p = QuicP2p::<XId>::with_config(Some(config.clone()), Default::default(), true)?;
-    ///     let (endpoint, incoming_connections, incoming_messages, disconnections) = quic_p2p.new_endpoint().await?;
+    ///     let config = Config::default();
+    ///     let local_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 0).into();
+    ///     let quic_p2p = QuicP2p::<XId>::with_config(Some(config.clone()))?;
+    ///     let (endpoint, incoming_connections, incoming_messages, disconnections) = quic_p2p.new_endpoint(local_addr).await?;
     ///     Ok(())
     /// }
     /// ```
@@ -225,16 +197,20 @@ impl<I: ConnId> QuicP2p<I> {
         IncomingMessages,
         DisconnectionEvents,
     )> {
-        trace!("Creating a new endpoint");
+        self.new_endpoint_with(local_addr, Default::default()).await
+    }
 
-        let bootstrap_nodes: Vec<SocketAddr> = self
-            .bootstrap_cache
-            .peers()
-            .iter()
-            .rev()
-            .chain(self.bootstrap_cache.hard_coded_contacts().iter())
-            .cloned()
-            .collect();
+    async fn new_endpoint_with(
+        &self,
+        local_addr: SocketAddr,
+        bootstrap_nodes: Vec<SocketAddr>,
+    ) -> Result<(
+        Endpoint<I>,
+        IncomingConnections,
+        IncomingMessages,
+        DisconnectionEvents,
+    )> {
+        trace!("Creating a new endpoint");
 
         let (quinn_endpoint, quinn_incoming) = bind(self.endpoint_cfg.clone(), local_addr)?;
 
@@ -283,35 +259,7 @@ impl<I: ConnId> QuicP2p<I> {
             .await?;
         Ok(bootstrapped_peer)
     }
-
-    /// Rebootstrap
-    pub async fn rebootstrap(
-        &mut self,
-        endpoint: &Endpoint<I>,
-        bootstrap_nodes: &[SocketAddr],
-    ) -> Result<SocketAddr> {
-        // Clear existing bootstrap cache
-        self.bootstrap_cache.peers_mut().clear();
-
-        let bootstrapped_peer = self.bootstrap_with(endpoint, bootstrap_nodes).await?;
-
-        self.bootstrap_cache.add_peer(bootstrapped_peer);
-
-        Ok(bootstrapped_peer)
-    }
-
-    /// Clears the current bootstrap cache and replaces the peer list with the provided
-    /// bootstrap nodes.
-    pub fn update_bootstrap_contacts(&mut self, bootstrap_nodes: &[SocketAddr]) {
-        self.qp2p_config.hard_coded_contacts = HashSet::new();
-        let bootstrap_cache = self.bootstrap_cache.peers_mut();
-        bootstrap_cache.clear();
-        bootstrap_cache.extend(bootstrap_nodes);
-        self.bootstrap_cache.try_sync_to_disk(true);
-    }
 }
-
-// Private helpers
 
 // Bind a new socket with a local address
 pub(crate) fn bind(

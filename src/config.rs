@@ -13,26 +13,13 @@ use crate::{
 };
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashSet,
-    fmt,
-    net::{IpAddr, SocketAddr},
-    str::FromStr,
-};
+use std::{fmt, net::IpAddr, str::FromStr};
 use structopt::StructOpt;
 
 /// QuicP2p configurations
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq, StructOpt)]
 #[structopt(rename_all = "kebab-case")]
 pub struct Config {
-    /// Hard Coded contacts
-    #[structopt(
-        short,
-        long,
-        default_value = "[]",
-        parse(try_from_str = serde_json::from_str)
-    )]
-    pub hard_coded_contacts: HashSet<SocketAddr>,
     /// Specify if port forwarding via UPnP should be done or not. This can be set to false if the network
     /// is run locally on the network loopback or on a local area network.
     #[structopt(long)]
@@ -59,10 +46,6 @@ pub struct Config {
     /// The interval is in milliseconds. A value of 0 disables this feature.
     #[structopt(long)]
     pub keep_alive_interval_msec: Option<u32>,
-    /// Directory in which the bootstrap cache will be stored. If none is supplied, the platform specific
-    /// default cache directory is used.
-    #[structopt(long)]
-    pub bootstrap_cache_dir: Option<String>,
     /// Duration of a UPnP port mapping.
     #[structopt(long)]
     pub upnp_lease_duration: Option<u32>,
@@ -78,7 +61,6 @@ pub struct Config {
 /// Generally this is a copy of [`Config`] without optional values where we would use defaults.
 #[derive(Clone, Debug)]
 pub(crate) struct InternalConfig {
-    pub(crate) hard_coded_contacts: HashSet<SocketAddr>,
     pub(crate) forward_port: bool,
     pub(crate) external_port: Option<u16>,
     pub(crate) external_ip: Option<IpAddr>,
