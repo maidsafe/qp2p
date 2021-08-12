@@ -435,9 +435,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn echo_service() -> Result<(), Error> {
-        let qp2p = QuicP2p::<[u8; 32]>::with_config(Some(Config {
-            ..Config::default()
-        }))?;
+        let qp2p = QuicP2p::<[u8; 32]>::with_config(Config::default())?;
 
         // Create Endpoint
         let (peer1, mut peer1_connections, _, _) = qp2p.new_endpoint(local_addr()).await?;

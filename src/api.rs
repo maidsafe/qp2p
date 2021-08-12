@@ -54,13 +54,11 @@ impl<I: ConnId> QuicP2p<I> {
     /// #     }
     /// # }
     ///
-    /// let config = Config::default();
-    /// let quic_p2p = QuicP2p::<XId>::with_config(Some(config))
+    /// let quic_p2p = QuicP2p::<XId>::with_config(Config::default())
     ///     .expect("Error initializing QuicP2p");
     /// ```
-    pub fn with_config(cfg: Option<Config>) -> Result<Self> {
+    pub fn with_config(cfg: Config) -> Result<Self> {
         debug!("Config passed in to qp2p: {:?}", cfg);
-        let cfg = cfg.unwrap_or_default();
 
         let idle_timeout_msec = cfg.idle_timeout_msec.unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
 
@@ -121,9 +119,8 @@ impl<I: ConnId> QuicP2p<I> {
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Error> {
-    ///     let config = Config::default();
     ///     let local_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 3000).into();
-    ///     let quic_p2p = QuicP2p::<XId>::with_config(Some(config.clone()))?;
+    ///     let quic_p2p = QuicP2p::<XId>::with_config(Config::default())?;
     ///     let (mut endpoint, _, _, _) = quic_p2p.new_endpoint(local_addr).await?;
     ///     let peer_addr = endpoint.socket_addr();
     ///
@@ -181,9 +178,8 @@ impl<I: ConnId> QuicP2p<I> {
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), Error> {
-    ///     let config = Config::default();
     ///     let local_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 0).into();
-    ///     let quic_p2p = QuicP2p::<XId>::with_config(Some(config.clone()))?;
+    ///     let quic_p2p = QuicP2p::<XId>::with_config(Config::default())?;
     ///     let (endpoint, incoming_connections, incoming_messages, disconnections) = quic_p2p.new_endpoint(local_addr).await?;
     ///     Ok(())
     /// }

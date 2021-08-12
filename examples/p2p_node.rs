@@ -36,10 +36,10 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     // instantiate QuicP2p with custom config
-    let qp2p: QuicP2p<XId> = QuicP2p::with_config(Some(Config {
+    let qp2p: QuicP2p<XId> = QuicP2p::with_config(Config {
         idle_timeout_msec: Some(1000 * 3600), // 1 hour idle timeout.
         ..Default::default()
-    }))?;
+    })?;
 
     // create an endpoint for us to listen on and send from.
     let (node, _incoming_conns, mut incoming_messages, _disconnections) =
