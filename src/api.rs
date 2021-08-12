@@ -15,7 +15,6 @@ use super::{
     error::{Error, Result},
     peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
 };
-use futures::future;
 use std::marker::PhantomData;
 use std::net::{SocketAddr, UdpSocket};
 use tracing::{debug, error, trace};
@@ -143,9 +142,7 @@ impl<I: ConnId> QuicP2p<I> {
         let (endpoint, incoming_connections, incoming_message, disconnections) =
             self.new_endpoint_with(local_addr, bootstrap_nodes).await?;
 
-        let bootstrapped_peer = self
-            .bootstrap_with(&endpoint, endpoint.bootstrap_nodes())
-            .await?;
+        let bootstrapped_peer = endpoint.connect_to_any(endpoint.bootstrap_nodes()).await?;
 
         Ok((
             endpoint,
@@ -225,35 +222,6 @@ impl<I: ConnId> QuicP2p<I> {
         .await?;
 
         Ok(endpoint)
-    }
-
-    async fn bootstrap_with(
-        &self,
-        endpoint: &Endpoint<I>,
-        bootstrap_nodes: &[SocketAddr],
-    ) -> Result<SocketAddr> {
-        trace!("Bootstrapping with nodes {:?}", bootstrap_nodes);
-        if bootstrap_nodes.is_empty() {
-            return Err(Error::EmptyBootstrapNodesList);
-        }
-
-        // Attempt to create a new connection to all nodes and return the first one to succeed
-        let tasks = bootstrap_nodes
-            .iter()
-            .map(|addr| Box::pin(endpoint.create_new_connection(addr)));
-
-        let successful_connection = future::select_ok(tasks)
-            .await
-            .map_err(|err| {
-                error!("Failed to bootstrap to the network: {}", err);
-                Error::BootstrapFailure
-            })?
-            .0;
-        let bootstrapped_peer = successful_connection.connection.remote_address();
-        endpoint
-            .add_new_connection_to_pool(successful_connection)
-            .await?;
-        Ok(bootstrapped_peer)
     }
 }
 
