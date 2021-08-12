@@ -10,10 +10,7 @@
 use crate::{Config, ConnId, QuicP2p};
 use anyhow::Result;
 use bytes::Bytes;
-use std::{
-    collections::HashSet,
-    net::{Ipv4Addr, SocketAddr},
-};
+use std::net::{Ipv4Addr, SocketAddr};
 use tiny_keccak::{Hasher, Sha3};
 
 /// SHA3-256 hash digest.
@@ -30,31 +27,19 @@ impl ConnId for [u8; 32] {
 
 /// Constructs a `QuicP2p` node with some sane defaults for testing.
 pub(crate) fn new_qp2p() -> Result<QuicP2p<[u8; 32]>> {
-    new_qp2p_with_hcc(HashSet::default())
+    let qp2p = QuicP2p::<[u8; 32]>::with_config(Some(Config {
+        // turn down the retry duration - we won't live forever
+        // note that this would just limit retries, UDP connection attempts seem to take 60s to
+        // timeout
+        retry_duration_msec: 500,
+        ..Config::default()
+    }))?;
+
+    Ok(qp2p)
 }
 
 pub(crate) fn local_addr() -> SocketAddr {
     (Ipv4Addr::LOCALHOST, 0).into()
-}
-
-pub(crate) fn new_qp2p_with_hcc(
-    hard_coded_contacts: HashSet<SocketAddr>,
-) -> Result<QuicP2p<[u8; 32]>> {
-    let qp2p = QuicP2p::<[u8; 32]>::with_config(
-        Some(Config {
-            hard_coded_contacts,
-            // turn down the retry duration - we won't live forever
-            // note that this would just limit retries, UDP connection attempts seem to take 60s to
-            // timeout
-            retry_duration_msec: 500,
-            ..Config::default()
-        }),
-        // Make sure we start with an empty cache. Otherwise, we might get into unexpected state.
-        Default::default(),
-        true,
-    )?;
-
-    Ok(qp2p)
 }
 
 pub(crate) fn random_msg(size: usize) -> Bytes {

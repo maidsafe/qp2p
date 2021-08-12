@@ -35,12 +35,6 @@ pub enum Error {
     /// No peers/contacts found in the bootstrap nodes list.
     #[error("No nodes/peers found defined for bootstrapping")]
     EmptyBootstrapNodesList,
-    /// The path provided is not valid for the operation.
-    #[error("Provided path is invalid: {0}")]
-    InvalidPath(String),
-    /// The user's home directory couldn't be determined.
-    #[error("Couldn't determine user's home directory")]
-    UserHomeDir,
     /// I/O failure when attempting to access a local resource.
     #[error("I/O Error")]
     Io(#[from] io::Error),

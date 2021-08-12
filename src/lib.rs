@@ -48,7 +48,6 @@
 )]
 
 mod api;
-mod bootstrap_cache;
 mod config;
 mod connection_deduplicator;
 mod connection_pool;
@@ -58,8 +57,6 @@ mod error;
 #[cfg(not(feature = "no-igd"))]
 mod igd;
 mod peer_config;
-#[cfg(test)]
-mod test_utils;
 mod utils;
 mod wire_msg;
 

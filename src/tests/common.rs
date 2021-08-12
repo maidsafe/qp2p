@@ -7,13 +7,10 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use super::{hash, local_addr, new_qp2p, new_qp2p_with_hcc, random_msg};
+use super::{hash, local_addr, new_qp2p, random_msg};
 use anyhow::{anyhow, Result};
 use futures::{future, stream::FuturesUnordered, StreamExt};
-use std::{
-    collections::{BTreeSet, HashSet},
-    time::Duration,
-};
+use std::{collections::BTreeSet, time::Duration};
 use tokio::time::timeout;
 use tracing::info;
 use tracing_test::traced_test;
@@ -652,13 +649,10 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
     let (ep2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
     let (ep3, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
 
-    let contacts = vec![ep1.socket_addr(), ep2.socket_addr(), ep3.socket_addr()]
-        .iter()
-        .cloned()
-        .collect::<HashSet<_>>();
+    let contacts = vec![ep1.socket_addr(), ep2.socket_addr(), ep3.socket_addr()];
 
-    let qp2p = new_qp2p_with_hcc(contacts.clone())?;
-    let (ep, _, _, _, bootstrapped_peer) = qp2p.bootstrap(local_addr()).await?;
+    let qp2p = new_qp2p()?;
+    let (ep, _, _, _, bootstrapped_peer) = qp2p.bootstrap(local_addr(), contacts.clone()).await?;
 
     for peer in contacts {
         if peer != bootstrapped_peer {
