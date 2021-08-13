@@ -18,7 +18,6 @@ use structopt::StructOpt;
 
 /// QuicP2p configurations
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq, StructOpt)]
-#[structopt(rename_all = "kebab-case")]
 pub struct Config {
     /// Specify if port forwarding via UPnP should be done or not. This can be set to false if the network
     /// is run locally on the network loopback or on a local area network.
