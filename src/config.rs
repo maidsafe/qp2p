@@ -102,6 +102,8 @@ fn parse_millis(millis: &str) -> Result<Duration, std::num::ParseIntError> {
 /// Generally this is a copy of [`Config`] without optional values where we would use defaults.
 #[derive(Clone, Debug)]
 pub(crate) struct InternalConfig {
+    pub(crate) client: quinn::ClientConfig,
+    pub(crate) server: quinn::ServerConfig,
     pub(crate) forward_port: bool,
     pub(crate) external_port: Option<u16>,
     pub(crate) external_ip: Option<IpAddr>,
