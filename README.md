@@ -9,66 +9,71 @@
 
 ## Overview
 
-This library provides a mechanism for peers on P2P networks to communicate
-securely. It also allows the network peers to re-join the network without
-requiring them to re-connect to any known peers. These peers such as hard coded
-peers or DNS defined peers as these are obviously a security concern and
-a centralised set of peers that can easily be attacked or even torn down. There
-are several informative posts describing both QUIC and TLS 1.3:
+This library provides an API to simplify common tasks when creating P2P networks, including:
 
-- [The IETF draft specification](https://tools.ietf.org/html/draft-ietf-quic-transport-20#section-6)
+- Establishing encrypted, uni- and bidirectional connections (using QUIC with TLS 1.3).
+- Connection pooling, for reusing already opened connections.
+- Fault-tolerance, including retries and racing connections against sets of peers.
+- Configuring [UPnP](https://en.wikipedia.org/wiki/Universal_Plug_and_Play) and validating external connectivity.
+- Sending discrete messages (using QUIC streams as 'framing').
+
+## Features
+
+### QUIC
+
+There are several informative posts describing both QUIC and TLS 1.3:
+
+- [The IETF draft specification](https://tools.ietf.org/html/draft-ietf-quic-transport-206)
 - [Cloudflare intro to QUIC](https://blog.cloudflare.com/the-road-to-quic/)
 - [Cloudflare intro to TLS 1.3](https://www.cloudflare.com/learning-resources/tls-1-3/)
 
-These are highly recommended to be able to better understand this library, in
-particular the Cloudflare blog posts (10 minute read).
+These are highly recommended to be able to better understand this library, in particular the Cloudflare blog posts (10 minute read).
 
 ### Encryption of connections
 
-QUIC provides connection security via the use of TLS 1.3. This library will allow 3 different connection types with regard to encryption and validation.
+QUIC provides connection security via the use of TLS 1.3.
+Currently, self-signed certificates are used to encrypt connections, but this provides *no* authentication.
 
-1. Require peers to have certificates from an agreed certificate authority.
-1. Allow use of a private certificate authority.
-1. Allow no identity validation of peers, but do encrypt connections. (currently implemented)
-
+In future, we would like to support authentication via certificate authorities and pre-agreed certificates.
 This should satisfy the requirements of many P2P networks, whether they trust any clearnet certificate authority (which may be a centralised attack source) or whether they pass the identity management up to a different layer to validate identities and simply use qp2p as a secured network in terms of encrypted connections.
 
-### Bootstrap Cache
+### Connection pooling
 
-qp2p will save any endpoints and certificates of nodes that are connectible without any setup such as is required by NAT hole punching. The most recently connected 200 nodes are stored and these are then used to re-join the network after any restart.
+Although QUIC connections are relatively cheap to establish (e.g. compared to TCP connections), there is still some overhead.
+To minimise this overhead, all opened connections are pooled and reused based on their target socket address.
 
-### Connectivity types
+### Fault tolerance
 
-qp2p uses 2 connection types when in P2P mode. This allows the connections to be defined as:
+All operations are retried using an exponential back-off strategy (with jitter), configurable by how long to keep retrying for.
+This can help ensure continuity over flaky connections.
 
-1. A bi-directional connection.
+**Note:** This means that all messages sent with this library will have 'at least once' delivery – ideally message handling should be idempotent, or else deduplication will have to be performed on receipt.
 
-1. A uni-directional connection.
+Additionally, APIs are available to connect to any peer from a list of peers.
+Connections are established concurrently, and the first to succeed is kept, while the rest are discarded.
+This allows connecting to any of a set of equivalent peers, finding a still-reachable peer in a set of previously known peers, etc.
 
-Where 1 allows connections from consumers of the network, such as clients or
-perhaps P2P nodes that are simply obtaining information, such as bootstrapping,
-2 is used where the network is allowing another P2P worker. These peers must be
-both able to connect and be able to be connected to. Using a uni-directional
-stream per connection forces the node to confirm both incoming and outgoing
-connectivity is available.
+### UPnP
 
-A peer my also use a bi-directional connection where it is using STUN or TURN
-to make that connection. It has to however introduce itself as a Client and
-not a Node as Nodes are always checked for reverse connectivity to them.
+qp2p has build-in support for the [Internet Gateway Device Protocol (IGD)](https://en.wikipedia.org/wiki/Internet_Gateway_Device_Protocol).
+This enables automatic setup of port-forwarding for peers behind some NAT-enabled routers, including many home and small office routers.
+This serves to lower the barrier to accessing P2P networks as a peer.
 
-### IP Spoof defence
+When UPnP is unavailable, manual port-forwarding may be necessary to establish incoming connectivity.
 
-This library enables `stateless-retry` to defend against IP spoofing. This is
-achieved by sending a token back to the connecting node which must be returned.
-QUIC also defines a protocol negotiation process that defend against many
-attacks by confirming the acceptable protocols. This is defined
-[here](https://tools.ietf.org/html/draft-ietf-quic-transport-03#section-7.1).
+### Messaging
 
-## TODO
+QUIC is a streaming protocol, without an explicit model for discrete messages.
+However, QUIC connections can multiplex an arbitrary number of streams, which are cheap to construct and dispose of.
+This library uses streams as a message framing mechanism, sending or receiving a single message per stream.
 
-- [ ] Hole punching for NAT traversal
-- [ ] Support for async/await syntax
-- [ ] Benchmarks and more examples
+QUIC supports both unidirectional and bidirectional streams, and both are exposed through this library.
+
+- Unidirectional streams should typically be preferred for peer-to-peer communication.
+  This requires peers to have external connectivity, which is generally better for fault tolerance (e.g. contact sharing, reconnection).
+
+- Bidirectional streams should be preferred for client-server communication.
+  This does not require external connectivity, so clients can still communicate from behind firewalls/gateways (such as household routers).
 
 ## License
 
@@ -76,7 +81,7 @@ This SAFE Network library is dual-licensed under the Modified BSD ([LICENSE-BSD]
 
 ## Contributing
 
-Want to contribute? Great :tada:
+Want to contribute? Great 🎉
 
 There are many ways to give back to the project, whether it be writing new code, fixing bugs, or just reporting errors. All forms of contributions are encouraged!
 
