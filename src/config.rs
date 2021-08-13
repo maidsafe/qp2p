@@ -9,13 +9,9 @@
 
 //! Configuration for `Endpoint`s.
 
-use crate::{
-    error::{Error, Result},
-    utils,
-};
-use bytes::Bytes;
+use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::{fmt, net::IpAddr, str::FromStr, sync::Arc, time::Duration};
+use std::{net::IpAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
 
 /// Default for [`Config::idle_timeout`] (1 minute).
@@ -168,8 +164,7 @@ impl InternalConfig {
     }
 
     fn new_server_config(transport: Arc<quinn::TransportConfig>) -> Result<quinn::ServerConfig> {
-        let (key, cert) = SerialisableCertificate::new(vec![MAIDSAFE_DOMAIN.to_string()])?
-            .obtain_priv_key_and_cert()?;
+        let (cert, key) = Self::generate_cert()?;
 
         let mut config = quinn::ServerConfig::default();
         config.transport = transport;
@@ -178,6 +173,16 @@ impl InternalConfig {
         let _ = config.certificate(quinn::CertificateChain::from_certs(vec![cert]), key)?;
 
         Ok(config.build())
+    }
+
+    fn generate_cert() -> Result<(quinn::Certificate, quinn::PrivateKey)> {
+        let cert = rcgen::generate_simple_self_signed(vec![MAIDSAFE_DOMAIN.to_string()])?;
+        Ok((
+            quinn::Certificate::from_der(&cert.serialize_der()?)
+                .map_err(|_| Error::CertificateParse)?,
+            quinn::PrivateKey::from_der(&cert.serialize_private_key_der())
+                .map_err(|_| Error::CertificatePkParse)?,
+        ))
     }
 }
 
@@ -192,59 +197,5 @@ impl rustls::ServerCertVerifier for SkipCertificateVerification {
         _ocsp_response: &[u8],
     ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
         Ok(rustls::ServerCertVerified::assertion())
-    }
-}
-
-/// To be used to read and write our certificate and private key to disk esp. as a part of our
-/// configuration file
-#[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
-struct SerialisableCertificate {
-    /// DER encoded certificate
-    cert_der: Bytes,
-    /// DER encoded private key
-    key_der: Bytes,
-}
-
-impl SerialisableCertificate {
-    /// Returns a new Certificate that is valid for the list of domain names provided
-    fn new(domains: impl Into<Vec<String>>) -> Result<Self> {
-        let cert = rcgen::generate_simple_self_signed(domains)?;
-        Ok(Self {
-            cert_der: cert.serialize_der()?.into(),
-            key_der: cert.serialize_private_key_der().into(),
-        })
-    }
-
-    /// Parses DER encoded binary key material to a format that can be used by Quinn
-    ///
-    /// # Errors
-    /// Returns [CertificateParseError](Error::CertificateParseError) if the inputs
-    /// cannot be parsed
-    fn obtain_priv_key_and_cert(&self) -> Result<(quinn::PrivateKey, quinn::Certificate)> {
-        Ok((
-            quinn::PrivateKey::from_der(&self.key_der).map_err(|_| Error::CertificatePkParse)?,
-            quinn::Certificate::from_der(&self.cert_der).map_err(|_| Error::CertificateParse)?,
-        ))
-    }
-}
-
-impl FromStr for SerialisableCertificate {
-    type Err = Error;
-
-    /// Decode `SerialisableCertificate` from a base64-encoded string.
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        let cert = base64::decode(s)?;
-        let (cert_der, key_der) = bincode::deserialize(&cert)?;
-        Ok(Self { cert_der, key_der })
-    }
-}
-
-impl fmt::Debug for SerialisableCertificate {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "SerialisableCertificate {{ cert_der: {}, key_der: <HIDDEN> }}",
-            utils::bin_data_format(&self.cert_der)
-        )
     }
 }
