@@ -11,7 +11,7 @@
 
 use crate::{
     error::{Error, Result},
-    utils,
+    peer_config, utils,
 };
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,8 @@ pub const DEFAULT_UPNP_LEASE_DURATION: Duration = Duration::from_secs(120);
 
 /// Default for [`Config::min_retry_duration`] (30 seconds).
 pub const DEFAULT_MIN_RETRY_DURATION: Duration = Duration::from_secs(30);
+
+const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 
 /// QuicP2p configurations
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq, StructOpt)]
@@ -109,6 +111,40 @@ pub(crate) struct InternalConfig {
     pub(crate) external_ip: Option<IpAddr>,
     pub(crate) upnp_lease_duration: Duration,
     pub(crate) min_retry_duration: Duration,
+}
+
+impl InternalConfig {
+    pub(crate) fn try_from_config(config: Config) -> Result<Self> {
+        let idle_timeout = config.idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
+        let keep_alive_interval = config
+            .keep_alive_interval
+            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL);
+        let upnp_lease_duration = config
+            .upnp_lease_duration
+            .unwrap_or(DEFAULT_UPNP_LEASE_DURATION);
+        let min_retry_duration = config
+            .min_retry_duration
+            .unwrap_or(DEFAULT_MIN_RETRY_DURATION);
+
+        let (key, cert) = {
+            let our_complete_cert =
+                SerialisableCertificate::new(vec![MAIDSAFE_DOMAIN.to_string()])?;
+            our_complete_cert.obtain_priv_key_and_cert()?
+        };
+
+        let client = peer_config::new_client_cfg(idle_timeout, keep_alive_interval)?;
+        let server = peer_config::new_our_cfg(idle_timeout, keep_alive_interval, cert, key)?;
+
+        Ok(Self {
+            client,
+            server,
+            forward_port: config.forward_port,
+            external_port: config.external_port,
+            external_ip: config.external_ip,
+            upnp_lease_duration,
+            min_retry_duration,
+        })
+    }
 }
 
 /// To be used to read and write our certificate and private key to disk esp. as a part of our

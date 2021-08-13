@@ -8,21 +8,15 @@
 // Software.
 
 use super::{
-    config::{
-        Config, InternalConfig, SerialisableCertificate, DEFAULT_IDLE_TIMEOUT,
-        DEFAULT_KEEP_ALIVE_INTERVAL, DEFAULT_MIN_RETRY_DURATION, DEFAULT_UPNP_LEASE_DURATION,
-    },
+    config::{Config, InternalConfig},
     connection_pool::ConnId,
     connections::DisconnectionEvents,
     endpoint::{Endpoint, IncomingConnections, IncomingMessages},
     error::{Error, Result},
-    peer_config,
 };
 use std::marker::PhantomData;
 use std::net::{SocketAddr, UdpSocket};
 use tracing::{debug, error, trace};
-
-const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
 #[derive(Debug, Clone)]
@@ -57,36 +51,8 @@ impl<I: ConnId> QuicP2p<I> {
     pub fn with_config(cfg: Config) -> Result<Self> {
         debug!("Config passed in to qp2p: {:?}", cfg);
 
-        let (key, cert) = {
-            let our_complete_cert =
-                SerialisableCertificate::new(vec![MAIDSAFE_DOMAIN.to_string()])?;
-            our_complete_cert.obtain_priv_key_and_cert()?
-        };
-
-        let idle_timeout = cfg.idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
-        let keep_alive_interval = cfg
-            .keep_alive_interval
-            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL);
-        let upnp_lease_duration = cfg
-            .upnp_lease_duration
-            .unwrap_or(DEFAULT_UPNP_LEASE_DURATION);
-        let min_retry_duration = cfg.min_retry_duration.unwrap_or(DEFAULT_MIN_RETRY_DURATION);
-
-        let client = peer_config::new_client_cfg(idle_timeout, keep_alive_interval)?;
-        let server = peer_config::new_our_cfg(idle_timeout, keep_alive_interval, cert, key)?;
-
-        let config = InternalConfig {
-            client,
-            server,
-            forward_port: cfg.forward_port,
-            external_port: cfg.external_port,
-            external_ip: cfg.external_ip,
-            upnp_lease_duration,
-            min_retry_duration,
-        };
-
         Ok(Self {
-            config,
+            config: InternalConfig::try_from_config(cfg)?,
             phantom: PhantomData::default(),
         })
     }
