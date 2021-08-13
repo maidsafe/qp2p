@@ -47,12 +47,6 @@ pub enum Error {
     /// Failed to set/get priority of stream.
     #[error("Unknown stream, cannot set/get priority.")]
     UnknownStream,
-    /// Certificate for secure communication couldn't be parsed.
-    #[error("Cannot parse certificate ")]
-    CertificateParse,
-    /// The certificate's private key for secure communication couldn't be parsed.
-    #[error("Cannot parse certificate's private key")]
-    CertificatePkParse,
     /// The contacts list was found empty when attempting
     /// to contact peers for the echo service.
     #[error("No peers found in the contacts list to send the echo request to")]
@@ -64,9 +58,6 @@ pub enum Error {
     /// Failure occurred when sending an echo request.
     #[error("{0}")]
     EchoServiceFailure(String),
-    /// TLS error
-    #[error("TLS Error ")]
-    Tls(#[from] rustls::TLSError),
     /// Serialisation error, which can happen on different type of data.
     #[error("Serialisation error")]
     Serialisation(#[from] bincode::Error),
@@ -97,10 +88,6 @@ pub enum Error {
     /// IGD is not supported on IPv6
     #[error("IGD is not supported on IPv6")]
     IgdNotSupported,
-    /// An error was encountered when trying to either generate
-    /// or serialise a self-signed certificate.
-    #[error("Self-signed certificate generation error: {0}")]
-    CertificateGen(#[from] rcgen::RcgenError),
     /// Response message received contains an empty payload.
     #[error("Empty response message received from peer")]
     EmptyResponse,

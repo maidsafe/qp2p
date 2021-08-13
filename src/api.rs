@@ -8,7 +8,7 @@
 // Software.
 
 use super::{
-    config::{Config, InternalConfig},
+    config::{Config, ConfigError, InternalConfig},
     connection_pool::ConnId,
     connections::DisconnectionEvents,
     endpoint::{Endpoint, IncomingConnections, IncomingMessages},
@@ -48,7 +48,7 @@ impl<I: ConnId> QuicP2p<I> {
     /// let quic_p2p = QuicP2p::<XId>::with_config(Config::default())
     ///     .expect("Error initializing QuicP2p");
     /// ```
-    pub fn with_config(cfg: Config) -> Result<Self> {
+    pub fn with_config(cfg: Config) -> Result<Self, ConfigError> {
         debug!("Config passed in to qp2p: {:?}", cfg);
 
         Ok(Self {
@@ -65,20 +65,20 @@ impl<I: ConnId> QuicP2p<I> {
     /// # Example
     ///
     /// ```
-    /// use qp2p::{QuicP2p, Config, Error, ConnId};
-    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    /// use qp2p::{QuicP2p, Config, ConnId};
+    /// use std::{error::Error, net::{IpAddr, Ipv4Addr, SocketAddr}};
     ///
     /// # #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
     /// # struct XId(pub [u8; 32]);
     /// #
     /// # impl ConnId for XId {
-    /// #     fn generate(_socket_addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
+    /// #     fn generate(_socket_addr: &SocketAddr) -> Result<Self, Box<dyn Error>> {
     /// #         Ok(XId(rand::random()))
     /// #     }
     /// # }
     ///
     /// #[tokio::main]
-    /// async fn main() -> Result<(), Error> {
+    /// async fn main() -> Result<(), Box<dyn Error>> {
     ///     let local_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 3000).into();
     ///     let quic_p2p = QuicP2p::<XId>::with_config(Config::default())?;
     ///     let (mut endpoint, _, _, _) = quic_p2p.new_endpoint(local_addr).await?;
@@ -122,20 +122,20 @@ impl<I: ConnId> QuicP2p<I> {
     /// # Example
     ///
     /// ```
-    /// use qp2p::{QuicP2p, Config, Error, ConnId};
-    /// use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    /// use qp2p::{QuicP2p, Config, ConnId};
+    /// use std::{error::Error, net::{IpAddr, Ipv4Addr, SocketAddr}};
     ///
     /// # #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
     /// # struct XId(pub [u8; 32]);
     /// #
     /// # impl ConnId for XId {
-    /// #     fn generate(_socket_addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
+    /// #     fn generate(_socket_addr: &SocketAddr) -> Result<Self, Box<dyn Error>> {
     /// #         Ok(XId(rand::random()))
     /// #     }
     /// # }
     ///
     /// #[tokio::main]
-    /// async fn main() -> Result<(), Error> {
+    /// async fn main() -> Result<(), Box<dyn Error>> {
     ///     let local_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 0).into();
     ///     let quic_p2p = QuicP2p::<XId>::with_config(Config::default())?;
     ///     let (endpoint, incoming_connections, incoming_messages, disconnections) = quic_p2p.new_endpoint(local_addr).await?;

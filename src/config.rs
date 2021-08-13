@@ -9,7 +9,6 @@
 
 //! Configuration for `Endpoint`s.
 
-use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::{net::IpAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
@@ -30,6 +29,46 @@ pub const DEFAULT_UPNP_LEASE_DURATION: Duration = Duration::from_secs(120);
 pub const DEFAULT_MIN_RETRY_DURATION: Duration = Duration::from_secs(30);
 
 const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
+
+// Convenience alias – not for export.
+type Result<T, E = ConfigError> = std::result::Result<T, E>;
+
+/// Configuration errors.
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    /// An error occurred when generating the TLS certificate.
+    #[error("An error occurred when generating the TLS certificate")]
+    CertificateGeneration(#[from] CertificateGenerationError),
+}
+
+impl From<rcgen::RcgenError> for ConfigError {
+    fn from(error: rcgen::RcgenError) -> Self {
+        Self::CertificateGeneration(CertificateGenerationError(error.into()))
+    }
+}
+
+impl From<quinn::ParseError> for ConfigError {
+    fn from(error: quinn::ParseError) -> Self {
+        Self::CertificateGeneration(CertificateGenerationError(error.into()))
+    }
+}
+
+impl From<rustls::TLSError> for ConfigError {
+    fn from(error: rustls::TLSError) -> Self {
+        Self::CertificateGeneration(CertificateGenerationError(error.into()))
+    }
+}
+
+/// An error that occured when generating the TLS certificate.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct CertificateGenerationError(
+    // Though there are multiple different errors that could occur by the code, since we are
+    // generating a certificate, they should only really occur due to buggy implementations. As
+    // such, we don't attempt to expose more detail than 'something went wrong', which will
+    // hopefully be enough for someone to file a bug report...
+    Box<dyn std::error::Error + Send + Sync>,
+);
 
 /// QuicP2p configurations
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq, StructOpt)]
@@ -177,11 +216,13 @@ impl InternalConfig {
 
     fn generate_cert() -> Result<(quinn::Certificate, quinn::PrivateKey)> {
         let cert = rcgen::generate_simple_self_signed(vec![MAIDSAFE_DOMAIN.to_string()])?;
+
+        let cert_der = cert.serialize_der()?;
+        let key_der = cert.serialize_private_key_der();
+
         Ok((
-            quinn::Certificate::from_der(&cert.serialize_der()?)
-                .map_err(|_| Error::CertificateParse)?,
-            quinn::PrivateKey::from_der(&cert.serialize_private_key_der())
-                .map_err(|_| Error::CertificatePkParse)?,
+            quinn::Certificate::from_der(&cert_der)?,
+            quinn::PrivateKey::from_der(&key_der)?,
         ))
     }
 }

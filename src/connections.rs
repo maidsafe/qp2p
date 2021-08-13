@@ -434,7 +434,7 @@ mod tests {
     use anyhow::anyhow;
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn echo_service() -> Result<(), Error> {
+    async fn echo_service() -> Result<(), anyhow::Error> {
         let qp2p = QuicP2p::<[u8; 32]>::with_config(Config::default())?;
 
         // Create Endpoint
