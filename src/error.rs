@@ -70,9 +70,6 @@ pub enum Error {
     /// Serialisation error, which can happen on different type of data.
     #[error("Serialisation error")]
     Serialisation(#[from] bincode::Error),
-    /// Failed to decode a base64-encoded string.
-    #[error("Base64 decode")]
-    Base64Decode(#[from] base64::DecodeError),
     /// Cannot assign port to endpoint
     #[error("Cannot assign port to endpoint {0}")]
     CannotAssignPort(u16),
