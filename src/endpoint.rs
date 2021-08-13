@@ -76,9 +76,8 @@ pub struct Endpoint<I: ConnId> {
     quic_endpoint: quinn::Endpoint,
     message_tx: MpscSender<(SocketAddr, Bytes)>,
     disconnection_tx: MpscSender<SocketAddr>,
-    client_cfg: quinn::ClientConfig,
     bootstrap_nodes: Vec<SocketAddr>,
-    qp2p_config: InternalConfig,
+    config: InternalConfig,
     termination_tx: Sender<()>,
     connection_pool: ConnectionPool<I>,
     connection_deduplicator: ConnectionDeduplicator,
@@ -89,7 +88,7 @@ impl<I: ConnId> std::fmt::Debug for Endpoint<I> {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
             .field("quic_endpoint", &"<endpoint omitted>")
-            .field("client_cfg", &self.client_cfg)
+            .field("config", &self.config)
             .finish()
     }
 }
@@ -98,9 +97,8 @@ impl<I: ConnId> Endpoint<I> {
     pub(crate) async fn new(
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,
-        client_cfg: quinn::ClientConfig,
         bootstrap_nodes: Vec<SocketAddr>,
-        qp2p_config: InternalConfig,
+        config: InternalConfig,
     ) -> Result<(
         Self,
         IncomingConnections,
@@ -108,7 +106,7 @@ impl<I: ConnId> Endpoint<I> {
         DisconnectionEvents,
     )> {
         let local_addr = quic_endpoint.local_addr()?;
-        let public_addr = match (qp2p_config.external_ip, qp2p_config.external_port) {
+        let public_addr = match (config.external_ip, config.external_port) {
             (Some(ip), Some(port)) => Some(SocketAddr::new(ip, port)),
             _ => None,
         };
@@ -125,9 +123,8 @@ impl<I: ConnId> Endpoint<I> {
             quic_endpoint,
             message_tx: message_tx.clone(),
             disconnection_tx: disconnection_tx.clone(),
-            client_cfg,
             bootstrap_nodes,
-            qp2p_config,
+            config,
             termination_tx,
             connection_pool: connection_pool.clone(),
             connection_deduplicator: ConnectionDeduplicator::new(),
@@ -225,7 +222,7 @@ impl<I: ConnId> Endpoint<I> {
         #[allow(unused)] termination_rx: Receiver<()>,
     ) -> Result<SocketAddr> {
         // Skip port forwarding
-        if self.local_addr.ip().is_loopback() || !self.qp2p_config.forward_port {
+        if self.local_addr.ip().is_loopback() || !self.config.forward_port {
             self.public_addr = Some(self.local_addr);
         }
 
@@ -236,7 +233,7 @@ impl<I: ConnId> Endpoint<I> {
         let mut addr = None;
 
         #[cfg(feature = "no-igd")]
-        if self.qp2p_config.forward_port {
+        if self.config.forward_port {
             warn!("Ignoring 'forward_port' flag from config since IGD has been disabled (feature 'no-igd' has been set)");
         }
 
@@ -253,13 +250,13 @@ impl<I: ConnId> Endpoint<I> {
         }
 
         #[cfg(not(feature = "no-igd"))]
-        if self.qp2p_config.forward_port {
+        if self.config.forward_port {
             // Attempt to use IGD for port forwarding
             match timeout(
                 Duration::from_secs(PORT_FORWARD_TIMEOUT),
                 forward_port(
                     self.local_addr,
-                    self.qp2p_config.upnp_lease_duration,
+                    self.config.upnp_lease_duration,
                     termination_rx,
                 ),
             )
@@ -404,7 +401,7 @@ impl<I: ConnId> Endpoint<I> {
         self.retry(|| async {
             trace!("Attempting to connect to {:?}", node_addr);
             let connecting = match self.quic_endpoint.connect_with(
-                self.client_cfg.clone(),
+                self.config.client.clone(),
                 node_addr,
                 CERT_SERVER_NAME,
             ) {
@@ -635,7 +632,7 @@ impl<I: ConnId> Endpoint<I> {
         Fut: futures::Future<Output = Result<R, backoff::Error<E>>>,
     {
         let backoff = ExponentialBackoff {
-            max_elapsed_time: Some(self.qp2p_config.min_retry_duration),
+            max_elapsed_time: Some(self.config.min_retry_duration),
             ..Default::default()
         };
         retry(backoff, op)

@@ -27,9 +27,7 @@ const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 /// Main QuicP2p instance to communicate with QuicP2p using an async API
 #[derive(Debug, Clone)]
 pub struct QuicP2p<I: ConnId> {
-    endpoint_cfg: quinn::ServerConfig,
-    client_cfg: quinn::ClientConfig,
-    qp2p_config: InternalConfig,
+    config: InternalConfig,
     phantom: PhantomData<I>,
 }
 
@@ -74,11 +72,12 @@ impl<I: ConnId> QuicP2p<I> {
             .unwrap_or(DEFAULT_UPNP_LEASE_DURATION);
         let min_retry_duration = cfg.min_retry_duration.unwrap_or(DEFAULT_MIN_RETRY_DURATION);
 
-        let endpoint_cfg = peer_config::new_our_cfg(idle_timeout, keep_alive_interval, cert, key)?;
+        let client = peer_config::new_client_cfg(idle_timeout, keep_alive_interval)?;
+        let server = peer_config::new_our_cfg(idle_timeout, keep_alive_interval, cert, key)?;
 
-        let client_cfg = peer_config::new_client_cfg(idle_timeout, keep_alive_interval)?;
-
-        let qp2p_config = InternalConfig {
+        let config = InternalConfig {
+            client,
+            server,
             forward_port: cfg.forward_port,
             external_port: cfg.external_port,
             external_ip: cfg.external_ip,
@@ -87,9 +86,7 @@ impl<I: ConnId> QuicP2p<I> {
         };
 
         Ok(Self {
-            endpoint_cfg,
-            client_cfg,
-            qp2p_config,
+            config,
             phantom: PhantomData::default(),
         })
     }
@@ -203,7 +200,7 @@ impl<I: ConnId> QuicP2p<I> {
     )> {
         trace!("Creating a new endpoint");
 
-        let (quinn_endpoint, quinn_incoming) = bind(self.endpoint_cfg.clone(), local_addr)?;
+        let (quinn_endpoint, quinn_incoming) = bind(self.config.server.clone(), local_addr)?;
 
         trace!(
             "Bound endpoint to local address: {}",
@@ -213,9 +210,8 @@ impl<I: ConnId> QuicP2p<I> {
         let endpoint = Endpoint::new(
             quinn_endpoint,
             quinn_incoming,
-            self.client_cfg.clone(),
             bootstrap_nodes,
-            self.qp2p_config.clone(),
+            self.config.clone(),
         )
         .await?;
 
