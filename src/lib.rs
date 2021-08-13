@@ -56,7 +56,6 @@ mod endpoint;
 mod error;
 #[cfg(not(feature = "no-igd"))]
 mod igd;
-mod peer_config;
 mod utils;
 mod wire_msg;
 
