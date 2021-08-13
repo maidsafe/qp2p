@@ -44,16 +44,9 @@ impl WireMsg {
         {
             compile_error!("You need an architecture capable of addressing 32-bit pointers");
         }
-        let data_length = match usize::try_from(msg_header.data_len()) {
-            Ok(s) => s,
-            Err(_) => {
-                return Err(Error::UnexpectedError(format!(
-                    // this should never happen due to preceding compilation error
-                    "unable to convert u32 '{}' to usize",
-                    msg_header.data_len()
-                )));
-            }
-        };
+        // we know we can convert without loss thanks to our assertions above
+        let data_length = msg_header.data_len() as usize;
+
         let mut data: Vec<u8> = vec![0; data_length];
         let msg_flag = msg_header.usr_msg_flag();
 

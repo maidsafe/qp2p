@@ -97,9 +97,6 @@ pub enum Error {
     /// Missing connection
     #[error("No connection to the dest peer")]
     MissingConnection,
-    /// A supposedly impossible internal error occurred
-    #[error("Unexpected internal error: {0}")]
-    UnexpectedError(String),
     /// Couldn't resolve Public IP address
     #[error("Unresolved Public IP address")]
     UnresolvedPublicIp,
