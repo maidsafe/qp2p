@@ -150,7 +150,7 @@ impl InternalConfig {
 /// To be used to read and write our certificate and private key to disk esp. as a part of our
 /// configuration file
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
-pub(crate) struct SerialisableCertificate {
+struct SerialisableCertificate {
     /// DER encoded certificate
     cert_der: Bytes,
     /// DER encoded private key
@@ -159,7 +159,7 @@ pub(crate) struct SerialisableCertificate {
 
 impl SerialisableCertificate {
     /// Returns a new Certificate that is valid for the list of domain names provided
-    pub(crate) fn new(domains: impl Into<Vec<String>>) -> Result<Self> {
+    fn new(domains: impl Into<Vec<String>>) -> Result<Self> {
         let cert = rcgen::generate_simple_self_signed(domains)?;
         Ok(Self {
             cert_der: cert.serialize_der()?.into(),
@@ -172,9 +172,7 @@ impl SerialisableCertificate {
     /// # Errors
     /// Returns [CertificateParseError](Error::CertificateParseError) if the inputs
     /// cannot be parsed
-    pub(crate) fn obtain_priv_key_and_cert(
-        &self,
-    ) -> Result<(quinn::PrivateKey, quinn::Certificate)> {
+    fn obtain_priv_key_and_cert(&self) -> Result<(quinn::PrivateKey, quinn::Certificate)> {
         Ok((
             quinn::PrivateKey::from_der(&self.key_der).map_err(|_| Error::CertificatePkParse)?,
             quinn::Certificate::from_der(&self.cert_der).map_err(|_| Error::CertificateParse)?,
