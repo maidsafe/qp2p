@@ -2,12 +2,15 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use super::{hash, random_msg};
-use crate::{api::bind, config::SerialisableCertificate, peer_config};
+use crate::{
+    api::bind,
+    config::{SerialisableCertificate, DEFAULT_IDLE_TIMEOUT, DEFAULT_KEEP_ALIVE_INTERVAL},
+    peer_config,
+};
 use anyhow::Result;
 use bytes::Bytes;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use peer_config::{DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC};
 use std::collections::BTreeSet;
 use tokio::sync::{
     mpsc::{channel, unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender},
@@ -68,17 +71,11 @@ impl Peer {
             our_complete_cert.obtain_priv_key_and_cert()?
         };
 
-        let endpoint_cfg = peer_config::new_our_cfg(
-            DEFAULT_IDLE_TIMEOUT_MSEC,
-            DEFAULT_KEEP_ALIVE_INTERVAL_MSEC,
-            cert,
-            key,
-        )?;
+        let endpoint_cfg =
+            peer_config::new_our_cfg(DEFAULT_IDLE_TIMEOUT, DEFAULT_KEEP_ALIVE_INTERVAL, cert, key)?;
 
-        let client_cfg = peer_config::new_client_cfg(
-            DEFAULT_IDLE_TIMEOUT_MSEC,
-            DEFAULT_KEEP_ALIVE_INTERVAL_MSEC,
-        )?;
+        let client_cfg =
+            peer_config::new_client_cfg(DEFAULT_IDLE_TIMEOUT, DEFAULT_KEEP_ALIVE_INTERVAL)?;
 
         let (endpoint, mut incoming) = bind(endpoint_cfg, "127.0.0.1:0".parse()?)?;
 

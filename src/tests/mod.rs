@@ -10,7 +10,10 @@
 use crate::{Config, ConnId, QuicP2p};
 use anyhow::Result;
 use bytes::Bytes;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    time::Duration,
+};
 use tiny_keccak::{Hasher, Sha3};
 
 /// SHA3-256 hash digest.
@@ -31,7 +34,7 @@ pub(crate) fn new_qp2p() -> Result<QuicP2p<[u8; 32]>> {
         // turn down the retry duration - we won't live forever
         // note that this would just limit retries, UDP connection attempts seem to take 60s to
         // timeout
-        retry_duration_msec: 500,
+        min_retry_duration: Duration::from_millis(500).into(),
         ..Config::default()
     })?;
 

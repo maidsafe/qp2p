@@ -635,7 +635,7 @@ impl<I: ConnId> Endpoint<I> {
         Fut: futures::Future<Output = Result<R, backoff::Error<E>>>,
     {
         let backoff = ExponentialBackoff {
-            max_elapsed_time: Some(Duration::from_millis(self.qp2p_config.retry_duration_msec)),
+            max_elapsed_time: Some(self.qp2p_config.min_retry_duration),
             ..Default::default()
         };
         retry(backoff, op)

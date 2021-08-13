@@ -15,8 +15,11 @@
 use anyhow::Result;
 use bytes::Bytes;
 use qp2p::{Config, ConnId, QuicP2p};
-use std::env;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    env,
+    net::{Ipv4Addr, SocketAddr},
+    time::Duration,
+};
 
 #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
 struct XId(pub [u8; 32]);
@@ -37,7 +40,7 @@ async fn main() -> Result<()> {
 
     // instantiate QuicP2p with custom config
     let qp2p: QuicP2p<XId> = QuicP2p::with_config(Config {
-        idle_timeout_msec: Some(1000 * 3600), // 1 hour idle timeout.
+        idle_timeout: Duration::from_secs(60 * 60).into(), // 1 hour idle timeout.
         ..Default::default()
     })?;
 

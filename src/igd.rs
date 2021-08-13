@@ -18,14 +18,18 @@ use tracing::{debug, info, warn};
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
 pub(crate) async fn forward_port(
     local_addr: SocketAddr,
-    lease_duration: u32,
+    lease_interval: Duration,
     mut termination_rx: Receiver<()>,
 ) -> Result<u16> {
-    let igd_res = add_port(local_addr, lease_duration).await;
+    // Cap `lease_interval` at `u32::MAX` seconds due to limits on the IGD API. Since this is an
+    // outrageous length of time (~136 years) we just do so silently.
+    let lease_interval = lease_interval.min(Duration::from_secs(u32::MAX.into()));
+    let lease_interval_u32 = lease_interval.as_secs() as u32;
+
+    let igd_res = add_port(local_addr, lease_interval_u32).await;
 
     if let Ok(ext_port) = &igd_res {
         // Start a tokio task to renew the lease periodically.
-        let lease_interval = Duration::from_secs(lease_duration.into());
         let ext_port = *ext_port;
         let _ = tokio::spawn(async move {
             let mut timer = time::interval_at(Instant::now() + lease_interval, lease_interval);
@@ -37,7 +41,7 @@ pub(crate) async fn forward_port(
                 }
                 debug!("Renewing IGD lease for port {}", local_addr);
 
-                let renew_res = renew_port(local_addr, ext_port, lease_duration).await;
+                let renew_res = renew_port(local_addr, ext_port, lease_interval_u32).await;
                 match renew_res {
                     Ok(()) => {}
                     Err(e) => {
