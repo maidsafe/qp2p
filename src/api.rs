@@ -8,19 +8,19 @@
 // Software.
 
 use super::{
-    config::{Config, InternalConfig, SerialisableCertificate},
+    config::{
+        Config, InternalConfig, SerialisableCertificate, DEFAULT_IDLE_TIMEOUT,
+        DEFAULT_KEEP_ALIVE_INTERVAL, DEFAULT_MIN_RETRY_DURATION, DEFAULT_UPNP_LEASE_DURATION,
+    },
     connection_pool::ConnId,
     connections::DisconnectionEvents,
     endpoint::{Endpoint, IncomingConnections, IncomingMessages},
     error::{Error, Result},
-    peer_config::{self, DEFAULT_IDLE_TIMEOUT_MSEC, DEFAULT_KEEP_ALIVE_INTERVAL_MSEC},
+    peer_config,
 };
 use std::marker::PhantomData;
 use std::net::{SocketAddr, UdpSocket};
 use tracing::{debug, error, trace};
-
-/// Default duration of a UPnP lease, in seconds.
-pub(crate) const DEFAULT_UPNP_LEASE_DURATION_SEC: u32 = 120;
 
 const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 
@@ -59,33 +59,31 @@ impl<I: ConnId> QuicP2p<I> {
     pub fn with_config(cfg: Config) -> Result<Self> {
         debug!("Config passed in to qp2p: {:?}", cfg);
 
-        let idle_timeout_msec = cfg.idle_timeout_msec.unwrap_or(DEFAULT_IDLE_TIMEOUT_MSEC);
-
-        let keep_alive_interval_msec = cfg
-            .keep_alive_interval_msec
-            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL_MSEC);
-
         let (key, cert) = {
             let our_complete_cert =
                 SerialisableCertificate::new(vec![MAIDSAFE_DOMAIN.to_string()])?;
             our_complete_cert.obtain_priv_key_and_cert()?
         };
 
-        let endpoint_cfg =
-            peer_config::new_our_cfg(idle_timeout_msec, keep_alive_interval_msec, cert, key)?;
-
-        let client_cfg = peer_config::new_client_cfg(idle_timeout_msec, keep_alive_interval_msec)?;
-
+        let idle_timeout = cfg.idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
+        let keep_alive_interval = cfg
+            .keep_alive_interval
+            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL);
         let upnp_lease_duration = cfg
             .upnp_lease_duration
-            .unwrap_or(DEFAULT_UPNP_LEASE_DURATION_SEC);
+            .unwrap_or(DEFAULT_UPNP_LEASE_DURATION);
+        let min_retry_duration = cfg.min_retry_duration.unwrap_or(DEFAULT_MIN_RETRY_DURATION);
+
+        let endpoint_cfg = peer_config::new_our_cfg(idle_timeout, keep_alive_interval, cert, key)?;
+
+        let client_cfg = peer_config::new_client_cfg(idle_timeout, keep_alive_interval)?;
 
         let qp2p_config = InternalConfig {
             forward_port: cfg.forward_port,
             external_port: cfg.external_port,
             external_ip: cfg.external_ip,
             upnp_lease_duration,
-            retry_duration_msec: cfg.retry_duration_msec,
+            min_retry_duration,
         };
 
         Ok(Self {

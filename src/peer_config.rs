@@ -10,47 +10,28 @@
 use crate::Result;
 use std::{sync::Arc, time::Duration};
 
-/// Default interval within which if we hear nothing from the peer we declare it offline to us.
-///
-/// This is based on average time in which routers would close the UDP mapping to the peer if they
-/// see no conversation between them.
-///
-/// The value is in milliseconds.
-pub(crate) const DEFAULT_IDLE_TIMEOUT_MSEC: u64 = 60_000; // 60secs
-/// Default Interval to send keep-alives if we are idling so that the peer does not disconnect from
-/// us declaring us offline. If none is supplied we'll default to the documented constant.
-///
-/// The value is in milliseconds.
-pub(crate) const DEFAULT_KEEP_ALIVE_INTERVAL_MSEC: u32 = 20_000; // 20secs
-
 pub(crate) fn new_client_cfg(
-    idle_timeout_msec: u64,
-    keep_alive_interval_msec: u32,
+    idle_timeout: Duration,
+    keep_alive_interval: Duration,
 ) -> Result<quinn::ClientConfig> {
     let mut config = quinn::ClientConfig::default();
     let crypto_cfg = Arc::make_mut(&mut config.crypto);
     crypto_cfg
         .dangerous()
         .set_certificate_verifier(SkipServerVerification::new());
-    config.transport = Arc::new(new_transport_cfg(
-        idle_timeout_msec,
-        keep_alive_interval_msec,
-    ));
+    config.transport = Arc::new(new_transport_cfg(idle_timeout, keep_alive_interval));
     Ok(config)
 }
 
 pub(crate) fn new_our_cfg(
-    idle_timeout_msec: u64,
-    keep_alive_interval_msec: u32,
+    idle_timeout: Duration,
+    keep_alive_interval: Duration,
     our_cert: quinn::Certificate,
     our_key: quinn::PrivateKey,
 ) -> Result<quinn::ServerConfig> {
     let mut our_cfg_builder = {
         let mut our_cfg = quinn::ServerConfig::default();
-        our_cfg.transport = Arc::new(new_transport_cfg(
-            idle_timeout_msec,
-            keep_alive_interval_msec,
-        ));
+        our_cfg.transport = Arc::new(new_transport_cfg(idle_timeout, keep_alive_interval));
 
         quinn::ServerConfigBuilder::new(our_cfg)
     };
@@ -61,15 +42,14 @@ pub(crate) fn new_our_cfg(
 }
 
 fn new_transport_cfg(
-    idle_timeout_msec: u64,
-    keep_alive_interval_msec: u32,
+    idle_timeout: Duration,
+    keep_alive_interval: Duration,
 ) -> quinn::TransportConfig {
     let mut transport_config = quinn::TransportConfig::default();
     let _ = transport_config
-        .max_idle_timeout(Some(Duration::from_millis(idle_timeout_msec)))
+        .max_idle_timeout(Some(idle_timeout))
         .unwrap_or(&mut quinn::TransportConfig::default());
-    let _ = transport_config
-        .keep_alive_interval(Some(Duration::from_millis(keep_alive_interval_msec.into())));
+    let _ = transport_config.keep_alive_interval(Some(keep_alive_interval));
     transport_config
 }
 

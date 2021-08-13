@@ -48,7 +48,7 @@
 )]
 
 mod api;
-mod config;
+pub mod config;
 mod connection_deduplicator;
 mod connection_pool;
 mod connections;

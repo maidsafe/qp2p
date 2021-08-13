@@ -7,14 +7,31 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+//! Configuration for `Endpoint`s.
+
 use crate::{
     error::{Error, Result},
     utils,
 };
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::{fmt, net::IpAddr, str::FromStr};
+use std::{fmt, net::IpAddr, str::FromStr, time::Duration};
 use structopt::StructOpt;
+
+/// Default for [`Config::idle_timeout`] (1 minute).
+///
+/// This is based on average time in which routers would close the UDP mapping to the peer if they
+/// see no conversation between them.
+pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Default for [`Config::keep_alive_interval`] (20 seconds).
+pub const DEFAULT_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(20);
+
+/// Default for [`Config::upnp_lease_duration`] (2 minutes).
+pub const DEFAULT_UPNP_LEASE_DURATION: Duration = Duration::from_secs(120);
+
+/// Default for [`Config::min_retry_duration`] (30 seconds).
+pub const DEFAULT_MIN_RETRY_DURATION: Duration = Duration::from_secs(30);
 
 /// QuicP2p configurations
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq, StructOpt)]
@@ -23,36 +40,61 @@ pub struct Config {
     /// is run locally on the network loopback or on a local area network.
     #[structopt(long)]
     pub forward_port: bool,
+
     /// External port number assigned to the socket address of the program.
     /// If this is provided, QP2p considers that the local port provided has been mapped to the
     /// provided external port number and automatic port forwarding will be skipped.
     #[structopt(long)]
     pub external_port: Option<u16>,
+
     /// External IP address of the computer on the WAN. This field is mandatory if the node is the genesis node and
     /// port forwarding is not available. In case of non-genesis nodes, the external IP address will be resolved
     /// using the Echo service.
     #[structopt(long)]
     pub external_ip: Option<IpAddr>,
-    /// If we hear nothing from the peer in the given interval we declare it offline to us. If none
-    /// supplied we'll default to the documented constant.
+
+    /// How long to wait to hear from a peer before timing out a connection.
     ///
-    /// The interval is in milliseconds. A value of 0 disables this feature.
-    #[structopt(long)]
-    pub idle_timeout_msec: Option<u64>,
-    /// Interval to send keep-alives if we are idling so that the peer does not disconnect from us
-    /// declaring us offline. If none is supplied we'll default to the documented constant.
+    /// In the absence of any keep-alive messages, connections will be closed if they remain idle
+    /// for at least this duration.
     ///
-    /// The interval is in milliseconds. A value of 0 disables this feature.
-    #[structopt(long)]
-    pub keep_alive_interval_msec: Option<u32>,
-    /// Duration of a UPnP port mapping.
-    #[structopt(long)]
-    pub upnp_lease_duration: Option<u32>,
+    /// If unspecified, this will default to [`DEFAULT_IDLE_TIMEOUT`].
+    #[serde(default)]
+    #[structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS")]
+    pub idle_timeout: Option<Duration>,
+
+    /// Interval at which to send keep-alives to maintain otherwise idle connections.
+    ///
+    /// Keep-alives prevent otherwise idle connections from timing out.
+    ///
+    /// If unspecified, this will default to [`DEFAULT_KEEP_ALIVE_INTERVAL`].
+    #[serde(default)]
+    #[structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS")]
+    pub keep_alive_interval: Option<Duration>,
+
+    /// How long UPnP port mappings will last.
+    ///
+    /// Note that UPnP port mappings will be automatically renewed on this interval.
+    ///
+    /// If unspecified, this will default to [`DEFAULT_UPNP_LEASE_DURATION`], which should be
+    /// suitable in most cases but some routers may clear UPnP port mapping more frequently.
+    #[serde(default)]
+    #[structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS")]
+    pub upnp_lease_duration: Option<Duration>,
+
     /// How long to retry establishing connections and sending messages.
     ///
-    /// The duration is in milliseconds. Setting this to 0 will effectively disable retries.
-    #[structopt(long, default_value = "30000")]
-    pub retry_duration_msec: u64,
+    /// Retrying will continue for *at least* this duration, but potentially longer as an
+    /// in-progress back-off delay will not be interrupted.
+    ///
+    /// If unspecified, this will default to [`DEFAULT_MIN_RETRY_DURATION`].
+    #[serde(default)]
+    #[structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS")]
+    pub min_retry_duration: Option<Duration>,
+}
+
+fn parse_millis(millis: &str) -> Result<Duration, std::num::ParseIntError> {
+    Ok(Duration::from_millis(millis.parse()?))
 }
 
 /// Config that has passed validation.
@@ -63,8 +105,8 @@ pub(crate) struct InternalConfig {
     pub(crate) forward_port: bool,
     pub(crate) external_port: Option<u16>,
     pub(crate) external_ip: Option<IpAddr>,
-    pub(crate) upnp_lease_duration: u32,
-    pub(crate) retry_duration_msec: u64,
+    pub(crate) upnp_lease_duration: Duration,
+    pub(crate) min_retry_duration: Duration,
 }
 
 /// To be used to read and write our certificate and private key to disk esp. as a part of our
