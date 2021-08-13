@@ -25,9 +25,6 @@ pub enum Error {
     /// quinn connection error
     #[error("Connection lost due to error: {0}")]
     ConnectionError(#[source] ConnectionError),
-    /// tokio channel error when trying to send disconnect notificaiton
-    #[error("Could not send disconnect notification")]
-    DisconnectionNotification,
     /// Error occurred when attempting to connect to any
     /// of the peers provided as a list of contacts.
     #[error("Network bootstrap failed")]
@@ -64,9 +61,6 @@ pub enum Error {
     /// Cannot assign port to endpoint
     #[error("Cannot assign port to endpoint {0}")]
     CannotAssignPort(u16),
-    /// An error occurred which could be resolved by changing some config value.
-    #[error("Configuration {0}")]
-    Configuration(String),
     /// The message type flag decoded in an incoming stream is invalid/unsupported.
     #[error("Invalid message type flag found in message's header: {0}")]
     InvalidMsgFlag(u8),
