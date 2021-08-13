@@ -2,11 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use super::{hash, random_msg};
-use crate::{
-    api::bind,
-    config::{SerialisableCertificate, DEFAULT_IDLE_TIMEOUT, DEFAULT_KEEP_ALIVE_INTERVAL},
-    peer_config,
-};
+use crate::{api::bind, config::InternalConfig};
 use anyhow::Result;
 use bytes::Bytes;
 use futures::stream::FuturesUnordered;
@@ -66,18 +62,9 @@ struct Peer {
 impl Peer {
     // Takes the channel size. Set `0` to use an unbounded channel.
     fn new(channel_size: usize) -> Result<(Self, ChannelReceiver<(SocketAddr, Bytes)>)> {
-        let (key, cert) = {
-            let our_complete_cert = SerialisableCertificate::new(vec![DOMAIN.to_string()])?;
-            our_complete_cert.obtain_priv_key_and_cert()?
-        };
+        let config = InternalConfig::try_from_config(Default::default())?;
 
-        let endpoint_cfg =
-            peer_config::new_our_cfg(DEFAULT_IDLE_TIMEOUT, DEFAULT_KEEP_ALIVE_INTERVAL, cert, key)?;
-
-        let client_cfg =
-            peer_config::new_client_cfg(DEFAULT_IDLE_TIMEOUT, DEFAULT_KEEP_ALIVE_INTERVAL)?;
-
-        let (endpoint, mut incoming) = bind(endpoint_cfg, "127.0.0.1:0".parse()?)?;
+        let (endpoint, mut incoming) = bind(config.server, "127.0.0.1:0".parse()?)?;
 
         let (message_tx, message_rx) = if channel_size == 0 {
             let (message_tx, message_rx) = unbounded_channel();
@@ -127,7 +114,7 @@ impl Peer {
         Ok((
             Peer {
                 endpoint,
-                client_cfg,
+                client_cfg: config.client,
                 message_tx,
                 connections,
             },
