@@ -11,11 +11,11 @@
 
 use crate::{
     error::{Error, Result},
-    peer_config, utils,
+    utils,
 };
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::{fmt, net::IpAddr, str::FromStr, time::Duration};
+use std::{fmt, net::IpAddr, str::FromStr, sync::Arc, time::Duration};
 use structopt::StructOpt;
 
 /// Default for [`Config::idle_timeout`] (1 minute).
@@ -126,14 +126,9 @@ impl InternalConfig {
             .min_retry_duration
             .unwrap_or(DEFAULT_MIN_RETRY_DURATION);
 
-        let (key, cert) = {
-            let our_complete_cert =
-                SerialisableCertificate::new(vec![MAIDSAFE_DOMAIN.to_string()])?;
-            our_complete_cert.obtain_priv_key_and_cert()?
-        };
-
-        let client = peer_config::new_client_cfg(idle_timeout, keep_alive_interval)?;
-        let server = peer_config::new_our_cfg(idle_timeout, keep_alive_interval, cert, key)?;
+        let transport = Self::new_transport_config(idle_timeout, keep_alive_interval);
+        let client = Self::new_client_config(transport.clone());
+        let server = Self::new_server_config(transport)?;
 
         Ok(Self {
             client,
@@ -144,6 +139,59 @@ impl InternalConfig {
             upnp_lease_duration,
             min_retry_duration,
         })
+    }
+
+    fn new_transport_config(
+        idle_timeout: Duration,
+        keep_alive_interval: Duration,
+    ) -> Arc<quinn::TransportConfig> {
+        let mut config = quinn::TransportConfig::default();
+
+        // QUIC encodes idle timeout in a varint with max size 2^62, which is below what can be
+        // represented by Duration. For now, just ignore too large idle timeouts.
+        // FIXME: don't ignore (e.g. clamp/error/panic)?
+        let _ = config.max_idle_timeout(Some(idle_timeout)).ok();
+        let _ = config.keep_alive_interval(Some(keep_alive_interval));
+
+        Arc::new(config)
+    }
+
+    fn new_client_config(transport: Arc<quinn::TransportConfig>) -> quinn::ClientConfig {
+        let mut config = quinn::ClientConfig {
+            transport,
+            ..Default::default()
+        };
+        Arc::make_mut(&mut config.crypto)
+            .dangerous()
+            .set_certificate_verifier(Arc::new(SkipCertificateVerification));
+        config
+    }
+
+    fn new_server_config(transport: Arc<quinn::TransportConfig>) -> Result<quinn::ServerConfig> {
+        let (key, cert) = SerialisableCertificate::new(vec![MAIDSAFE_DOMAIN.to_string()])?
+            .obtain_priv_key_and_cert()?;
+
+        let mut config = quinn::ServerConfig::default();
+        config.transport = transport;
+
+        let mut config = quinn::ServerConfigBuilder::new(config);
+        let _ = config.certificate(quinn::CertificateChain::from_certs(vec![cert]), key)?;
+
+        Ok(config.build())
+    }
+}
+
+struct SkipCertificateVerification;
+
+impl rustls::ServerCertVerifier for SkipCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _roots: &rustls::RootCertStore,
+        _presented_certs: &[rustls::Certificate],
+        _dns_name: webpki::DNSNameRef,
+        _ocsp_response: &[u8],
+    ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
+        Ok(rustls::ServerCertVerified::assertion())
     }
 }
 
