@@ -23,8 +23,8 @@ mod common;
 mod quinn;
 
 impl ConnId for [u8; 32] {
-    fn generate(_socket_addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(rand::random())
+    fn generate(_socket_addr: &SocketAddr) -> Self {
+        rand::random()
     }
 }
 

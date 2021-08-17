@@ -195,8 +195,7 @@ pub(super) fn listen_for_incoming_connections<I: ConnId>(
                         ..
                     }) => {
                         let peer_address = connection.remote_address();
-                        let id = ConnId::generate(&peer_address)
-                            .map_err(|err| Error::ConnectionIdGeneration(err.to_string()))?;
+                        let id = ConnId::generate(&peer_address);
                         let pool_handle =
                             connection_pool.insert(id, peer_address, connection).await;
                         let _ = connection_tx.send(peer_address).await;
@@ -219,7 +218,6 @@ pub(super) fn listen_for_incoming_connections<I: ConnId>(
                 }
             }
         }
-        Ok::<_, Error>(())
     });
 }
 
