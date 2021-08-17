@@ -82,7 +82,7 @@ impl<I: ConnId> QuicP2p<I> {
     ///     let local_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 3000).into();
     ///     let quic_p2p = QuicP2p::<XId>::with_config(Config::default())?;
     ///     let (mut endpoint, _, _, _) = quic_p2p.new_endpoint(local_addr).await?;
-    ///     let peer_addr = endpoint.socket_addr();
+    ///     let peer_addr = endpoint.public_addr();
     ///
     ///     let local_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 3001).into();
     ///     let endpoint = quic_p2p.bootstrap(local_addr, vec![peer_addr]).await?;

@@ -205,8 +205,8 @@ impl<I: ConnId> Endpoint<I> {
         self.local_addr
     }
 
-    /// Returns the socket address of the endpoint
-    pub fn socket_addr(&self) -> SocketAddr {
+    /// Get the public address of the endpoint.
+    pub fn public_addr(&self) -> SocketAddr {
         self.public_addr.unwrap_or(self.local_addr)
     }
 
