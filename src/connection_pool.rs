@@ -7,7 +7,11 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use std::{collections::BTreeMap, net::SocketAddr, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+};
 
 use tiny_keccak::{Hasher, Sha3};
 use tokio::sync::RwLock;
@@ -161,17 +165,20 @@ pub trait ConnId:
     Clone + Copy + Eq + PartialEq + Ord + PartialOrd + Default + Send + Sync + 'static
 {
     /// Generate
-    fn generate(socket_addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>>;
+    fn generate(socket_addr: &SocketAddr) -> Self;
 }
 
 impl ConnId for XorName {
-    fn generate(addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
-        let data = bincode::serialize(addr)?;
+    fn generate(addr: &SocketAddr) -> Self {
         let mut hasher = Sha3::v256();
         let mut output = [0u8; 32];
-        hasher.update(&data);
+        match addr.ip() {
+            IpAddr::V4(addr) => hasher.update(&addr.octets()),
+            IpAddr::V6(addr) => hasher.update(&addr.octets()),
+        }
+        hasher.update(&addr.port().to_be_bytes());
         hasher.finalize(&mut output);
-        Ok(XorName(output))
+        XorName(output)
     }
 }
 

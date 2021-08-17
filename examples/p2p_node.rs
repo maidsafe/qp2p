@@ -25,8 +25,8 @@ use std::{
 struct XId(pub [u8; 32]);
 
 impl ConnId for XId {
-    fn generate(_socket_addr: &SocketAddr) -> Result<Self, Box<dyn std::error::Error>> {
-        Ok(XId(rand::random()))
+    fn generate(_socket_addr: &SocketAddr) -> Self {
+        XId(rand::random())
     }
 }
 

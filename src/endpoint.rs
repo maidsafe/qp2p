@@ -353,7 +353,7 @@ impl<I: ConnId> Endpoint<I> {
 
         trace!("Successfully connected to peer: {}", node_addr);
 
-        self.add_new_connection_to_pool(final_conn).await?;
+        self.add_new_connection_to_pool(final_conn).await;
 
         self.connection_deduplicator
             .complete(node_addr, Ok(()))
@@ -391,8 +391,7 @@ impl<I: ConnId> Endpoint<I> {
             })?
             .0;
         let bootstrapped_peer = successful_connection.connection.remote_address();
-        self.add_new_connection_to_pool(successful_connection)
-            .await?;
+        self.add_new_connection_to_pool(successful_connection).await;
         Ok(bootstrapped_peer)
     }
 
@@ -479,12 +478,8 @@ impl<I: ConnId> Endpoint<I> {
         Ok(new_connection)
     }
 
-    pub(crate) async fn add_new_connection_to_pool(
-        &self,
-        conn: quinn::NewConnection,
-    ) -> Result<()> {
-        let id = ConnId::generate(&conn.connection.remote_address())
-            .map_err(|err| Error::ConnectionIdGeneration(err.to_string()))?;
+    pub(crate) async fn add_new_connection_to_pool(&self, conn: quinn::NewConnection) {
+        let id = ConnId::generate(&conn.connection.remote_address());
         let guard = self
             .connection_pool
             .insert(id, conn.connection.remote_address(), conn.connection)
@@ -498,7 +493,6 @@ impl<I: ConnId> Endpoint<I> {
             self.disconnection_tx.clone(),
             self.clone(),
         );
-        Ok(())
     }
 
     /// Get an existing connection for the peer address.
