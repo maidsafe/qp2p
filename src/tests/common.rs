@@ -19,11 +19,11 @@ use tracing_test::traced_test;
 async fn successful_connection() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (peer1, mut peer1_incoming_connections, _, _) = qp2p.new_endpoint(local_addr()).await?;
-    let peer1_addr = peer1.socket_addr();
+    let peer1_addr = peer1.public_addr();
 
     let (peer2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
     peer2.connect_to(&peer1_addr).await?;
-    let peer2_addr = peer2.socket_addr();
+    let peer2_addr = peer2.public_addr();
 
     if let Some(connecting_peer) = peer1_incoming_connections.next().await {
         assert_eq!(connecting_peer, peer2_addr);
@@ -39,10 +39,10 @@ async fn single_message() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (peer1, mut peer1_incoming_connections, mut peer1_incoming_messages, _) =
         qp2p.new_endpoint(local_addr()).await?;
-    let peer1_addr = peer1.socket_addr();
+    let peer1_addr = peer1.public_addr();
 
     let (peer2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
-    let peer2_addr = peer2.socket_addr();
+    let peer2_addr = peer2.public_addr();
 
     // Peer 2 connects and sends a message
     peer2.connect_to(&peer1_addr).await?;
@@ -72,11 +72,11 @@ async fn single_message() -> Result<()> {
 async fn reuse_outgoing_connection() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (alice, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
-    let alice_addr = alice.socket_addr();
+    let alice_addr = alice.public_addr();
 
     let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
         qp2p.new_endpoint(local_addr()).await?;
-    let bob_addr = bob.socket_addr();
+    let bob_addr = bob.public_addr();
 
     // Connect for the first time and send a message.
     alice.connect_to(&bob_addr).await?;
@@ -123,11 +123,11 @@ async fn reuse_incoming_connection() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _) =
         qp2p.new_endpoint(local_addr()).await?;
-    let alice_addr = alice.socket_addr();
+    let alice_addr = alice.public_addr();
 
     let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
         qp2p.new_endpoint(local_addr()).await?;
-    let bob_addr = bob.socket_addr();
+    let bob_addr = bob.public_addr();
 
     // Connect for the first time and send a message.
     alice.connect_to(&bob_addr).await?;
@@ -175,11 +175,11 @@ async fn disconnection() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (alice, mut alice_incoming_connections, _, mut alice_disconnections) =
         qp2p.new_endpoint(local_addr()).await?;
-    let alice_addr = alice.socket_addr();
+    let alice_addr = alice.public_addr();
 
     let (bob, mut bob_incoming_connections, _, mut bob_disconnections) =
         qp2p.new_endpoint(local_addr()).await?;
-    let bob_addr = bob.socket_addr();
+    let bob_addr = bob.public_addr();
 
     // Alice connects to Bob who should receive an incoming connection.
     alice.connect_to(&bob_addr).await?;
@@ -230,11 +230,11 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
         mut alice_incoming_messages,
         mut alice_disconnections,
     ) = qp2p.new_endpoint(local_addr()).await?;
-    let alice_addr = alice.socket_addr();
+    let alice_addr = alice.public_addr();
 
     let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
         qp2p.new_endpoint(local_addr()).await?;
-    let bob_addr = bob.socket_addr();
+    let bob_addr = bob.public_addr();
 
     future::try_join(alice.connect_to(&bob_addr), bob.connect_to(&alice_addr)).await?;
 
@@ -306,10 +306,10 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _) =
         qp2p.new_endpoint(local_addr()).await?;
-    let alice_addr = alice.socket_addr();
+    let alice_addr = alice.public_addr();
 
     let (bob, _, mut bob_incoming_messages, _) = qp2p.new_endpoint(local_addr()).await?;
-    let bob_addr = bob.socket_addr();
+    let bob_addr = bob.public_addr();
 
     // Try to establish two connections to the same peer at the same time.
     let ((), ()) =
@@ -364,7 +364,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     let qp2p = new_qp2p()?;
     let (server_endpoint, _, mut recv_incoming_messages, _) =
         qp2p.new_endpoint(local_addr()).await?;
-    let server_addr = server_endpoint.socket_addr();
+    let server_addr = server_endpoint.public_addr();
 
     let test_msgs: Vec<_> = (0..num_messages_each).map(|_| random_msg(1024)).collect();
     let sending_msgs = test_msgs.clone();
@@ -472,7 +472,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
     let qp2p = new_qp2p()?;
     let (server_endpoint, _, mut recv_incoming_messages, _) =
         qp2p.new_endpoint(local_addr()).await?;
-    let server_addr = server_endpoint.socket_addr();
+    let server_addr = server_endpoint.public_addr();
 
     let test_msgs: Vec<_> = (0..num_messages_each)
         .map(|_| random_msg(1024 * 1024))
@@ -590,8 +590,8 @@ async fn many_messages() -> Result<()> {
     let (send_endpoint, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
     let (recv_endpoint, _, mut recv_incoming_messages, _) = qp2p.new_endpoint(local_addr()).await?;
 
-    let send_addr = send_endpoint.socket_addr();
-    let recv_addr = recv_endpoint.socket_addr();
+    let send_addr = send_endpoint.public_addr();
+    let recv_addr = recv_endpoint.public_addr();
 
     let mut tasks = Vec::new();
 
@@ -649,7 +649,7 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
     let (ep2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
     let (ep3, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
 
-    let contacts = vec![ep1.socket_addr(), ep2.socket_addr(), ep3.socket_addr()];
+    let contacts = vec![ep1.public_addr(), ep2.public_addr(), ep3.public_addr()];
 
     let qp2p = new_qp2p()?;
     let (ep, _, _, _, bootstrapped_peer) = qp2p.bootstrap(local_addr(), contacts.clone()).await?;
@@ -672,7 +672,7 @@ async fn reachability() -> Result<()> {
     if let Ok(()) = ep1.is_reachable(&"127.0.0.1:12345".parse()?).await {
         anyhow!("Unexpected success");
     };
-    let reachable_addr = ep2.socket_addr();
+    let reachable_addr = ep2.public_addr();
     ep1.is_reachable(&reachable_addr).await?;
     Ok(())
 }

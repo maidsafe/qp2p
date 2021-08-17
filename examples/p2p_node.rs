@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     }
 
     println!("\n---");
-    println!("Listening on: {:?}", node.socket_addr());
+    println!("Listening on: {:?}", node.public_addr());
     println!("---\n");
 
     // loop over incoming messages

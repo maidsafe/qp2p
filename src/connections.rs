@@ -439,10 +439,10 @@ mod tests {
 
         // Create Endpoint
         let (peer1, mut peer1_connections, _, _) = qp2p.new_endpoint(local_addr()).await?;
-        let peer1_addr = peer1.socket_addr();
+        let peer1_addr = peer1.public_addr();
 
         let (peer2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
-        let peer2_addr = peer2.socket_addr();
+        let peer2_addr = peer2.public_addr();
 
         peer2.connect_to(&peer1_addr).await?;
 
