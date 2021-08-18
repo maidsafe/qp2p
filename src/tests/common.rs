@@ -676,3 +676,33 @@ async fn reachability() -> Result<()> {
     ep1.is_reachable(&reachable_addr).await?;
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+#[traced_test]
+async fn client() -> Result<()> {
+    use crate::{Config, Endpoint};
+
+    let qp2p = new_qp2p()?;
+
+    let (server, _, mut server_messages, _) = qp2p.new_endpoint(local_addr()).await?;
+    let client = Endpoint::<[u8; 32]>::new_client(
+        local_addr(),
+        Config {
+            min_retry_duration: Some(Duration::from_millis(500)),
+            ..Default::default()
+        },
+    )?;
+
+    client
+        .send_message(b"hello"[..].into(), &server.public_addr(), 0)
+        .await?;
+
+    let (sender, message) = server_messages
+        .next()
+        .await
+        .ok_or_else(|| anyhow!("Did not receive expected message"))?;
+    assert_eq!(sender, client.public_addr());
+    assert_eq!(&message[..], b"hello");
+
+    Ok(())
+}
