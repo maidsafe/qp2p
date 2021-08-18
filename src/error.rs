@@ -8,6 +8,7 @@
 // Software.
 
 use super::wire_msg::WireMsg;
+use crate::config::ConfigError;
 use bytes::Bytes;
 use std::{fmt, io};
 use thiserror::Error;
@@ -124,6 +125,26 @@ impl From<quinn::ConnectionError> for Error {
             quinn::ConnectionError::TimedOut => ConnectionError::Reset,
         };
         Self::ConnectionError(error)
+    }
+}
+
+/// Errors returned by [`Endpoint::new_client`](crate::Endpoint::new_client).
+#[derive(Debug, Error)]
+pub enum ClientEndpointError {
+    /// There was a problem with the provided configuration.
+    #[error("There was a problem with the provided configuration")]
+    Config(#[from] ConfigError),
+
+    /// Failed to bind UDP socket.
+    #[error("Failed to bind UDP socket")]
+    Socket(#[source] io::Error),
+}
+
+impl From<quinn::EndpointError> for ClientEndpointError {
+    fn from(error: quinn::EndpointError) -> Self {
+        match error {
+            quinn::EndpointError::Socket(error) => Self::Socket(error),
+        }
     }
 }
 

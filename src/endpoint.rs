@@ -14,14 +14,14 @@ use super::error::Error;
 use super::igd::forward_port;
 use super::wire_msg::WireMsg;
 use super::{
-    config::InternalConfig,
+    config::{Config, InternalConfig},
     connection_deduplicator::ConnectionDeduplicator,
     connection_pool::ConnectionPool,
     connections::{
         listen_for_incoming_connections, listen_for_incoming_messages, Connection,
         DisconnectionEvents, RecvStream, SendStream,
     },
-    error::Result,
+    error::{ClientEndpointError, Result},
 };
 use bytes::Bytes;
 use std::net::SocketAddr;
@@ -94,6 +94,43 @@ impl<I: ConnId> std::fmt::Debug for Endpoint<I> {
 }
 
 impl<I: ConnId> Endpoint<I> {
+    /// Create a client endpoint at the given address.
+    ///
+    /// A client endpoint cannot receive incoming connections, as such they also do not need to be
+    /// publicly reachable. They can still communicate over outgoing connections and receive
+    /// incoming streams, since QUIC allows for either side of a connection to initiate streams.
+    pub fn new_client(
+        local_addr: impl Into<SocketAddr>,
+        config: Config,
+    ) -> Result<Self, ClientEndpointError> {
+        let config = InternalConfig::try_from_config(config)?;
+
+        let local_addr = local_addr.into();
+        let (quic_endpoint, _) = quinn::Endpoint::builder().bind(&local_addr)?;
+        let local_addr = quic_endpoint
+            .local_addr()
+            .map_err(ClientEndpointError::Socket)?;
+
+        let (message_tx, _) = mpsc::channel(STANDARD_CHANNEL_SIZE);
+        let (disconnection_tx, _) = mpsc::channel(STANDARD_CHANNEL_SIZE);
+        let (termination_tx, _) = broadcast::channel(1);
+
+        let endpoint = Self {
+            local_addr,
+            public_addr: None,
+            quic_endpoint,
+            message_tx,
+            disconnection_tx,
+            bootstrap_nodes: Default::default(),
+            config,
+            termination_tx,
+            connection_pool: ConnectionPool::new(),
+            connection_deduplicator: ConnectionDeduplicator::new(),
+        };
+
+        Ok(endpoint)
+    }
+
     pub(crate) async fn new(
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,

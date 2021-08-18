@@ -64,7 +64,7 @@ pub use config::{Config, ConfigError};
 pub use connection_pool::ConnId;
 pub use connections::{DisconnectionEvents, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
-pub use error::{Close, ConnectionError, Error, Result, TransportErrorCode};
+pub use error::{ClientEndpointError, Close, ConnectionError, Error, Result, TransportErrorCode};
 
 #[cfg(test)]
 mod tests;
