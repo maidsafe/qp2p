@@ -372,10 +372,10 @@ impl<I: ConnId> Endpoint<I> {
     ///
     /// The successful connection, if any, will be stored in the connection pool (see
     /// [`connect_to`](Self::connect_to) for more info on connection pooling).
-    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Result<SocketAddr> {
+    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Option<SocketAddr> {
         trace!("Connecting to any of {:?}", peer_addrs);
         if peer_addrs.is_empty() {
-            return Err(Error::EmptyBootstrapNodesList);
+            return None;
         }
 
         // Attempt to create a new connection to all nodes and return the first one to succeed
@@ -383,16 +383,17 @@ impl<I: ConnId> Endpoint<I> {
             .iter()
             .map(|addr| Box::pin(self.create_new_connection(addr)));
 
-        let successful_connection = futures::future::select_ok(tasks)
-            .await
-            .map_err(|err| {
-                error!("Failed to bootstrap to the network: {}", err);
-                Error::BootstrapFailure
-            })?
-            .0;
-        let bootstrapped_peer = successful_connection.connection.remote_address();
-        self.add_new_connection_to_pool(successful_connection).await;
-        Ok(bootstrapped_peer)
+        match futures::future::select_ok(tasks).await {
+            Ok((connection, _)) => {
+                let peer = connection.connection.remote_address();
+                self.add_new_connection_to_pool(connection).await;
+                Some(peer)
+            }
+            Err(error) => {
+                error!("Failed to bootstrap to the network, last error: {}", error);
+                None
+            }
+        }
     }
 
     /// Attempt a connection to a node_addr using exponential backoff

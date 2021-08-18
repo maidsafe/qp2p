@@ -100,10 +100,17 @@ impl<I: ConnId> QuicP2p<I> {
         DisconnectionEvents,
         SocketAddr,
     )> {
+        if bootstrap_nodes.is_empty() {
+            return Err(Error::EmptyBootstrapNodesList);
+        }
+
         let (endpoint, incoming_connections, incoming_message, disconnections) =
             self.new_endpoint_with(local_addr, bootstrap_nodes).await?;
 
-        let bootstrapped_peer = endpoint.connect_to_any(endpoint.bootstrap_nodes()).await?;
+        let bootstrapped_peer = endpoint
+            .connect_to_any(endpoint.bootstrap_nodes())
+            .await
+            .ok_or(Error::BootstrapFailure)?;
 
         Ok((
             endpoint,
