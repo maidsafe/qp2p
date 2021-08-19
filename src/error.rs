@@ -105,26 +105,20 @@ pub enum Error {
 
 impl From<quinn::ConnectionError> for Error {
     fn from(error: quinn::ConnectionError) -> Self {
-        let error = match error {
-            quinn::ConnectionError::LocallyClosed => return Self::ConnectionClosed(Close::Local),
-            quinn::ConnectionError::ApplicationClosed(close) => {
-                return Self::ConnectionClosed(Close::Application {
-                    error_code: close.error_code.into_inner(),
-                    reason: close.reason,
-                })
-            }
-            quinn::ConnectionError::ConnectionClosed(close) => {
-                return Self::ConnectionClosed(Close::Transport {
-                    error_code: TransportErrorCode(close.error_code),
-                    reason: close.reason,
-                })
-            }
-            quinn::ConnectionError::VersionMismatch => ConnectionError::VersionMismatch,
-            quinn::ConnectionError::TransportError(error) => ConnectionError::TransportError(error),
-            quinn::ConnectionError::Reset => ConnectionError::Reset,
-            quinn::ConnectionError::TimedOut => ConnectionError::Reset,
-        };
-        Self::ConnectionError(error)
+        match error.into() {
+            ConnectionCloseOrError::Close(close) => Self::ConnectionClosed(close),
+            ConnectionCloseOrError::Error(error) => Self::ConnectionError(error),
+        }
+    }
+}
+
+impl From<ConnectFailed> for Error {
+    fn from(error: ConnectFailed) -> Self {
+        match error {
+            ConnectFailed::Connect(error) => Self::Connect(error),
+            ConnectFailed::Connection(error) => Self::ConnectionError(error),
+            ConnectFailed::Close(close) => Self::ConnectionClosed(close),
+        }
     }
 }
 
@@ -149,7 +143,7 @@ impl From<quinn::EndpointError> for ClientEndpointError {
 }
 
 /// The reason a connection was closed.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Close {
     /// This application closed the connection.
     Local,
@@ -215,7 +209,7 @@ impl From<quinn::ConnectionClose> for Close {
 /// Errors that can cause connection loss.
 // This is a copy of `quinn::ConnectionError` without the `*Closed` variants, since we want to
 // separate them in our interface.
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub enum ConnectionError {
     /// The peer doesn't implement the supported version.
     #[error("{}", quinn::ConnectionError::VersionMismatch)]
@@ -237,6 +231,7 @@ pub enum ConnectionError {
 /// An opaque error code indicating a transport failure.
 ///
 /// This can be turned to a string via its `Debug` and `Display` impls, but is otherwise opaque.
+#[derive(Clone)]
 pub struct TransportErrorCode(quinn_proto::TransportErrorCode);
 
 impl fmt::Debug for TransportErrorCode {
@@ -248,5 +243,70 @@ impl fmt::Debug for TransportErrorCode {
 impl fmt::Display for TransportErrorCode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+/// Errors preventing a `Connection` from being created.
+///
+/// The `quinn` API means that, before we can get a handle to a `Connection`, we have to handle both
+/// `ConnectError` (indicating a misconfiguration, such that quinn didn't even try to open a
+/// connection) and `ConnectionError` (indicating an I/O or protocol error when trying to open a
+/// connection).
+///
+/// In our public API, we also want to separate quinn's `ConnectionError` into our own
+/// `ConnectionError`/`Close`. This enum is intended to facilitate this. Note that it does not
+/// `impl Error` and is not meant to be public.
+#[derive(Clone, Debug)]
+pub(crate) enum ConnectFailed {
+    Connect(quinn::ConnectError),
+    Connection(ConnectionError),
+    Close(Close),
+}
+
+impl From<quinn::ConnectError> for ConnectFailed {
+    fn from(error: quinn::ConnectError) -> Self {
+        Self::Connect(error)
+    }
+}
+
+impl From<quinn::ConnectionError> for ConnectFailed {
+    fn from(error: quinn::ConnectionError) -> Self {
+        match error.into() {
+            ConnectionCloseOrError::Close(close) => Self::Close(close),
+            ConnectionCloseOrError::Error(error) => Self::Connection(error),
+        }
+    }
+}
+
+/// Errors that can interrupt a connection.
+///
+/// We want to separate "close" and "error" in our API, to enable more robust error handling. This
+/// is a helper enum for separating `quinn::ConnectionError` into those parts.
+enum ConnectionCloseOrError {
+    Close(Close),
+    Error(ConnectionError),
+}
+
+impl From<quinn::ConnectionError> for ConnectionCloseOrError {
+    fn from(error: quinn::ConnectionError) -> Self {
+        match error {
+            quinn::ConnectionError::LocallyClosed => Self::Close(Close::Local),
+            quinn::ConnectionError::ApplicationClosed(close) => Self::Close(Close::Application {
+                error_code: close.error_code.into_inner(),
+                reason: close.reason,
+            }),
+            quinn::ConnectionError::ConnectionClosed(close) => Self::Close(Close::Transport {
+                error_code: TransportErrorCode(close.error_code),
+                reason: close.reason,
+            }),
+            quinn::ConnectionError::VersionMismatch => {
+                Self::Error(ConnectionError::VersionMismatch)
+            }
+            quinn::ConnectionError::TransportError(error) => {
+                Self::Error(ConnectionError::TransportError(error))
+            }
+            quinn::ConnectionError::Reset => Self::Error(ConnectionError::Reset),
+            quinn::ConnectionError::TimedOut => Self::Error(ConnectionError::Reset),
+        }
     }
 }

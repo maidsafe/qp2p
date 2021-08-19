@@ -7,15 +7,15 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use crate::error::ConnectFailed;
 use std::sync::Arc;
 use std::{
     collections::{hash_map::Entry, HashMap},
     net::SocketAddr,
 };
-use thiserror::Error;
 use tokio::sync::{broadcast, Mutex};
 
-type Result<T = (), E = Error> = std::result::Result<T, E>;
+type Result = std::result::Result<(), ConnectFailed>;
 
 // Deduplicate multiple concurrent connect attempts to the same peer - they all will yield the
 // same `Connection` instead of opening a separate connection each.
@@ -65,23 +65,6 @@ impl ConnectionDeduplicator {
         let tx = self.map.lock().await.remove(addr);
         if let Some(tx) = tx {
             let _ = tx.send(result);
-        }
-    }
-}
-
-#[derive(Clone, Error, Debug)]
-pub(crate) enum Error {
-    #[error("Connect error")]
-    Connect(#[from] quinn::ConnectError),
-    #[error("Quinn Connection error during deduplication")]
-    Connection(#[from] quinn::ConnectionError),
-}
-
-impl From<Error> for crate::error::Error {
-    fn from(src: Error) -> Self {
-        match src {
-            Error::Connect(source) => Self::Connect(source),
-            Error::Connection(source) => source.into(),
         }
     }
 }
