@@ -10,7 +10,7 @@
 use super::wire_msg::WireMsg;
 use crate::config::ConfigError;
 use bytes::Bytes;
-use std::{fmt, io};
+use std::{fmt, io, net::SocketAddr};
 use thiserror::Error;
 
 /// Result used by `QuicP2p`.
@@ -20,12 +20,9 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum Error {
-    /// quinn connection closed
-    #[error("Connection was closed by {0}")]
-    ConnectionClosed(Close),
     /// quinn connection error
     #[error("Connection lost due to error: {0}")]
-    ConnectionError(#[source] ConnectionError),
+    ConnectionError(#[from] ConnectionError),
     /// Error occurred when attempting to connect to any
     /// of the peers provided as a list of contacts.
     #[error("Network bootstrap failed")]
@@ -36,9 +33,6 @@ pub enum Error {
     /// I/O failure when attempting to access a local resource.
     #[error("I/O Error")]
     Io(#[from] io::Error),
-    /// Failure encountered when establishing a connection with another peer.
-    #[error("Establishing connection")]
-    Connect(#[from] quinn::ConnectError),
     /// Failed to create a new endpoint.
     #[error("Creating endpoint")]
     Endpoint(#[from] quinn::EndpointError),
@@ -105,20 +99,7 @@ pub enum Error {
 
 impl From<quinn::ConnectionError> for Error {
     fn from(error: quinn::ConnectionError) -> Self {
-        match error.into() {
-            ConnectionCloseOrError::Close(close) => Self::ConnectionClosed(close),
-            ConnectionCloseOrError::Error(error) => Self::ConnectionError(error),
-        }
-    }
-}
-
-impl From<ConnectFailed> for Error {
-    fn from(error: ConnectFailed) -> Self {
-        match error {
-            ConnectFailed::Connect(error) => Self::Connect(error),
-            ConnectFailed::Connection(error) => Self::ConnectionError(error),
-            ConnectFailed::Close(close) => Self::ConnectionClosed(close),
-        }
+        Self::ConnectionError(error.into())
     }
 }
 
@@ -141,6 +122,105 @@ impl From<quinn::EndpointError> for ClientEndpointError {
         }
     }
 }
+
+/// Errors that can cause connection loss.
+// This is a copy of `quinn::ConnectionError` without the `*Closed` variants, since we want to
+// separate them in our interface.
+#[derive(Clone, Debug, Error)]
+pub enum ConnectionError {
+    /// The endpoint has been stopped.
+    #[error("The endpoint has been stopped")]
+    Stopped,
+
+    /// The number of active connections on the local endpoint is at the limit.
+    ///
+    /// This limit is imposed by the underlying connection ID generator, which is not currently
+    /// configurable.
+    // NOTE: We could make this configurable by exposing a way to set
+    // quinn_proto::RandomConnectionIdGenerator cid_len
+    #[error("The number of active connections on the local endpoint is at the limit")]
+    TooManyConnections,
+
+    /// Invalid remote address.
+    ///
+    /// Examples include attempting to connect to port `0` or using an inappropriate address family.
+    #[error("Invalid remote address: {0}")]
+    InvalidAddress(SocketAddr),
+
+    /// Internal configuration error.
+    ///
+    /// This should not occur (if it does, there's a bug!), but it covers possible misconfigurations
+    /// of the underlying transport library.
+    #[error("BUG: internal configuration error")]
+    InternalConfigError(#[source] InternalConfigError),
+
+    /// The peer doesn't implement the supported version.
+    #[error("{}", quinn::ConnectionError::VersionMismatch)]
+    VersionMismatch,
+
+    /// The peer violated the QUIC specification as understood by this implementation.
+    #[error("{0}")]
+    TransportError(#[source] quinn_proto::TransportError),
+
+    /// The peer is unable to continue processing this connection, usually due to having restarted.
+    #[error("{}", quinn::ConnectionError::Reset)]
+    Reset,
+
+    /// Communication with the peer has lapsed for longer than the negotiated idle timeout.
+    #[error("{}", quinn::ConnectionError::TimedOut)]
+    TimedOut,
+
+    /// The connection was closed.
+    #[error("The connection was closed by {0}")]
+    Closed(Close),
+}
+
+impl From<quinn::ConnectError> for ConnectionError {
+    fn from(error: quinn::ConnectError) -> Self {
+        match error {
+            quinn::ConnectError::EndpointStopping => Self::Stopped,
+            quinn::ConnectError::TooManyConnections => Self::TooManyConnections,
+            quinn::ConnectError::InvalidRemoteAddress(addr) => Self::InvalidAddress(addr),
+            quinn::ConnectError::InvalidDnsName(_) => {
+                // We currently use a hard-coded domain name, so if it's invalid we have a library
+                // breaking bug. We want to avoid panics though, so we propagate this as an opaque
+                // error.
+                Self::InternalConfigError(InternalConfigError(error))
+            }
+            quinn::ConnectError::Config(_) => {
+                // This is logically impossible, but has not been removed from the quinn API
+                // (PR: https://github.com/quinn-rs/quinn/pull/1181). As above, we don't want to
+                // allow any panics, so we propagate it as an opaque internal error.
+                Self::InternalConfigError(InternalConfigError(error))
+            }
+        }
+    }
+}
+
+impl From<quinn::ConnectionError> for ConnectionError {
+    fn from(error: quinn::ConnectionError) -> Self {
+        match error {
+            quinn::ConnectionError::LocallyClosed => Self::Closed(Close::Local),
+            quinn::ConnectionError::ApplicationClosed(close) => Self::Closed(Close::Application {
+                error_code: close.error_code.into_inner(),
+                reason: close.reason,
+            }),
+            quinn::ConnectionError::ConnectionClosed(close) => Self::Closed(Close::Transport {
+                error_code: TransportErrorCode(close.error_code),
+                reason: close.reason,
+            }),
+            quinn::ConnectionError::VersionMismatch => Self::VersionMismatch,
+            quinn::ConnectionError::TransportError(error) => Self::TransportError(error),
+            quinn::ConnectionError::Reset => Self::Reset,
+            quinn::ConnectionError::TimedOut => Self::TimedOut,
+        }
+    }
+}
+
+/// An internal configuration error encountered by [`Endpoint`](crate::Endpoint) connect methods.
+#[derive(Clone, Debug, Error)]
+#[error(transparent)]
+pub struct InternalConfigError(quinn::ConnectError);
 
 /// The reason a connection was closed.
 #[derive(Clone, Debug)]
@@ -206,28 +286,6 @@ impl From<quinn::ConnectionClose> for Close {
     }
 }
 
-/// Errors that can cause connection loss.
-// This is a copy of `quinn::ConnectionError` without the `*Closed` variants, since we want to
-// separate them in our interface.
-#[derive(Clone, Debug, Error)]
-pub enum ConnectionError {
-    /// The peer doesn't implement the supported version.
-    #[error("{}", quinn::ConnectionError::VersionMismatch)]
-    VersionMismatch,
-
-    /// The peer violated the QUIC specification as understood by this implementation.
-    #[error("{0}")]
-    TransportError(#[source] quinn_proto::TransportError),
-
-    /// The peer is unable to continue processing this connection, usually due to having restarted.
-    #[error("{}", quinn::ConnectionError::Reset)]
-    Reset,
-
-    /// Communication with the peer has lapsed for longer than the negotiated idle timeout.
-    #[error("{}", quinn::ConnectionError::TimedOut)]
-    TimedOut,
-}
-
 /// An opaque error code indicating a transport failure.
 ///
 /// This can be turned to a string via its `Debug` and `Display` impls, but is otherwise opaque.
@@ -243,70 +301,5 @@ impl fmt::Debug for TransportErrorCode {
 impl fmt::Display for TransportErrorCode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-/// Errors preventing a `Connection` from being created.
-///
-/// The `quinn` API means that, before we can get a handle to a `Connection`, we have to handle both
-/// `ConnectError` (indicating a misconfiguration, such that quinn didn't even try to open a
-/// connection) and `ConnectionError` (indicating an I/O or protocol error when trying to open a
-/// connection).
-///
-/// In our public API, we also want to separate quinn's `ConnectionError` into our own
-/// `ConnectionError`/`Close`. This enum is intended to facilitate this. Note that it does not
-/// `impl Error` and is not meant to be public.
-#[derive(Clone, Debug)]
-pub(crate) enum ConnectFailed {
-    Connect(quinn::ConnectError),
-    Connection(ConnectionError),
-    Close(Close),
-}
-
-impl From<quinn::ConnectError> for ConnectFailed {
-    fn from(error: quinn::ConnectError) -> Self {
-        Self::Connect(error)
-    }
-}
-
-impl From<quinn::ConnectionError> for ConnectFailed {
-    fn from(error: quinn::ConnectionError) -> Self {
-        match error.into() {
-            ConnectionCloseOrError::Close(close) => Self::Close(close),
-            ConnectionCloseOrError::Error(error) => Self::Connection(error),
-        }
-    }
-}
-
-/// Errors that can interrupt a connection.
-///
-/// We want to separate "close" and "error" in our API, to enable more robust error handling. This
-/// is a helper enum for separating `quinn::ConnectionError` into those parts.
-enum ConnectionCloseOrError {
-    Close(Close),
-    Error(ConnectionError),
-}
-
-impl From<quinn::ConnectionError> for ConnectionCloseOrError {
-    fn from(error: quinn::ConnectionError) -> Self {
-        match error {
-            quinn::ConnectionError::LocallyClosed => Self::Close(Close::Local),
-            quinn::ConnectionError::ApplicationClosed(close) => Self::Close(Close::Application {
-                error_code: close.error_code.into_inner(),
-                reason: close.reason,
-            }),
-            quinn::ConnectionError::ConnectionClosed(close) => Self::Close(Close::Transport {
-                error_code: TransportErrorCode(close.error_code),
-                reason: close.reason,
-            }),
-            quinn::ConnectionError::VersionMismatch => {
-                Self::Error(ConnectionError::VersionMismatch)
-            }
-            quinn::ConnectionError::TransportError(error) => {
-                Self::Error(ConnectionError::TransportError(error))
-            }
-            quinn::ConnectionError::Reset => Self::Error(ConnectionError::Reset),
-            quinn::ConnectionError::TimedOut => Self::Error(ConnectionError::Reset),
-        }
     }
 }

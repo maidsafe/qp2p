@@ -260,20 +260,20 @@ async fn read_on_uni_streams(
 ) -> Result<()> {
     while let Some(result) = uni_streams.next().await {
         match result {
-            Err(quinn::ConnectionError::ConnectionClosed(close)) => {
+            Err(error @ quinn::ConnectionError::ConnectionClosed(_)) => {
                 trace!("Connection closed by peer {:?}", peer_addr);
-                return Err(Error::ConnectionClosed(close.into()));
+                return Err(error.into());
             }
-            Err(quinn::ConnectionError::ApplicationClosed(close)) => {
+            Err(error @ quinn::ConnectionError::ApplicationClosed(_)) => {
                 trace!("Connection closed by peer {:?}.", peer_addr);
-                return Err(Error::ConnectionClosed(close.into()));
+                return Err(error.into());
             }
             Err(err) => {
                 warn!(
                     "Failed to read incoming message on uni-stream for peer {:?} with: {:?}",
                     peer_addr, err
                 );
-                return Err(Error::from(err));
+                return Err(err.into());
             }
             Ok(mut recv) => loop {
                 match read_bytes(&mut recv).await {
@@ -309,13 +309,13 @@ async fn read_on_bi_streams<I: ConnId>(
 ) -> Result<()> {
     while let Some(result) = bi_streams.next().await {
         match result {
-            Err(quinn::ConnectionError::ConnectionClosed(close)) => {
+            Err(error @ quinn::ConnectionError::ConnectionClosed(_)) => {
                 trace!("Connection closed by peer {:?}", peer_addr);
-                return Err(Error::ConnectionClosed(close.into()));
+                return Err(error.into());
             }
-            Err(quinn::ConnectionError::ApplicationClosed(close)) => {
+            Err(error @ quinn::ConnectionError::ApplicationClosed(_)) => {
                 trace!("Connection closed by peer {:?}.", peer_addr);
-                return Err(Error::ConnectionClosed(close.into()));
+                return Err(error.into());
             }
             Err(err) => {
                 warn!(

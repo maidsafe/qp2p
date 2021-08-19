@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::error::ConnectFailed;
+use crate::ConnectionError;
 use std::sync::Arc;
 use std::{
     collections::{hash_map::Entry, HashMap},
@@ -15,7 +15,7 @@ use std::{
 };
 use tokio::sync::{broadcast, Mutex};
 
-type Result = std::result::Result<(), ConnectFailed>;
+type Result = std::result::Result<(), ConnectionError>;
 
 // Deduplicate multiple concurrent connect attempts to the same peer - they all will yield the
 // same `Connection` instead of opening a separate connection each.
