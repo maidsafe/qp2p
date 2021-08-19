@@ -36,9 +36,6 @@ pub enum Error {
     /// Failed to create a new endpoint.
     #[error("Creating endpoint")]
     Endpoint(#[from] quinn::EndpointError),
-    /// Failed to set/get priority of stream.
-    #[error("Unknown stream, cannot set/get priority.")]
-    UnknownStream,
     /// The contacts list was found empty when attempting
     /// to contact peers for the echo service.
     #[error("No peers found in the contacts list to send the echo request to")]
