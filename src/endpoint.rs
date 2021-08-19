@@ -21,7 +21,7 @@ use super::{
         listen_for_incoming_connections, listen_for_incoming_messages, Connection,
         DisconnectionEvents, RecvStream, SendStream,
     },
-    error::{ClientEndpointError, Result},
+    error::{ClientEndpointError, ConnectionError, Result},
 };
 use bytes::Bytes;
 use std::net::SocketAddr;
@@ -434,7 +434,10 @@ impl<I: ConnId> Endpoint<I> {
     }
 
     /// Attempt a connection to a node_addr using exponential backoff
-    async fn attempt_connection(&self, node_addr: &SocketAddr) -> Result<quinn::NewConnection> {
+    async fn attempt_connection(
+        &self,
+        node_addr: &SocketAddr,
+    ) -> Result<quinn::NewConnection, ConnectionError> {
         self.retry(|| async {
             trace!("Attempting to connect to {:?}", node_addr);
             let connecting = match self.quic_endpoint.connect_with(
@@ -445,7 +448,7 @@ impl<I: ConnId> Endpoint<I> {
                 Ok(conn) => Ok(conn),
                 Err(error) => {
                     warn!("Connection attempt failed due to {:?}", error);
-                    Err(Error::from(error))
+                    Err(ConnectionError::from(error))
                 }
             }?;
 
@@ -460,7 +463,7 @@ impl<I: ConnId> Endpoint<I> {
                         .complete(node_addr, Err(error.clone().into()))
                         .await;
 
-                    Err(Error::from(error))
+                    Err(ConnectionError::from(error))
                 }
             }?;
 
