@@ -48,7 +48,7 @@ impl<I: ConnId> Connection<I> {
     pub(crate) async fn open_bi(&self, priority: i32) -> Result<(SendStream, RecvStream)> {
         let (send_stream, recv_stream) = self.handle_error(self.quic_conn.open_bi().await).await?;
         let send_stream = SendStream::new(send_stream);
-        send_stream.set_priority(priority)?;
+        send_stream.set_priority(priority);
         Ok((send_stream, RecvStream::new(recv_stream)))
     }
 
@@ -56,9 +56,11 @@ impl<I: ConnId> Connection<I> {
     /// Priority default is 0. Both lower and higher can be passed in.
     pub(crate) async fn send_uni(&self, msg: Bytes, priority: i32) -> Result<()> {
         let mut send_stream = self.handle_error(self.quic_conn.open_uni().await).await?;
-        send_stream
-            .set_priority(priority)
-            .map_err(|_| Error::UnknownStream)?;
+
+        // quinn returns `UnknownStream` error if the stream does not exist. We ignore it, on the
+        // basis that operations on the stream will fail instead (and the effect of setting priority
+        // or not is only observable if the stream exists).
+        let _ = send_stream.set_priority(priority);
 
         self.handle_error(send_msg(&mut send_stream, msg).await)
             .await?;
@@ -127,18 +129,11 @@ impl SendStream {
     /// the priority of a stream with pending data may only take effect after that data has been
     /// transmitted. Using many different priority levels per connection may have a negative
     /// impact on performance.
-    pub fn set_priority(&self, priority: i32) -> Result<()> {
-        self.quinn_send_stream
-            .set_priority(priority)
-            .map_err(|_| Error::UnknownStream)?;
-        Ok(())
-    }
-
-    /// Get the priority of the send stream
-    pub fn priority(&self) -> Result<i32> {
-        self.quinn_send_stream
-            .priority()
-            .map_err(|_| Error::UnknownStream)
+    pub fn set_priority(&self, priority: i32) {
+        // quinn returns `UnknownStream` error if the stream does not exist. We ignore it, on the
+        // basis that operations on the stream will fail instead (and the effect of setting priority
+        // or not is only observable if the stream exists).
+        let _ = self.quinn_send_stream.set_priority(priority);
     }
 
     /// Send a message using the stream created by the initiator
