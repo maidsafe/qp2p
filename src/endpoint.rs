@@ -418,7 +418,7 @@ impl<I: ConnId> Endpoint<I> {
         // Attempt to create a new connection to all nodes and return the first one to succeed
         let tasks = peer_addrs
             .iter()
-            .map(|addr| Box::pin(self.create_new_connection(addr)));
+            .map(|addr| Box::pin(self.attempt_connection(addr)));
 
         match futures::future::select_ok(tasks).await {
             Ok((connection, _)) => {
@@ -474,7 +474,7 @@ impl<I: ConnId> Endpoint<I> {
     /// can be reached.
     pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<()> {
         trace!("Checking is reachable");
-        let new_connection = self.create_new_connection(peer_addr).await?;
+        let new_connection = self.attempt_connection(peer_addr).await?;
         let (mut send_stream, mut recv_stream) = new_connection.connection.open_bi().await?;
 
         let message = WireMsg::EndpointEchoReq;
@@ -503,17 +503,6 @@ impl<I: ConnId> Endpoint<I> {
                 Err(Error::NoEchoServiceResponse)
             }
         }
-    }
-
-    /// Creates a fresh connection without looking at the connection pool and connection duplicator.
-    pub(crate) async fn create_new_connection(
-        &self,
-        peer_addr: &SocketAddr,
-    ) -> Result<quinn::NewConnection> {
-        let new_connection = self.attempt_connection(peer_addr).await?;
-
-        trace!("Successfully created new connection to peer: {}", peer_addr);
-        Ok(new_connection)
     }
 
     pub(crate) async fn add_new_connection_to_pool(&self, conn: quinn::NewConnection) {
