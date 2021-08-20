@@ -11,7 +11,7 @@ use crate::Endpoint;
 
 use super::{
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
-    error::{Error, Result},
+    error::{ConnectionError, Error, Result},
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
@@ -45,7 +45,10 @@ impl<I: ConnId> Connection<I> {
     }
 
     /// Priority default is 0. Both lower and higher can be passed in.
-    pub(crate) async fn open_bi(&self, priority: i32) -> Result<(SendStream, RecvStream)> {
+    pub(crate) async fn open_bi(
+        &self,
+        priority: i32,
+    ) -> Result<(SendStream, RecvStream), ConnectionError> {
         let (send_stream, recv_stream) = self.handle_error(self.quic_conn.open_bi().await).await?;
         let send_stream = SendStream::new(send_stream);
         send_stream.set_priority(priority);
