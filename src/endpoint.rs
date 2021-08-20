@@ -322,7 +322,7 @@ impl<I: ConnId> Endpoint<I> {
     }
 
     /// Removes all existing connections to a given peer
-    pub async fn disconnect_from(&self, peer_addr: &SocketAddr) -> Result<()> {
+    pub async fn disconnect_from(&self, peer_addr: &SocketAddr) {
         self.connection_pool
             .remove(peer_addr)
             .await
@@ -330,7 +330,6 @@ impl<I: ConnId> Endpoint<I> {
             .for_each(|conn| {
                 conn.close(0u8.into(), b"");
             });
-        Ok(())
     }
 
     /// Connects to another peer, retries for `config.retry_duration_msec` if the connection fails.
