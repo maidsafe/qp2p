@@ -173,11 +173,7 @@ impl<I: ConnId> Endpoint<I> {
             // Verify that the given socket address is reachable
             if let Some(contact) = endpoint.bootstrap_nodes.get(0) {
                 info!("Verifying provided public IP address");
-                endpoint.connect_to(contact).await?;
-                let connection = endpoint
-                    .get_connection(contact)
-                    .await
-                    .ok_or(Error::MissingConnection)?;
+                let connection = endpoint.get_or_connect_to(contact).await?;
                 let (mut send, mut recv) = connection.open_bi(0).await?;
                 send.send(WireMsg::EndpointVerificationReq(addr)).await?;
                 let response = timeout(
@@ -374,25 +370,7 @@ impl<I: ConnId> Endpoint<I> {
     /// from the pool and the subsequent call to `connect_to` is guaranteed to reopen new connection
     /// too.
     pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<()> {
-        if self.connection_pool.has_addr(node_addr).await {
-            trace!("We are already connected to this peer: {}", node_addr);
-            return Ok(());
-        }
-
-        // Check if a connect attempt to this address is already in progress.
-        let completion = match self.connection_deduplicator.query(node_addr).await {
-            DedupHandle::Dup(res) => return res.map_err(Into::into),
-            DedupHandle::New(completion) => completion,
-        };
-        let final_conn = self.attempt_connection(node_addr).await?;
-
-        trace!("Successfully connected to peer: {}", node_addr);
-
-        self.add_new_connection_to_pool(final_conn).await;
-
-        // Notify any duplicate attempts (ignore the error if there are none)
-        let _ = completion.complete(Ok(()));
-
+        let _ = self.get_or_connect_to(node_addr).await?;
         Ok(())
     }
 
@@ -415,14 +393,10 @@ impl<I: ConnId> Endpoint<I> {
         // Attempt to create a new connection to all nodes and return the first one to succeed
         let tasks = peer_addrs
             .iter()
-            .map(|addr| Box::pin(self.attempt_connection(addr)));
+            .map(|addr| Box::pin(self.get_or_connect_to(addr)));
 
         match futures::future::select_ok(tasks).await {
-            Ok((connection, _)) => {
-                let peer = connection.connection.remote_address();
-                self.add_new_connection_to_pool(connection).await;
-                Some(peer)
-            }
+            Ok((connection, _)) => Some(connection.remote_address()),
             Err(error) => {
                 error!("Failed to bootstrap to the network, last error: {}", error);
                 None
@@ -430,8 +404,205 @@ impl<I: ConnId> Endpoint<I> {
         }
     }
 
-    /// Attempt a connection to a node_addr using exponential backoff
-    async fn attempt_connection(
+    /// Verify if an address is publicly reachable. This will attempt to create
+    /// a new connection and use it to exchange a message and verify that the node
+    /// can be reached.
+    pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<()> {
+        trace!("Checking is reachable");
+        let connection = self.get_or_connect_to(peer_addr).await?;
+        let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
+
+        send_stream.send(WireMsg::EndpointEchoReq).await?;
+
+        match timeout(
+            Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
+            recv_stream.next(),
+        )
+        .await
+        {
+            Ok(Err(Error::UnexpectedMessageType(WireMsg::EndpointEchoResp(_)))) => Ok(()),
+            Ok(Err(Error::UnexpectedMessageType(other))) => {
+                info!(
+                    "Unexpected message type when verifying reachability: {}",
+                    &other
+                );
+                Ok(())
+            }
+            Ok(Ok(bytes)) => {
+                info!(
+                    "Unexpected message type when verifying reachability: {}",
+                    WireMsg::UserMsg(bytes)
+                );
+                Ok(())
+            }
+            Ok(Err(err)) => {
+                info!("Unable to contact peer: {:?}", err);
+                Err(err)
+            }
+            Err(err) => {
+                info!("Unable to contact peer: {:?}", err);
+                Err(Error::NoEchoServiceResponse)
+            }
+        }
+    }
+
+    /// Get the connection ID of an existing connection with the provided socket address
+    pub async fn get_connection_id(&self, addr: &SocketAddr) -> Option<I> {
+        self.connection_pool
+            .get_by_addr(addr)
+            .await
+            .map(|(_, remover)| remover.id())
+    }
+
+    /// Get the SocketAddr of a connection using the connection ID
+    pub async fn get_socket_addr_by_id(&self, addr: &I) -> Option<SocketAddr> {
+        self.connection_pool
+            .get_by_id(addr)
+            .await
+            .map(|(_, remover)| *remover.remote_addr())
+    }
+
+    /// Open a bi-directional peer with a given peer
+    /// Priority default is 0. Both lower and higher can be passed in.
+    pub async fn open_bidirectional_stream(
+        &self,
+        peer_addr: &SocketAddr,
+        priority: i32,
+    ) -> Result<(SendStream, RecvStream)> {
+        let connection = self.get_or_connect_to(peer_addr).await?;
+        connection.open_bi(priority).await
+    }
+
+    /// Sends a message to a peer. This will attempt to use an existing connection
+    /// to the destination  peer. If a connection does not exist, this will fail with `Error::MissingConnection`
+    /// Priority default is 0. Both lower and higher can be passed in.
+    pub async fn try_send_message(
+        &self,
+        msg: Bytes,
+        dest: &SocketAddr,
+        priority: i32,
+    ) -> Result<()> {
+        if let Some((conn, guard)) = self.connection_pool.get_by_addr(dest).await {
+            trace!("Connection exists in the connection pool: {}", dest);
+            let connection = Connection::new(conn, guard);
+            connection.send_uni(msg, priority).await?;
+            Ok(())
+        } else {
+            Err(Error::MissingConnection)
+        }
+    }
+
+    /// Sends a message to a peer. This will attempt to use an existing connection
+    /// to the peer first. If this connection is broken or doesn't exist
+    /// a new connection is created and the message is sent.
+    /// Priority default is 0. Both lower and higher can be passed in.
+    pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr, priority: i32) -> Result<()> {
+        let connection = self.get_or_connect_to(dest).await?;
+        self.retry(|| async { Ok(connection.send_uni(msg.clone(), priority).await?) })
+            .await?;
+
+        Ok(())
+    }
+
+    /// Close all the connections of this endpoint immediately and stop accepting new connections.
+    pub fn close(&self) {
+        let _ = self.termination_tx.send(());
+        self.quic_endpoint.close(0_u32.into(), b"")
+    }
+
+    // Private helper
+    async fn query_ip_echo_service(&self) -> Result<SocketAddr> {
+        // Bail out early if we don't have any contacts.
+        if self.bootstrap_nodes.is_empty() {
+            return Err(Error::NoEchoServerEndpointDefined);
+        }
+
+        let mut tasks = Vec::default();
+        for node in self.bootstrap_nodes.iter().cloned() {
+            let endpoint = self.clone();
+            let task_handle = tokio::spawn(async move {
+                debug!("Connecting to {:?}", &node);
+                let connection = endpoint.get_or_connect_to(&node).await?;
+                let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
+                send_stream.send(WireMsg::EndpointEchoReq).await?;
+                match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
+                    Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
+                    Ok(msg) => Err(Error::UnexpectedMessageType(msg)),
+                    Err(err) => Err(err),
+                }
+            });
+            tasks.push(task_handle);
+        }
+
+        let (result, _) = futures::future::select_ok(tasks).await.map_err(|err| {
+            error!("Failed to contact echo service: {}", err);
+            Error::EchoServiceFailure(err.to_string())
+        })?;
+
+        result
+    }
+
+    /// Returns the list of boostrap nodes that the endpoint will try bootstrapping to.
+    /// This is the combined list of contacts from the Hard Coded contacts in the config
+    /// and the bootstrap cache (if enabled)
+    pub fn bootstrap_nodes(&self) -> &[SocketAddr] {
+        &self.bootstrap_nodes
+    }
+
+    /// Get a connection from the pool, or create one, for the given `addr`.
+    pub(crate) async fn get_or_connect_to(
+        &self,
+        addr: &SocketAddr,
+    ) -> Result<Connection<I>, ConnectionError> {
+        let completion = loop {
+            if let Some((conn, remover)) = self.connection_pool.get_by_addr(addr).await {
+                trace!("We are already connected to this peer: {}", addr);
+                return Ok(Connection::new(conn, remover));
+            }
+
+            // Check if a connect attempt to this address is already in progress.
+            match self.connection_deduplicator.query(addr).await {
+                DedupHandle::Dup(Ok(())) => continue, // the connection should now be in the pool
+                DedupHandle::Dup(Err(error)) => return Err(error), // cannot connect
+                DedupHandle::New(completion) => break completion,
+            }
+        };
+
+        match self.new_connection(addr).await {
+            Ok(new_connection) => {
+                trace!("Successfully connected to peer: {}", addr);
+
+                let connection = new_connection.connection;
+                let id = ConnId::generate(&connection.remote_address());
+                let remover = self
+                    .connection_pool
+                    .insert(id, connection.remote_address(), connection.clone())
+                    .await;
+
+                listen_for_incoming_messages(
+                    new_connection.uni_streams,
+                    new_connection.bi_streams,
+                    remover.clone(),
+                    self.message_tx.clone(),
+                    self.disconnection_tx.clone(),
+                    self.clone(),
+                );
+
+                let _ = completion.complete(Ok(()));
+                Ok(Connection::new(connection, remover))
+            }
+            Err(error) => {
+                let _ = completion.complete(Err(error.clone()));
+                Err(error)
+            }
+        }
+    }
+
+    /// Attempt a connection to a node_addr.
+    ///
+    /// All failures are retried with exponential back-off. This doesn't use the connection pool, it
+    /// will always try to open a new connection.
+    async fn new_connection(
         &self,
         node_addr: &SocketAddr,
     ) -> Result<quinn::NewConnection, ConnectionError> {
@@ -463,184 +634,6 @@ impl<I: ConnId> Endpoint<I> {
             Ok(new_conn)
         })
         .await
-    }
-
-    /// Verify if an address is publicly reachable. This will attempt to create
-    /// a new connection and use it to exchange a message and verify that the node
-    /// can be reached.
-    pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<()> {
-        trace!("Checking is reachable");
-        let new_connection = self.attempt_connection(peer_addr).await?;
-        let (mut send_stream, mut recv_stream) = new_connection.connection.open_bi().await?;
-
-        let message = WireMsg::EndpointEchoReq;
-        message.write_to_stream(&mut send_stream).await?;
-
-        match timeout(
-            Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
-            WireMsg::read_from_stream(&mut recv_stream),
-        )
-        .await
-        {
-            Ok(Ok(WireMsg::EndpointEchoResp(_))) => Ok(()),
-            Ok(Ok(other)) => {
-                info!(
-                    "Unexpected message type when verifying reachability: {}",
-                    &other
-                );
-                Ok(())
-            }
-            Ok(Err(err)) => {
-                info!("Unable to contact peer: {:?}", err);
-                Err(err)
-            }
-            Err(err) => {
-                info!("Unable to contact peer: {:?}", err);
-                Err(Error::NoEchoServiceResponse)
-            }
-        }
-    }
-
-    pub(crate) async fn add_new_connection_to_pool(&self, conn: quinn::NewConnection) {
-        let id = ConnId::generate(&conn.connection.remote_address());
-        let guard = self
-            .connection_pool
-            .insert(id, conn.connection.remote_address(), conn.connection)
-            .await;
-
-        listen_for_incoming_messages(
-            conn.uni_streams,
-            conn.bi_streams,
-            guard,
-            self.message_tx.clone(),
-            self.disconnection_tx.clone(),
-            self.clone(),
-        );
-    }
-
-    /// Get an existing connection for the peer address.
-    pub(crate) async fn get_connection(&self, peer_addr: &SocketAddr) -> Option<Connection<I>> {
-        if let Some((conn, guard)) = self.connection_pool.get_by_addr(peer_addr).await {
-            trace!("Connection exists in the connection pool: {}", peer_addr);
-            Some(Connection::new(conn, guard))
-        } else {
-            None
-        }
-    }
-
-    /// Get the connection ID of an existing connection with the provided socket address
-    pub async fn get_connection_id(&self, addr: &SocketAddr) -> Option<I> {
-        self.connection_pool
-            .get_by_addr(addr)
-            .await
-            .map(|(_, remover)| remover.id())
-    }
-
-    /// Get the SocketAddr of a connection using the connection ID
-    pub async fn get_socket_addr_by_id(&self, addr: &I) -> Option<SocketAddr> {
-        self.connection_pool
-            .get_by_id(addr)
-            .await
-            .map(|(_, remover)| *remover.remote_addr())
-    }
-
-    /// Open a bi-directional peer with a given peer
-    /// Priority default is 0. Both lower and higher can be passed in.
-    pub async fn open_bidirectional_stream(
-        &self,
-        peer_addr: &SocketAddr,
-        priority: i32,
-    ) -> Result<(SendStream, RecvStream)> {
-        self.connect_to(peer_addr).await?;
-        let connection = self
-            .get_connection(peer_addr)
-            .await
-            .ok_or(Error::MissingConnection)?;
-        connection.open_bi(priority).await
-    }
-
-    /// Sends a message to a peer. This will attempt to use an existing connection
-    /// to the destination  peer. If a connection does not exist, this will fail with `Error::MissingConnection`
-    /// Priority default is 0. Both lower and higher can be passed in.
-    pub async fn try_send_message(
-        &self,
-        msg: Bytes,
-        dest: &SocketAddr,
-        priority: i32,
-    ) -> Result<()> {
-        let connection = self
-            .get_connection(dest)
-            .await
-            .ok_or(Error::MissingConnection)?;
-        connection.send_uni(msg, priority).await?;
-        Ok(())
-    }
-
-    /// Sends a message to a peer. This will attempt to use an existing connection
-    /// to the peer first. If this connection is broken or doesn't exist
-    /// a new connection is created and the message is sent.
-    /// Priority default is 0. Both lower and higher can be passed in.
-    pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr, priority: i32) -> Result<()> {
-        if self
-            .try_send_message(msg.clone(), dest, priority)
-            .await
-            .is_ok()
-        {
-            return Ok(());
-        }
-        self.connect_to(dest).await?;
-
-        self.retry(|| async { Ok(self.try_send_message(msg.clone(), dest, priority).await?) })
-            .await
-    }
-
-    /// Close all the connections of this endpoint immediately and stop accepting new connections.
-    pub fn close(&self) {
-        let _ = self.termination_tx.send(());
-        self.quic_endpoint.close(0_u32.into(), b"")
-    }
-
-    // Private helper
-    async fn query_ip_echo_service(&self) -> Result<SocketAddr> {
-        // Bail out early if we don't have any contacts.
-        if self.bootstrap_nodes.is_empty() {
-            return Err(Error::NoEchoServerEndpointDefined);
-        }
-
-        let mut tasks = Vec::default();
-        for node in self.bootstrap_nodes.iter().cloned() {
-            let endpoint = self.clone();
-            let task_handle = tokio::spawn(async move {
-                debug!("Connecting to {:?}", &node);
-                endpoint.connect_to(&node).await?;
-                let connection = endpoint
-                    .get_connection(&node)
-                    .await
-                    .ok_or(Error::MissingConnection)?;
-                let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
-                send_stream.send(WireMsg::EndpointEchoReq).await?;
-                match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
-                    Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
-                    Ok(msg) => Err(Error::UnexpectedMessageType(msg)),
-                    Err(err) => Err(err),
-                }
-            });
-            tasks.push(task_handle);
-        }
-
-        let (result, _) = futures::future::select_ok(tasks).await.map_err(|err| {
-            error!("Failed to contact echo service: {}", err);
-            Error::EchoServiceFailure(err.to_string())
-        })?;
-
-        result
-    }
-
-    /// Returns the list of boostrap nodes that the endpoint will try bootstrapping to.
-    /// This is the combined list of contacts from the Hard Coded contacts in the config
-    /// and the bootstrap cache (if enabled)
-    pub fn bootstrap_nodes(&self) -> &[SocketAddr] {
-        &self.bootstrap_nodes
     }
 
     fn retry<R, E, Fn, Fut>(&self, op: Fn) -> impl futures::Future<Output = Result<R, E>>

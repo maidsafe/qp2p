@@ -53,17 +53,6 @@ impl<I: ConnId> ConnectionPool<I> {
         }
     }
 
-    pub(crate) async fn has_addr(&self, addr: &SocketAddr) -> bool {
-        let store = self.store.read().await;
-
-        // Efficiently fetch the first entry whose key is equal to `key` and check if it exists
-        store
-            .key_map
-            .range(Key::min(*addr)..=Key::max(*addr))
-            .next()
-            .is_some()
-    }
-
     #[allow(unused)]
     pub(crate) async fn has_id(&self, id: &I) -> bool {
         let store = self.store.read().await;
