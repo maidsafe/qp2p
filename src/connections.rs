@@ -77,6 +77,10 @@ impl<I: ConnId> Connection<I> {
         }
     }
 
+    pub(crate) fn remote_address(&self) -> SocketAddr {
+        self.quic_conn.remote_address()
+    }
+
     async fn handle_error<T, E>(&self, result: Result<T, E>) -> Result<T, E> {
         if result.is_err() {
             self.remover.remove().await
@@ -423,7 +427,7 @@ async fn handle_endpoint_verification_req<I: ConnId>(
 #[cfg(test)]
 mod tests {
     use crate::api::QuicP2p;
-    use crate::{config::Config, tests::local_addr, wire_msg::WireMsg, Error};
+    use crate::{config::Config, tests::local_addr, wire_msg::WireMsg};
     use anyhow::anyhow;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -437,16 +441,13 @@ mod tests {
         let (peer2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
         let peer2_addr = peer2.public_addr();
 
-        peer2.connect_to(&peer1_addr).await?;
+        let _ = peer2.get_or_connect_to(&peer1_addr).await?;
 
         if let Some(connecting_peer) = peer1_connections.next().await {
             assert_eq!(connecting_peer, peer2_addr);
         }
 
-        let connection = peer1
-            .get_connection(&peer2_addr)
-            .await
-            .ok_or(Error::MissingConnection)?;
+        let connection = peer1.get_or_connect_to(&peer2_addr).await?;
         let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
         let message = WireMsg::EndpointEchoReq;
         message
