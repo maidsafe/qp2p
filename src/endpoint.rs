@@ -15,7 +15,7 @@ use super::igd::forward_port;
 use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig},
-    connection_deduplicator::ConnectionDeduplicator,
+    connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
     connection_pool::ConnectionPool,
     connections::{
         listen_for_incoming_connections, listen_for_incoming_messages, Connection,
@@ -380,20 +380,18 @@ impl<I: ConnId> Endpoint<I> {
         }
 
         // Check if a connect attempt to this address is already in progress.
-        match self.connection_deduplicator.query(node_addr).await {
-            Some(Ok(())) => return Ok(()),
-            Some(Err(error)) => return Err(error.into()),
-            None => {}
-        }
+        let completion = match self.connection_deduplicator.query(node_addr).await {
+            DedupHandle::Dup(res) => return res.map_err(Into::into),
+            DedupHandle::New(completion) => completion,
+        };
         let final_conn = self.attempt_connection(node_addr).await?;
 
         trace!("Successfully connected to peer: {}", node_addr);
 
         self.add_new_connection_to_pool(final_conn).await;
 
-        self.connection_deduplicator
-            .complete(node_addr, Ok(()))
-            .await;
+        // Notify any duplicate attempts (ignore the error if there are none)
+        let _ = completion.complete(Ok(()));
 
         Ok(())
     }
@@ -458,10 +456,6 @@ impl<I: ConnId> Endpoint<I> {
                 }
                 Err(error) => {
                     error!("some error: {:?}", error);
-                    self.connection_deduplicator
-                        .complete(node_addr, Err(error.clone().into()))
-                        .await;
-
                     Err(ConnectionError::from(error))
                 }
             }?;
