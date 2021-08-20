@@ -369,7 +369,7 @@ impl<I: ConnId> Endpoint<I> {
     /// When sending a message on `Connection` fails, the connection is also automatically removed
     /// from the pool and the subsequent call to `connect_to` is guaranteed to reopen new connection
     /// too.
-    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<()> {
+    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(), ConnectionError> {
         let _ = self.get_or_connect_to(node_addr).await?;
         Ok(())
     }
@@ -468,7 +468,7 @@ impl<I: ConnId> Endpoint<I> {
         &self,
         peer_addr: &SocketAddr,
         priority: i32,
-    ) -> Result<(SendStream, RecvStream)> {
+    ) -> Result<(SendStream, RecvStream), ConnectionError> {
         let connection = self.get_or_connect_to(peer_addr).await?;
         connection.open_bi(priority).await
     }
