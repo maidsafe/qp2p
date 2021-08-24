@@ -131,7 +131,7 @@ impl<I: ConnId> Endpoint<I> {
         Ok(endpoint)
     }
 
-    pub(crate) async fn new(
+    pub(crate) async fn _new(
         quic_endpoint: quinn::Endpoint,
         quic_incoming: quinn::Incoming,
         bootstrap_nodes: Vec<SocketAddr>,

@@ -180,7 +180,7 @@ impl<I: ConnId> QuicP2p<I> {
             quinn_endpoint.local_addr()?
         );
 
-        let endpoint = Endpoint::new(
+        let endpoint = Endpoint::_new(
             quinn_endpoint,
             quinn_incoming,
             bootstrap_nodes,
