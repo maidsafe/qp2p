@@ -228,23 +228,6 @@ impl From<quinn::ConnectionClose> for Close {
     }
 }
 
-/// An opaque error code indicating a transport failure.
-///
-/// This can be turned to a string via its `Debug` and `Display` impls, but is otherwise opaque.
-pub struct TransportErrorCode(quinn_proto::TransportErrorCode);
-
-impl fmt::Debug for TransportErrorCode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl fmt::Display for TransportErrorCode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 /// Errors that can cause connection loss.
 // This is a copy of `quinn::ConnectionError` without the `*Closed` variants, since we want to
 // separate them in our interface.
@@ -265,4 +248,21 @@ pub enum ConnectionError {
     /// Communication with the peer has lapsed for longer than the negotiated idle timeout.
     #[error("{}", quinn::ConnectionError::TimedOut)]
     TimedOut,
+}
+
+/// An opaque error code indicating a transport failure.
+///
+/// This can be turned to a string via its `Debug` and `Display` impls, but is otherwise opaque.
+pub struct TransportErrorCode(quinn_proto::TransportErrorCode);
+
+impl fmt::Debug for TransportErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
+
+impl fmt::Display for TransportErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
