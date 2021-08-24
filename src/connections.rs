@@ -11,7 +11,7 @@ use crate::Endpoint;
 
 use super::{
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
-    error::{ConnectionError, Error, Result},
+    error::{ConnectionError, Error, Result, SendError},
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
@@ -57,7 +57,7 @@ impl<I: ConnId> Connection<I> {
 
     /// Send message to peer using a uni-directional stream.
     /// Priority default is 0. Both lower and higher can be passed in.
-    pub(crate) async fn send_uni(&self, msg: Bytes, priority: i32) -> Result<()> {
+    pub(crate) async fn send_uni(&self, msg: Bytes, priority: i32) -> Result<(), SendError> {
         let mut send_stream = self.handle_error(self.quic_conn.open_uni().await).await?;
 
         // quinn returns `UnknownStream` error if the stream does not exist. We ignore it, on the
@@ -148,17 +148,17 @@ impl SendStream {
     }
 
     /// Send a message using the stream created by the initiator
-    pub async fn send_user_msg(&mut self, msg: Bytes) -> Result<()> {
+    pub async fn send_user_msg(&mut self, msg: Bytes) -> Result<(), SendError> {
         send_msg(&mut self.quinn_send_stream, msg).await
     }
 
     /// Send a wire message
-    pub(crate) async fn send(&mut self, msg: WireMsg) -> Result<()> {
+    pub(crate) async fn send(&mut self, msg: WireMsg) -> Result<(), SendError> {
         msg.write_to_stream(&mut self.quinn_send_stream).await
     }
 
     /// Gracefully finish current stream
-    pub async fn finish(mut self) -> Result<()> {
+    pub async fn finish(mut self) -> Result<(), SendError> {
         self.quinn_send_stream.finish().await?;
         Ok(())
     }
@@ -176,7 +176,7 @@ async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg> {
 }
 
 // Helper to send bytes to peer using the provided stream.
-async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<()> {
+async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result<(), SendError> {
     let wire_msg = WireMsg::UserMsg(msg);
     wire_msg.write_to_stream(&mut send_stream).await?;
     Ok(())
