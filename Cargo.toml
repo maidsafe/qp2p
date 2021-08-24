@@ -62,7 +62,8 @@ xor_name = "3.0.0"
 ]
 
 [dev-dependencies]
-anyhow = "1.0.36"
+color-eyre = "0.5.11"
+ctor = "0.1.20"
 rand = "~0.7.3"
 tracing-test = "0.1.0"
 tracing-subscriber = "0.2.19"

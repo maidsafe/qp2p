@@ -427,10 +427,10 @@ async fn handle_endpoint_verification_req<I: ConnId>(
 mod tests {
     use crate::api::QuicP2p;
     use crate::{config::Config, tests::local_addr, wire_msg::WireMsg};
-    use anyhow::anyhow;
+    use color_eyre::eyre::{eyre, Result};
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn echo_service() -> Result<(), anyhow::Error> {
+    async fn echo_service() -> Result<()> {
         let qp2p = QuicP2p::<[u8; 32]>::with_config(Config::default())?;
 
         // Create Endpoint
@@ -456,7 +456,7 @@ mod tests {
         if let WireMsg::EndpointEchoResp(addr) = message {
             assert_eq!(addr, peer1_addr);
         } else {
-            anyhow!("Unexpected response to EchoService request");
+            eyre!("Unexpected response to EchoService request");
         }
         Ok(())
     }

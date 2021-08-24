@@ -8,8 +8,8 @@
 // Software.
 
 use crate::{Config, ConnId, QuicP2p};
-use anyhow::Result;
 use bytes::Bytes;
+use color_eyre::eyre::Result;
 use std::{
     net::{Ipv4Addr, SocketAddr},
     time::Duration,
@@ -21,6 +21,11 @@ type Digest256 = [u8; 32];
 
 mod common;
 mod quinn;
+
+#[ctor::ctor]
+fn setup() {
+    color_eyre::install().expect("color_eyre::install() should only be called once");
+}
 
 impl ConnId for [u8; 32] {
     fn generate(_socket_addr: &SocketAddr) -> Self {

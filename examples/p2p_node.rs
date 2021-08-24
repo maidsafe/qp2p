@@ -12,8 +12,8 @@
 //!
 //! We then proceed to listening for new connections/messages.
 
-use anyhow::Result;
 use bytes::Bytes;
+use color_eyre::eyre::Result;
 use qp2p::{Config, ConnId, QuicP2p};
 use std::{
     env,
@@ -32,6 +32,8 @@ impl ConnId for XId {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    color_eyre::install()?;
+
     const MSG_MARCO: &str = "marco";
     const MSG_POLO: &str = "polo";
 

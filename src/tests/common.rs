@@ -8,7 +8,7 @@
 // Software.
 
 use super::{hash, local_addr, new_qp2p, random_msg};
-use anyhow::{anyhow, Result};
+use color_eyre::eyre::{bail, eyre, Report, Result};
 use futures::{future, stream::FuturesUnordered, StreamExt};
 use std::{collections::BTreeSet, time::Duration};
 use tokio::time::timeout;
@@ -28,7 +28,7 @@ async fn successful_connection() -> Result<()> {
     if let Some(connecting_peer) = peer1_incoming_connections.next().await {
         assert_eq!(connecting_peer, peer2_addr);
     } else {
-        anyhow!("No incoming connection");
+        eyre!("No incoming connection");
     }
 
     Ok(())
@@ -55,7 +55,7 @@ async fn single_message() -> Result<()> {
     if let Some(connecting_peer) = peer1_incoming_connections.next().await {
         assert_eq!(connecting_peer, peer2_addr);
     } else {
-        anyhow!("No incoming connection");
+        eyre!("No incoming connection");
     }
 
     // Peer 2 gets an incoming message
@@ -63,7 +63,7 @@ async fn single_message() -> Result<()> {
         assert_eq!(source, peer2_addr);
         assert_eq!(message, msg_from_peer2);
     } else {
-        anyhow!("No incoming message");
+        eyre!("No incoming message");
     }
     Ok(())
 }
@@ -87,14 +87,14 @@ async fn reuse_outgoing_connection() -> Result<()> {
     if let Some(connecting_peer) = bob_incoming_connections.next().await {
         assert_eq!(connecting_peer, alice_addr);
     } else {
-        anyhow!("No incoming connection");
+        eyre!("No incoming connection");
     }
 
     if let Some((source, message)) = bob_incoming_messages.next().await {
         assert_eq!(source, alice_addr);
         assert_eq!(message, msg0);
     } else {
-        anyhow!("No incoming message");
+        eyre!("No incoming message");
     }
 
     // Try connecting again and send a message
@@ -106,14 +106,14 @@ async fn reuse_outgoing_connection() -> Result<()> {
     if let Ok(Some(connecting_peer)) =
         timeout(Duration::from_secs(2), bob_incoming_connections.next()).await
     {
-        anyhow!("Unexpected incoming connection from {}", connecting_peer);
+        eyre!("Unexpected incoming connection from {}", connecting_peer);
     }
 
     if let Some((source, message)) = bob_incoming_messages.next().await {
         assert_eq!(source, alice_addr);
         assert_eq!(message, msg1);
     } else {
-        anyhow!("No incoming message");
+        eyre!("No incoming message");
     }
     Ok(())
 }
@@ -138,14 +138,14 @@ async fn reuse_incoming_connection() -> Result<()> {
     if let Some(connecting_peer) = bob_incoming_connections.next().await {
         assert_eq!(connecting_peer, alice_addr);
     } else {
-        anyhow!("No incoming connection");
+        eyre!("No incoming connection");
     }
 
     if let Some((source, message)) = bob_incoming_messages.next().await {
         assert_eq!(source, alice_addr);
         assert_eq!(message, msg0);
     } else {
-        anyhow!("No incoming message");
+        eyre!("No incoming message");
     }
 
     // Bob tries to connect to alice and sends a message
@@ -158,14 +158,14 @@ async fn reuse_incoming_connection() -> Result<()> {
     if let Ok(Some(connecting_peer)) =
         timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
     {
-        anyhow!("Unexpected incoming connection from {}", connecting_peer);
+        eyre!("Unexpected incoming connection from {}", connecting_peer);
     }
 
     if let Some((source, message)) = alice_incoming_messages.next().await {
         assert_eq!(source, bob_addr);
         assert_eq!(message, msg1);
     } else {
-        anyhow!("No incoming message");
+        eyre!("No incoming message");
     }
     Ok(())
 }
@@ -187,7 +187,7 @@ async fn disconnection() -> Result<()> {
     if let Some(connecting_peer) = bob_incoming_connections.next().await {
         assert_eq!(connecting_peer, alice_addr);
     } else {
-        anyhow!("No incoming connection");
+        eyre!("No incoming connection");
     }
 
     // After Alice disconnects from Bob both peers should receive the disconnected event.
@@ -196,13 +196,13 @@ async fn disconnection() -> Result<()> {
     if let Some(disconnected_peer) = alice_disconnections.next().await {
         assert_eq!(disconnected_peer, bob_addr);
     } else {
-        anyhow!("Missing disconnection event");
+        eyre!("Missing disconnection event");
     }
 
     if let Some(disconnected_peer) = bob_disconnections.next().await {
         assert_eq!(disconnected_peer, alice_addr);
     } else {
-        anyhow!("Missing disconnection event");
+        eyre!("Missing disconnection event");
     }
 
     // This time bob connects to Alice. Since this is a *new connection*, Alice should get the connection event
@@ -211,7 +211,7 @@ async fn disconnection() -> Result<()> {
     if let Some(connected_peer) = alice_incoming_connections.next().await {
         assert_eq!(connected_peer, bob_addr);
     } else {
-        anyhow!("Missing incoming connection");
+        eyre!("Missing incoming connection");
     }
 
     Ok(())
@@ -241,13 +241,13 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     if let Some(connecting_peer) = alice_incoming_connections.next().await {
         assert_eq!(connecting_peer, bob_addr);
     } else {
-        anyhow!("No incoming connection from Bob");
+        eyre!("No incoming connection from Bob");
     }
 
     if let Some(connecting_peer) = bob_incoming_connections.next().await {
         assert_eq!(connecting_peer, alice_addr);
     } else {
-        anyhow!("No incoming connectino from Alice");
+        eyre!("No incoming connectino from Alice");
     }
 
     let msg0 = random_msg(1024);
@@ -260,14 +260,14 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
         assert_eq!(src, bob_addr);
         assert_eq!(message, msg1);
     } else {
-        anyhow!("Missing incoming message");
+        eyre!("Missing incoming message");
     }
 
     if let Some((src, message)) = bob_incoming_messages.next().await {
         assert_eq!(src, alice_addr);
         assert_eq!(message, msg0);
     } else {
-        anyhow!("Missing incoming message");
+        eyre!("Missing incoming message");
     }
 
     // Drop the connection initiated by Bob.
@@ -277,7 +277,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     if let Some(disconnected_peer) = alice_disconnections.next().await {
         assert_eq!(disconnected_peer, bob_addr);
     } else {
-        anyhow!("Missing disconnection event");
+        eyre!("Missing disconnection event");
     }
 
     // Bob connects to Alice again. This does not open a new connection but returns the connection
@@ -287,7 +287,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     if let Ok(Some(connecting_peer)) =
         timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
     {
-        anyhow!("Unexpected incoming connection from {}", connecting_peer);
+        eyre!("Unexpected incoming connection from {}", connecting_peer);
     }
 
     let msg2 = random_msg(1024);
@@ -319,13 +319,13 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     if let Some(connecting_peer) = alice_incoming_connections.next().await {
         assert_eq!(connecting_peer, bob_addr);
     } else {
-        anyhow!("Missing incoming connection");
+        eyre!("Missing incoming connection");
     }
 
     if let Ok(Some(connecting_peer)) =
         timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
     {
-        anyhow!("Unexpected incoming connection from {}", connecting_peer);
+        eyre!("Unexpected incoming connection from {}", connecting_peer);
     }
 
     // Send two messages, one from each end
@@ -340,14 +340,14 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
         assert_eq!(src, bob_addr);
         assert_eq!(message, msg1);
     } else {
-        anyhow!("No message received from Bob");
+        eyre!("No message received from Bob");
     }
 
     if let Some((src, message)) = bob_incoming_messages.next().await {
         assert_eq!(src, alice_addr);
         assert_eq!(message, msg0);
     } else {
-        anyhow!("No message from alice");
+        eyre!("No message from alice");
     }
 
     Ok(())
@@ -396,7 +396,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                             .send_message(hash_result.to_vec().into(), &src, 0)
                             .await?;
 
-                        Ok::<_, anyhow::Error>(())
+                        Ok::<_, Report>(())
                     }
                 }));
 
@@ -453,7 +453,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                     }
                 }
 
-                Ok::<_, anyhow::Error>(())
+                Ok::<_, Report>(())
             }
         }));
     }
@@ -565,7 +565,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                     }
                 }
 
-                Ok::<_, anyhow::Error>(())
+                Ok::<_, Report>(())
             }
         }));
     }
@@ -573,7 +573,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
     while let Some(result) = tasks.next().await {
         match result {
             Ok(Ok(())) => (),
-            other => anyhow::bail!("Error from test threads: {:?}", other??),
+            other => bail!("Error from test threads: {:?}", other??),
         }
     }
     Ok(())
@@ -608,7 +608,7 @@ async fn many_messages() -> Result<()> {
                 endpoint.send_message(msg, &recv_addr, 0).await?;
                 info!("sent {}", id);
 
-                Ok::<_, anyhow::Error>(())
+                Ok::<_, Report>(())
             }
         }));
     }
@@ -670,7 +670,7 @@ async fn reachability() -> Result<()> {
     let (ep2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
 
     if let Ok(()) = ep1.is_reachable(&"127.0.0.1:12345".parse()?).await {
-        anyhow!("Unexpected success");
+        eyre!("Unexpected success");
     };
     let reachable_addr = ep2.public_addr();
     ep1.is_reachable(&reachable_addr).await?;
@@ -700,7 +700,7 @@ async fn client() -> Result<()> {
     let (sender, message) = server_messages
         .next()
         .await
-        .ok_or_else(|| anyhow!("Did not receive expected message"))?;
+        .ok_or_else(|| eyre!("Did not receive expected message"))?;
     assert_eq!(sender, client.public_addr());
     assert_eq!(&message[..], b"hello");
 

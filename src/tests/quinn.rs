@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use super::{hash, random_msg};
 use crate::{api::bind, config::InternalConfig};
-use anyhow::Result;
 use bytes::Bytes;
+use color_eyre::eyre::{eyre, Report, Result};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use std::collections::BTreeSet;
@@ -151,7 +151,7 @@ fn listen_for_messages(
     let _ = tokio::spawn(async move {
         read_from_stream(&mut uni_streams, src, message_tx).await?;
         trace!("The connection to {:?} has been terminated.", src);
-        Ok::<(), anyhow::Error>(())
+        Ok::<(), Report>(())
     });
 }
 
@@ -213,9 +213,9 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                 sending_endpoint
                     .send_message(&src, hash_result.to_vec().into())
                     .await
-                    .map_err(|err| anyhow::anyhow!("Error here: {:?}", err))?;
+                    .map_err(|err| eyre!("Error here: {:?}", err))?;
 
-                Ok::<_, anyhow::Error>(())
+                Ok::<_, Report>(())
             });
 
             num_received += 1;
@@ -225,7 +225,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
             }
         }
 
-        Ok::<_, anyhow::Error>(())
+        Ok::<_, Report>(())
     });
 
     let mut senders = Vec::new();
@@ -257,7 +257,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
             info!("Sender #{} recv complete", id);
             send_complete_rx.notified().await;
             sender.close();
-            Ok::<_, anyhow::Error>(())
+            Ok::<_, Report>(())
         }));
 
         let hashes = hash_results.clone();
@@ -270,12 +270,12 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                 sender
                     .send_message(&server_addr, message.clone())
                     .await
-                    .map_err(|err| anyhow::anyhow!("Error now here: {:?}", err))?;
+                    .map_err(|err| eyre!("Error now here: {:?}", err))?;
             }
             info!("Sender #{} send complete", id);
             send_complete.notify_one();
 
-            Ok::<_, anyhow::Error>(())
+            Ok::<_, Report>(())
         }));
     }
     tasks.push(server_handle);
