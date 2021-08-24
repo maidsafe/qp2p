@@ -88,7 +88,7 @@ impl ConnectionDeduplicator {
 #[cfg(test)]
 mod tests {
     use super::{ConnectionDeduplicator, DedupHandle};
-    use anyhow::{anyhow, Result};
+    use color_eyre::eyre::{eyre, Result};
     use futures::{
         future::{select_all, try_join_all},
         Future, TryFutureExt,
@@ -114,7 +114,7 @@ mod tests {
         let completion = if let Ok(DedupHandle::New(completion)) = timeout(&mut queries[0]).await {
             completion
         } else {
-            return Err(anyhow!("Unexpected dup"));
+            return Err(eyre!("Unexpected dup"));
         };
 
         // The remaining queries should block – use a short timeout to test
@@ -130,7 +130,7 @@ mod tests {
             if let DedupHandle::Dup(Ok(())) = handle {
                 // ok
             } else {
-                return Err(anyhow!("Unexpected new"));
+                return Err(eyre!("Unexpected new"));
             }
         }
 
