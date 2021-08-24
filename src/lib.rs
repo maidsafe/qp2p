@@ -66,7 +66,7 @@ pub use connections::{DisconnectionEvents, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
 pub use error::{
     ClientEndpointError, Close, ConnectionError, Error, InternalConfigError, Result,
-    TransportErrorCode,
+    TransportErrorCode, UnexpectedMessageType,
 };
 
 #[cfg(test)]

@@ -195,7 +195,7 @@ impl<I: ConnId> Endpoint<I> {
                             "Unexpected message when verifying public endpoint: {}",
                             other
                         );
-                        return Err(Error::UnexpectedMessageType(other));
+                        return Err(Error::UnexpectedMessageType(other.into()));
                     }
                     Ok(Err(err)) => {
                         error!("Error while verifying Public IP Address");
@@ -416,22 +416,15 @@ impl<I: ConnId> Endpoint<I> {
 
         match timeout(
             Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
-            recv_stream.next(),
+            recv_stream.next_wire_msg(),
         )
         .await
         {
-            Ok(Err(Error::UnexpectedMessageType(WireMsg::EndpointEchoResp(_)))) => Ok(()),
-            Ok(Err(Error::UnexpectedMessageType(other))) => {
+            Ok(Ok(WireMsg::EndpointEchoResp(_))) => Ok(()),
+            Ok(Ok(other)) => {
                 info!(
                     "Unexpected message type when verifying reachability: {}",
                     &other
-                );
-                Ok(())
-            }
-            Ok(Ok(bytes)) => {
-                info!(
-                    "Unexpected message type when verifying reachability: {}",
-                    WireMsg::UserMsg(bytes)
                 );
                 Ok(())
             }
@@ -527,7 +520,7 @@ impl<I: ConnId> Endpoint<I> {
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
                     Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
-                    Ok(msg) => Err(Error::UnexpectedMessageType(msg)),
+                    Ok(msg) => Err(Error::UnexpectedMessageType(msg.into())),
                     Err(err) => Err(err),
                 }
             });

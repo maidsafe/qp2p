@@ -103,13 +103,17 @@ impl RecvStream {
         Self { quinn_recv_stream }
     }
 
-    /// Read next message from the stream
+    /// Read next user message from the stream
     pub async fn next(&mut self) -> Result<Bytes> {
-        match read_bytes(&mut self.quinn_recv_stream).await {
-            Ok(WireMsg::UserMsg(bytes)) => Ok(bytes),
-            Ok(msg) => Err(Error::UnexpectedMessageType(msg)),
-            Err(error) => Err(error),
+        match self.next_wire_msg().await? {
+            WireMsg::UserMsg(bytes) => Ok(bytes),
+            msg => Err(Error::UnexpectedMessageType(msg.into())),
         }
+    }
+
+    /// Read next wire msg from the stream
+    pub(crate) async fn next_wire_msg(&mut self) -> Result<WireMsg> {
+        read_bytes(&mut self.quinn_recv_stream).await
     }
 }
 
@@ -149,7 +153,7 @@ impl SendStream {
     }
 
     /// Send a wire message
-    pub async fn send(&mut self, msg: WireMsg) -> Result<()> {
+    pub(crate) async fn send(&mut self, msg: WireMsg) -> Result<()> {
         msg.write_to_stream(&mut self.quinn_send_stream).await
     }
 
