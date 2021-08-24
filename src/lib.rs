@@ -65,8 +65,9 @@ pub use connection_pool::ConnId;
 pub use connections::{DisconnectionEvents, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
 pub use error::{
-    ClientEndpointError, Close, ConnectionError, Error, InternalConfigError, Result,
-    TransportErrorCode, UnexpectedMessageType,
+    ClientEndpointError, Close, ConnectionError, Error, InternalConfigError, Result, SendError,
+    SerializationError, StreamError, TransportErrorCode, UnexpectedMessageType,
+    UnsupportedStreamOperation,
 };
 
 #[cfg(test)]

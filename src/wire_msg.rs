@@ -8,7 +8,7 @@
 // Software.
 
 use crate::{
-    error::{Error, Result},
+    error::{Error, Result, SendError},
     utils,
 };
 use bytes::Bytes;
@@ -64,7 +64,10 @@ impl WireMsg {
     }
 
     // Helper to write WireMsg bytes to the provided stream.
-    pub(crate) async fn write_to_stream(&self, send_stream: &mut quinn::SendStream) -> Result<()> {
+    pub(crate) async fn write_to_stream(
+        &self,
+        send_stream: &mut quinn::SendStream,
+    ) -> Result<(), SendError> {
         // Let's generate the message bytes
         let (msg_bytes, msg_flag) = match self {
             WireMsg::UserMsg(ref m) => (m.clone(), USER_MSG_FLAG),
@@ -118,9 +121,9 @@ struct MsgHeader {
 }
 
 impl MsgHeader {
-    fn new(msg: &Bytes, usr_msg_flag: u8) -> Result<Self> {
+    fn new(msg: &Bytes, usr_msg_flag: u8) -> Result<Self, SendError> {
         match u32::try_from(msg.len()) {
-            Err(_) => Err(Error::MaxLengthExceeded(msg.len())),
+            Err(_) => Err(SendError::TooLong(msg.len())),
             Ok(data_len) => Ok(Self {
                 version: MSG_PROTOCOL_VERSION,
                 data_len,

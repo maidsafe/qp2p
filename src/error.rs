@@ -56,9 +56,6 @@ pub enum Error {
     /// The message type flag decoded in an incoming stream is invalid/unsupported.
     #[error("Invalid message type flag found in message's header: {0}")]
     InvalidMsgFlag(u8),
-    /// Error occurred when trying to write on a currently opened message stream.
-    #[error("Stream write error")]
-    StreamWrite(#[from] quinn::WriteError),
     /// The expected amount of message bytes couldn't be read from the stream.
     #[error("Failed to read expected number of message bytes: {0}")]
     StreamRead(#[from] quinn::ReadExactError),
@@ -80,9 +77,6 @@ pub enum Error {
     /// The type of message received is not the expected one.
     #[error(transparent)]
     UnexpectedMessageType(#[from] UnexpectedMessageType),
-    /// The message exceeds the maximum message length allowed.
-    #[error("Maximum data length exceeded, length: {0}")]
-    MaxLengthExceeded(usize),
     /// Incorrect Public Address provided
     #[error("Incorrect Public Address provided")]
     IncorrectPublicAddress,
@@ -92,6 +86,9 @@ pub enum Error {
     /// Couldn't resolve Public IP address
     #[error("Unresolved Public IP address")]
     UnresolvedPublicIp,
+    /// Failed to send message.
+    #[error("Failed to send message")]
+    Send(#[from] SendError),
 }
 
 impl From<quinn::ConnectionError> for Error {
@@ -311,3 +308,81 @@ impl From<WireMsg> for UnexpectedMessageType {
         UnexpectedMessageType(msg)
     }
 }
+
+/// Errors that can occur when sending messages.
+#[derive(Debug, Error)]
+pub enum SendError {
+    /// Failed to serialize message.
+    ///
+    /// This likely indicates a bug in the library, since serializing to bytes should be infallible.
+    /// Limitations in the serde API mean we cannot verify this statically, and we don't want to
+    /// introduce potential panics.
+    #[error("Failed to serialize message")]
+    Serialization(#[source] SerializationError),
+
+    /// The serialized message is too long (max: 4 GiB).
+    #[error("The serialized message is too long ({0} bytes, max: 4 GiB)")]
+    TooLong(usize),
+
+    /// Connection was lost when trying to send a message.
+    #[error("Connection was lost when trying to send a message")]
+    ConnectionLost(#[from] ConnectionError),
+
+    /// Stream was lost when trying to send a message.
+    #[error("Stream was lost when trying to send a message")]
+    StreamLost(#[source] StreamError),
+}
+
+impl From<bincode::Error> for SendError {
+    fn from(error: bincode::Error) -> Self {
+        Self::Serialization(SerializationError(error))
+    }
+}
+
+impl From<quinn::ConnectionError> for SendError {
+    fn from(error: quinn::ConnectionError) -> Self {
+        Self::ConnectionLost(error.into())
+    }
+}
+
+impl From<quinn::WriteError> for SendError {
+    fn from(error: quinn::WriteError) -> Self {
+        match error {
+            quinn::WriteError::Stopped(code) => Self::StreamLost(StreamError::Stopped(code.into())),
+            quinn::WriteError::ConnectionClosed(error) => Self::ConnectionLost(error.into()),
+            quinn::WriteError::UnknownStream => Self::StreamLost(StreamError::Gone),
+            quinn::WriteError::ZeroRttRejected => Self::StreamLost(StreamError::Unsupported(
+                UnsupportedStreamOperation(error.into()),
+            )),
+        }
+    }
+}
+
+/// Failed to serialize message.
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct SerializationError(bincode::Error);
+
+/// Errors that can occur when interacting with streams.
+#[derive(Debug, Error)]
+pub enum StreamError {
+    /// The peer abandoned the stream.
+    #[error("The peer abandoned the stream (error code: {0})")]
+    Stopped(u64),
+
+    /// The stream was already stopped, finished, or reset.
+    #[error("The stream was already stopped, finished, or reset")]
+    Gone,
+
+    /// An error was caused by an unsupported operation.
+    ///
+    /// Additional stream errors can arise from the use of 0-RTT connections or unordered reads,
+    /// neither of which are supported by the library.
+    #[error("An error was caused by an unsupported operation")]
+    Unsupported(#[source] UnsupportedStreamOperation),
+}
+
+/// An error caused by an unsupported operation.
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct UnsupportedStreamOperation(Box<dyn std::error::Error + Send + Sync>);

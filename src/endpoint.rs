@@ -21,7 +21,7 @@ use super::{
         listen_for_incoming_connections, listen_for_incoming_messages, Connection,
         DisconnectionEvents, RecvStream, SendStream,
     },
-    error::{ClientEndpointError, ConnectionError, Result},
+    error::{ClientEndpointError, ConnectionError, Result, SendError},
 };
 use bytes::Bytes;
 use std::net::SocketAddr;
@@ -489,7 +489,12 @@ impl<I: ConnId> Endpoint<I> {
     /// to the peer first. If this connection is broken or doesn't exist
     /// a new connection is created and the message is sent.
     /// Priority default is 0. Both lower and higher can be passed in.
-    pub async fn send_message(&self, msg: Bytes, dest: &SocketAddr, priority: i32) -> Result<()> {
+    pub async fn send_message(
+        &self,
+        msg: Bytes,
+        dest: &SocketAddr,
+        priority: i32,
+    ) -> Result<(), SendError> {
         let connection = self.get_or_connect_to(dest).await?;
         self.retry(|| async { Ok(connection.send_uni(msg.clone(), priority).await?) })
             .await?;
