@@ -11,7 +11,7 @@ use crate::Endpoint;
 
 use super::{
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
-    error::{ConnectionError, Error, Result, SendError},
+    error::{ConnectionError, Error, RecvError, RecvNextError, Result, SendError},
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
@@ -104,15 +104,15 @@ impl RecvStream {
     }
 
     /// Read next user message from the stream
-    pub async fn next(&mut self) -> Result<Bytes> {
+    pub async fn next(&mut self) -> Result<Bytes, RecvNextError> {
         match self.next_wire_msg().await? {
             WireMsg::UserMsg(bytes) => Ok(bytes),
-            msg => Err(Error::UnexpectedMessageType(msg.into())),
+            msg => Err(RecvNextError::UnexpectedMessageType(msg.into())),
         }
     }
 
     /// Read next wire msg from the stream
-    pub(crate) async fn next_wire_msg(&mut self) -> Result<WireMsg> {
+    pub(crate) async fn next_wire_msg(&mut self) -> Result<WireMsg, RecvError> {
         read_bytes(&mut self.quinn_recv_stream).await
     }
 }
@@ -171,7 +171,7 @@ impl Debug for SendStream {
 }
 
 // Helper to read the message's bytes from the provided stream
-async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg> {
+async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg, RecvError> {
     WireMsg::read_from_stream(recv).await
 }
 
@@ -288,10 +288,6 @@ async fn read_on_uni_streams(
                         let _ = message_tx.send((peer_addr, bytes)).await;
                     }
                     Ok(msg) => warn!("Unexpected message type: {:?}", msg),
-                    Err(Error::StreamRead(quinn::ReadExactError::FinishedEarly)) => {
-                        warn!("Stream read finished early");
-                        break;
-                    }
                     Err(err) => {
                         warn!(
                             "Failed reading from a uni-stream for peer {:?} with: {:?}",
@@ -364,10 +360,6 @@ async fn read_on_bi_streams<I: ConnId>(
                             "Unexpected message type from peer {:?}: {:?}",
                             peer_addr, msg
                         );
-                    }
-                    Err(Error::StreamRead(quinn::ReadExactError::FinishedEarly)) => {
-                        warn!("Stream finished early");
-                        break;
                     }
                     Err(err) => {
                         warn!(

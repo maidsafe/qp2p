@@ -47,18 +47,9 @@ pub enum Error {
     /// Failure occurred when sending an echo request.
     #[error("{0}")]
     EchoServiceFailure(String),
-    /// Serialisation error, which can happen on different type of data.
-    #[error("Serialisation error")]
-    Serialisation(#[from] bincode::Error),
     /// Cannot assign port to endpoint
     #[error("Cannot assign port to endpoint {0}")]
     CannotAssignPort(u16),
-    /// The message type flag decoded in an incoming stream is invalid/unsupported.
-    #[error("Invalid message type flag found in message's header: {0}")]
-    InvalidMsgFlag(u8),
-    /// The expected amount of message bytes couldn't be read from the stream.
-    #[error("Failed to read expected number of message bytes: {0}")]
-    StreamRead(#[from] quinn::ReadExactError),
     /// Failure when trying to map a new port using IGD for automatic port forwarding.
     #[error("Could not use IGD for automatic port forwarding")]
     IgdAddPort(#[from] igd::AddAnyPortError),
@@ -71,12 +62,6 @@ pub enum Error {
     /// IGD is not supported on IPv6
     #[error("IGD is not supported on IPv6")]
     IgdNotSupported,
-    /// Response message received contains an empty payload.
-    #[error("Empty response message received from peer")]
-    EmptyResponse,
-    /// The type of message received is not the expected one.
-    #[error(transparent)]
-    UnexpectedMessageType(#[from] UnexpectedMessageType),
     /// Incorrect Public Address provided
     #[error("Incorrect Public Address provided")]
     IncorrectPublicAddress,
@@ -89,11 +74,20 @@ pub enum Error {
     /// Failed to send message.
     #[error("Failed to send message")]
     Send(#[from] SendError),
+    /// Failed to receive message.
+    #[error("Failed to receive message")]
+    Recv(#[from] RecvNextError),
 }
 
 impl From<quinn::ConnectionError> for Error {
     fn from(error: quinn::ConnectionError) -> Self {
         Self::ConnectionError(error.into())
+    }
+}
+
+impl From<RecvError> for Error {
+    fn from(error: RecvError) -> Self {
+        Self::Recv(error.into())
     }
 }
 
@@ -298,17 +292,6 @@ impl fmt::Display for TransportErrorCode {
     }
 }
 
-/// The type of message received is not the expected one.
-#[derive(Debug, Error)]
-#[error("The of the message received was not the expected one: {0}")]
-pub struct UnexpectedMessageType(WireMsg);
-
-impl From<WireMsg> for UnexpectedMessageType {
-    fn from(msg: WireMsg) -> Self {
-        UnexpectedMessageType(msg)
-    }
-}
-
 /// Errors that can occur when sending messages.
 #[derive(Debug, Error)]
 pub enum SendError {
@@ -358,10 +341,77 @@ impl From<quinn::WriteError> for SendError {
     }
 }
 
-/// Failed to serialize message.
+/// Errors that can be returned by [`RecvStream::next`](crate::RecvStream::next).
+#[derive(Debug, Error)]
+pub enum RecvNextError {
+    /// Failed to receive any message.
+    #[error(transparent)]
+    Recv(#[from] RecvError),
+
+    /// The type of message received is not the expected one.
+    #[error(transparent)]
+    UnexpectedMessageType(UnexpectedMessageType),
+}
+
+/// Errors that can occur when receiving messages.
+#[derive(Debug, Error)]
+pub enum RecvError {
+    /// Failed to deserialize message.
+    #[error("Failed to deserialize message")]
+    Serialization(#[from] SerializationError),
+
+    /// Connection was lost when trying to receive a message.
+    #[error("Connection was lost when trying to receive a message")]
+    ConnectionLost(#[from] ConnectionError),
+
+    /// Stream was lost when trying to receive a message.
+    #[error("Stream was lost when trying to receive a message")]
+    StreamLost(#[source] StreamError),
+}
+
+impl From<quinn::ConnectionError> for RecvError {
+    fn from(error: quinn::ConnectionError) -> Self {
+        Self::ConnectionLost(error.into())
+    }
+}
+
+impl From<bincode::Error> for RecvError {
+    fn from(error: bincode::Error) -> Self {
+        Self::Serialization(SerializationError(error))
+    }
+}
+
+impl From<quinn::ReadExactError> for RecvError {
+    fn from(error: quinn::ReadExactError) -> Self {
+        use quinn::{ReadError, ReadExactError};
+
+        match error {
+            ReadExactError::FinishedEarly => Self::Serialization(SerializationError::new(
+                "Received too few bytes for message",
+            )),
+            ReadExactError::ReadError(error) => match error {
+                ReadError::Reset(code) => Self::StreamLost(StreamError::Stopped(code.into())),
+                ReadError::ConnectionClosed(error) => Self::ConnectionLost(error.into()),
+                ReadError::UnknownStream => Self::StreamLost(StreamError::Gone),
+                ReadError::IllegalOrderedRead | ReadError::ZeroRttRejected => Self::StreamLost(
+                    StreamError::Unsupported(UnsupportedStreamOperation(error.into())),
+                ),
+            },
+        }
+    }
+}
+
+/// Failed to (de)serialize message.
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub struct SerializationError(bincode::Error);
+
+impl SerializationError {
+    /// Construct a `SerializationError` with an arbitrary message.
+    pub(crate) fn new(message: impl ToString) -> Self {
+        Self(bincode::ErrorKind::Custom(message.to_string()).into())
+    }
+}
 
 /// Errors that can occur when interacting with streams.
 #[derive(Debug, Error)]
@@ -386,3 +436,14 @@ pub enum StreamError {
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub struct UnsupportedStreamOperation(Box<dyn std::error::Error + Send + Sync>);
+
+/// The type of message received is not the expected one.
+#[derive(Debug, Error)]
+#[error("The of the message received was not the expected one: {0}")]
+pub struct UnexpectedMessageType(WireMsg);
+
+impl From<WireMsg> for UnexpectedMessageType {
+    fn from(msg: WireMsg) -> Self {
+        UnexpectedMessageType(msg)
+    }
+}
