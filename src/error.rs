@@ -78,8 +78,8 @@ pub enum Error {
     #[error("Empty response message received from peer")]
     EmptyResponse,
     /// The type of message received is not the expected one.
-    #[error("Type of the message received was not the expected one: {0}")]
-    UnexpectedMessageType(WireMsg),
+    #[error(transparent)]
+    UnexpectedMessageType(#[from] UnexpectedMessageType),
     /// The message exceeds the maximum message length allowed.
     #[error("Maximum data length exceeded, length: {0}")]
     MaxLengthExceeded(usize),
@@ -298,5 +298,16 @@ impl fmt::Debug for TransportErrorCode {
 impl fmt::Display for TransportErrorCode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+/// The type of message received is not the expected one.
+#[derive(Debug, Error)]
+#[error("The of the message received was not the expected one: {0}")]
+pub struct UnexpectedMessageType(WireMsg);
+
+impl From<WireMsg> for UnexpectedMessageType {
+    fn from(msg: WireMsg) -> Self {
+        UnexpectedMessageType(msg)
     }
 }

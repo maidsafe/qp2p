@@ -21,7 +21,7 @@ const MSG_PROTOCOL_VERSION: u16 = 0x0001;
 
 /// Final type serialised and sent on the wire by `QuicP2p`
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum WireMsg {
+pub(crate) enum WireMsg {
     EndpointEchoReq,
     EndpointEchoResp(SocketAddr),
     EndpointVerificationReq(SocketAddr),
@@ -34,7 +34,7 @@ const ECHO_SRVC_MSG_FLAG: u8 = 0x01;
 
 impl WireMsg {
     // Read a message's bytes from the provided stream
-    pub async fn read_from_stream(recv: &mut quinn::RecvStream) -> Result<Self> {
+    pub(crate) async fn read_from_stream(recv: &mut quinn::RecvStream) -> Result<Self> {
         let mut header_bytes = [0; MSG_HEADER_LEN];
         recv.read_exact(&mut header_bytes).await?;
 
@@ -64,7 +64,7 @@ impl WireMsg {
     }
 
     // Helper to write WireMsg bytes to the provided stream.
-    pub async fn write_to_stream(&self, send_stream: &mut quinn::SendStream) -> Result<()> {
+    pub(crate) async fn write_to_stream(&self, send_stream: &mut quinn::SendStream) -> Result<()> {
         // Let's generate the message bytes
         let (msg_bytes, msg_flag) = match self {
             WireMsg::UserMsg(ref m) => (m.clone(), USER_MSG_FLAG),
