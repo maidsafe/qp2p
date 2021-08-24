@@ -8,7 +8,7 @@
 // Software.
 
 use crate::{
-    error::{Error, Result, SendError},
+    error::{RecvError, Result, SendError, SerializationError},
     utils,
 };
 use bytes::Bytes;
@@ -34,7 +34,7 @@ const ECHO_SRVC_MSG_FLAG: u8 = 0x01;
 
 impl WireMsg {
     // Read a message's bytes from the provided stream
-    pub(crate) async fn read_from_stream(recv: &mut quinn::RecvStream) -> Result<Self> {
+    pub(crate) async fn read_from_stream(recv: &mut quinn::RecvStream) -> Result<Self, RecvError> {
         let mut header_bytes = [0; MSG_HEADER_LEN];
         recv.read_exact(&mut header_bytes).await?;
 
@@ -53,13 +53,17 @@ impl WireMsg {
         recv.read_exact(&mut data).await?;
 
         if data.is_empty() {
-            Err(Error::EmptyResponse)
+            Err(SerializationError::new("Empty message received from peer").into())
         } else if msg_flag == USER_MSG_FLAG {
             Ok(WireMsg::UserMsg(From::from(data)))
         } else if msg_flag == ECHO_SRVC_MSG_FLAG {
             Ok(bincode::deserialize(&data)?)
         } else {
-            Err(Error::InvalidMsgFlag(msg_flag))
+            Err(SerializationError::new(format!(
+                "Invalid message type flag found in message header: {}",
+                msg_flag
+            ))
+            .into())
         }
     }
 

@@ -21,7 +21,7 @@ use super::{
         listen_for_incoming_connections, listen_for_incoming_messages, Connection,
         DisconnectionEvents, RecvStream, SendStream,
     },
-    error::{ClientEndpointError, ConnectionError, Result, SendError},
+    error::{ClientEndpointError, ConnectionError, RecvNextError, Result, SendError},
 };
 use bytes::Bytes;
 use std::net::SocketAddr;
@@ -195,11 +195,13 @@ impl<I: ConnId> Endpoint<I> {
                             "Unexpected message when verifying public endpoint: {}",
                             other
                         );
-                        return Err(Error::UnexpectedMessageType(other.into()));
+                        return Err(Error::Recv(RecvNextError::UnexpectedMessageType(
+                            other.into(),
+                        )));
                     }
                     Ok(Err(err)) => {
                         error!("Error while verifying Public IP Address");
-                        return Err(err);
+                        return Err(err.into());
                     }
                     Err(err) => {
                         error!(
@@ -430,7 +432,7 @@ impl<I: ConnId> Endpoint<I> {
             }
             Ok(Err(err)) => {
                 info!("Unable to contact peer: {:?}", err);
-                Err(err)
+                Err(err.into())
             }
             Err(err) => {
                 info!("Unable to contact peer: {:?}", err);
@@ -525,8 +527,10 @@ impl<I: ConnId> Endpoint<I> {
                 send_stream.send(WireMsg::EndpointEchoReq).await?;
                 match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
                     Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
-                    Ok(msg) => Err(Error::UnexpectedMessageType(msg.into())),
-                    Err(err) => Err(err),
+                    Ok(msg) => Err(Error::Recv(RecvNextError::UnexpectedMessageType(
+                        msg.into(),
+                    ))),
+                    Err(err) => Err(err.into()),
                 }
             });
             tasks.push(task_handle);
