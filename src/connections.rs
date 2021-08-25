@@ -11,7 +11,7 @@ use crate::Endpoint;
 
 use super::{
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
-    error::{ConnectionError, Error, RecvError, RecvNextError, Result, SendError},
+    error::{ConnectionError, Error, RecvError, Result, SendError, SerializationError},
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
@@ -104,10 +104,10 @@ impl RecvStream {
     }
 
     /// Read next user message from the stream
-    pub async fn next(&mut self) -> Result<Bytes, RecvNextError> {
+    pub async fn next(&mut self) -> Result<Bytes, RecvError> {
         match self.next_wire_msg().await? {
             WireMsg::UserMsg(bytes) => Ok(bytes),
-            msg => Err(RecvNextError::UnexpectedMessageType(msg.into())),
+            msg => Err(SerializationError::unexpected(msg).into()),
         }
     }
 

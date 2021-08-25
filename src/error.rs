@@ -76,18 +76,12 @@ pub enum Error {
     Send(#[from] SendError),
     /// Failed to receive message.
     #[error("Failed to receive message")]
-    Recv(#[from] RecvNextError),
+    Recv(#[from] RecvError),
 }
 
 impl From<quinn::ConnectionError> for Error {
     fn from(error: quinn::ConnectionError) -> Self {
         Self::ConnectionError(error.into())
-    }
-}
-
-impl From<RecvError> for Error {
-    fn from(error: RecvError) -> Self {
-        Self::Recv(error.into())
     }
 }
 
@@ -337,18 +331,6 @@ impl From<quinn::WriteError> for SendError {
     }
 }
 
-/// Errors that can be returned by [`RecvStream::next`](crate::RecvStream::next).
-#[derive(Debug, Error)]
-pub enum RecvNextError {
-    /// Failed to receive any message.
-    #[error(transparent)]
-    Recv(#[from] RecvError),
-
-    /// The type of message received is not the expected one.
-    #[error(transparent)]
-    UnexpectedMessageType(UnexpectedMessageType),
-}
-
 /// Errors that can occur when receiving messages.
 #[derive(Debug, Error)]
 pub enum RecvError {
@@ -407,6 +389,14 @@ impl SerializationError {
     pub(crate) fn new(message: impl ToString) -> Self {
         Self(bincode::ErrorKind::Custom(message.to_string()).into())
     }
+
+    /// Construct a `SerializationError` for an unexpected message.
+    pub(crate) fn unexpected(actual: WireMsg) -> Self {
+        Self::new(format!(
+            "The message received was not the expected one: {}",
+            actual
+        ))
+    }
 }
 
 /// Errors that can occur when interacting with streams.
@@ -432,14 +422,3 @@ pub enum StreamError {
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub struct UnsupportedStreamOperation(Box<dyn std::error::Error + Send + Sync>);
-
-/// The type of message received is not the expected one.
-#[derive(Debug, Error)]
-#[error("The of the message received was not the expected one: {0}")]
-pub struct UnexpectedMessageType(WireMsg);
-
-impl From<WireMsg> for UnexpectedMessageType {
-    fn from(msg: WireMsg) -> Self {
-        UnexpectedMessageType(msg)
-    }
-}
