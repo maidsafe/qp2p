@@ -288,6 +288,7 @@ impl<I: ConnId> Endpoint<I> {
             match timeout(
                 Duration::from_secs(PORT_FORWARD_TIMEOUT),
                 forward_port(
+                    self.local_addr.port(),
                     self.local_addr,
                     self.config.upnp_lease_duration,
                     termination_rx,
@@ -296,11 +297,7 @@ impl<I: ConnId> Endpoint<I> {
             .await
             {
                 Ok(res) => match res {
-                    Ok(port) => {
-                        if let Some(socket) = &mut addr {
-                            socket.set_port(port);
-                        }
-                    }
+                    Ok(()) => {}
                     Err(e) => {
                         info!("IGD request failed: {} - {:?}", e, e);
                     }
