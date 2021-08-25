@@ -127,7 +127,11 @@ struct MsgHeader {
 impl MsgHeader {
     fn new(msg: &Bytes, usr_msg_flag: u8) -> Result<Self, SendError> {
         match u32::try_from(msg.len()) {
-            Err(_) => Err(SendError::TooLong(msg.len())),
+            Err(_) => Err(SerializationError::new(format!(
+                "The serialized message is too long ({} bytes, max: 4 GiB)",
+                msg.len()
+            ))
+            .into()),
             Ok(data_len) => Ok(Self {
                 version: MSG_PROTOCOL_VERSION,
                 data_len,

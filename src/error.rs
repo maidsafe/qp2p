@@ -301,11 +301,7 @@ pub enum SendError {
     /// Limitations in the serde API mean we cannot verify this statically, and we don't want to
     /// introduce potential panics.
     #[error("Failed to serialize message")]
-    Serialization(#[source] SerializationError),
-
-    /// The serialized message is too long (max: 4 GiB).
-    #[error("The serialized message is too long ({0} bytes, max: 4 GiB)")]
-    TooLong(usize),
+    Serialization(#[from] SerializationError),
 
     /// Connection was lost when trying to send a message.
     #[error("Connection was lost when trying to send a message")]
