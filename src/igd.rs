@@ -17,42 +17,36 @@ use tracing::{debug, info, warn};
 
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
 pub(crate) async fn forward_port(
+    ext_port: u16,
     local_addr: SocketAddr,
     lease_interval: Duration,
     mut termination_rx: Receiver<()>,
-) -> Result<u16> {
+) -> Result<()> {
     // Cap `lease_interval` at `u32::MAX` seconds due to limits on the IGD API. Since this is an
     // outrageous length of time (~136 years) we just do so silently.
     let lease_interval = lease_interval.min(Duration::from_secs(u32::MAX.into()));
     let lease_interval_u32 = lease_interval.as_secs() as u32;
 
-    let igd_res = add_port(local_addr, lease_interval_u32).await;
+    add_port(ext_port, local_addr, lease_interval_u32).await?;
 
-    if let Ok(ext_port) = &igd_res {
-        // Start a tokio task to renew the lease periodically.
-        let ext_port = *ext_port;
-        let _ = tokio::spawn(async move {
-            let mut timer = time::interval_at(Instant::now() + lease_interval, lease_interval);
+    // Start a tokio task to renew the lease periodically.
+    let _ = tokio::spawn(async move {
+        let mut timer = time::interval_at(Instant::now() + lease_interval, lease_interval);
 
-            loop {
-                let _ = timer.tick().await;
-                if termination_rx.try_recv() != Err(TryRecvError::Empty) {
-                    break;
-                }
-                debug!("Renewing IGD lease for port {}", local_addr);
-
-                let renew_res = renew_port(local_addr, ext_port, lease_interval_u32).await;
-                match renew_res {
-                    Ok(()) => {}
-                    Err(e) => {
-                        warn!("Failed to renew IGD lease: {} - {:?}", e, e);
-                    }
-                }
+        loop {
+            let _ = timer.tick().await;
+            if termination_rx.try_recv() != Err(TryRecvError::Empty) {
+                break;
             }
-        });
-    }
+            debug!("Renewing IGD lease for port {}", local_addr);
 
-    igd_res
+            if let Err(error) = renew_port(ext_port, local_addr, lease_interval_u32).await {
+                warn!("Failed to renew IGD lease: {} - {:?}", error, error);
+            }
+        }
+    });
+
+    Ok(())
 }
 
 /// Attempts to map an external port to a local address.
@@ -62,38 +56,47 @@ pub(crate) async fn forward_port(
 ///
 /// `lease_duration` is the life time of a port mapping (in seconds). If it is 0, the
 /// mapping will continue to exist as long as possible.
-pub(crate) async fn add_port(local_addr: SocketAddr, lease_duration: u32) -> Result<u16> {
+pub(crate) async fn add_port(
+    ext_port: u16,
+    local_addr: SocketAddr,
+    lease_duration: u32,
+) -> Result<()> {
     let gateway = igd::aio::search_gateway(SearchOptions::default()).await?;
 
     debug!("IGD gateway found: {:?}", gateway);
 
     debug!("Our local address is: {:?}", local_addr);
 
-    if let SocketAddr::V4(socket_addr) = local_addr {
-        gateway
-            .add_port(
-                igd::PortMappingProtocol::UDP,
-                socket_addr.port(),
-                socket_addr,
-                lease_duration,
-                "MaidSafe.net",
-            )
-            .await?;
+    let local_addr = match local_addr {
+        SocketAddr::V4(local_addr) => local_addr,
+        _ => {
+            info!("IPv6 for IGD is not supported");
+            return Err(Error::IgdNotSupported);
+        }
+    };
 
-        let ext_port = socket_addr.port();
-        debug!("Our external port number is: {}", socket_addr.port());
+    gateway
+        .add_port(
+            igd::PortMappingProtocol::UDP,
+            ext_port,
+            local_addr,
+            lease_duration,
+            "MaidSafe.net",
+        )
+        .await?;
 
-        Ok(ext_port)
-    } else {
-        info!("IPv6 for IGD is not supported");
-        Err(Error::IgdNotSupported)
-    }
+    debug!(
+        "Successfully added port mapping for {} -> {}",
+        ext_port, local_addr
+    );
+
+    Ok(())
 }
 
 /// Renews the lease for a specified external port.
 pub(crate) async fn renew_port(
-    local_addr: SocketAddr,
     ext_port: u16,
+    local_addr: SocketAddr,
     lease_duration: u32,
 ) -> Result<()> {
     let gateway = igd::aio::search_gateway(SearchOptions::default()).await?;
