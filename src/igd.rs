@@ -7,7 +7,6 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::error::{Error, Result};
 use igd::SearchOptions;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -15,13 +14,28 @@ use tokio::sync::broadcast::{error::TryRecvError, Receiver};
 use tokio::time::{self, Instant};
 use tracing::{debug, info, warn};
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum IgdError {
+    #[error("IGD is not supported for IPv6")]
+    NotSupported,
+
+    #[error(transparent)]
+    AddAnyPort(#[from] igd::AddAnyPortError),
+
+    #[error(transparent)]
+    AddPort(#[from] igd::AddPortError),
+
+    #[error(transparent)]
+    Search(#[from] igd::SearchError),
+}
+
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
 pub(crate) async fn forward_port(
     ext_port: u16,
     local_addr: SocketAddr,
     lease_interval: Duration,
     mut termination_rx: Receiver<()>,
-) -> Result<()> {
+) -> Result<(), IgdError> {
     // Cap `lease_interval` at `u32::MAX` seconds due to limits on the IGD API. Since this is an
     // outrageous length of time (~136 years) we just do so silently.
     let lease_interval = lease_interval.min(Duration::from_secs(u32::MAX.into()));
@@ -60,7 +74,7 @@ pub(crate) async fn add_port(
     ext_port: u16,
     local_addr: SocketAddr,
     lease_duration: u32,
-) -> Result<()> {
+) -> Result<(), IgdError> {
     let gateway = igd::aio::search_gateway(SearchOptions::default()).await?;
 
     debug!("IGD gateway found: {:?}", gateway);
@@ -71,7 +85,7 @@ pub(crate) async fn add_port(
         SocketAddr::V4(local_addr) => local_addr,
         _ => {
             info!("IPv6 for IGD is not supported");
-            return Err(Error::IgdNotSupported);
+            return Err(IgdError::NotSupported);
         }
     };
 
@@ -98,7 +112,7 @@ pub(crate) async fn renew_port(
     ext_port: u16,
     local_addr: SocketAddr,
     lease_duration: u32,
-) -> Result<()> {
+) -> Result<(), IgdError> {
     let gateway = igd::aio::search_gateway(SearchOptions::default()).await?;
 
     if let SocketAddr::V4(socket_addr) = local_addr {
@@ -117,6 +131,6 @@ pub(crate) async fn renew_port(
         Ok(())
     } else {
         info!("IPv6 for IGD is not supported");
-        Err(Error::IgdNotSupported)
+        Err(IgdError::NotSupported)
     }
 }
