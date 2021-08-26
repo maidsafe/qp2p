@@ -7,9 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{
-    Config, ConnId, DisconnectionEvents, Endpoint, IncomingConnections, IncomingMessages, QuicP2p,
-};
+use crate::{Config, ConnId, DisconnectionEvents, Endpoint, IncomingConnections, IncomingMessages};
 use bytes::Bytes;
 use color_eyre::eyre::Result;
 use std::{
@@ -33,19 +31,6 @@ impl ConnId for [u8; 32] {
     fn generate(_socket_addr: &SocketAddr) -> Self {
         rand::random()
     }
-}
-
-/// Constructs a `QuicP2p` node with some sane defaults for testing.
-pub(crate) fn new_qp2p() -> Result<QuicP2p<[u8; 32]>> {
-    let qp2p = QuicP2p::<[u8; 32]>::with_config(Config {
-        // turn down the retry duration - we won't live forever
-        // note that this would just limit retries, UDP connection attempts seem to take 60s to
-        // timeout
-        min_retry_duration: Duration::from_millis(500).into(),
-        ..Config::default()
-    })?;
-
-    Ok(qp2p)
 }
 
 /// Construct an `Endpoint` with sane defaults for testing.

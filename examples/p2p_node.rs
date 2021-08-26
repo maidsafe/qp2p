@@ -14,7 +14,7 @@
 
 use bytes::Bytes;
 use color_eyre::eyre::Result;
-use qp2p::{Config, ConnId, QuicP2p};
+use qp2p::{Config, ConnId, Endpoint};
 use std::{
     env,
     net::{Ipv4Addr, SocketAddr},
@@ -40,15 +40,17 @@ async fn main() -> Result<()> {
     // collect cli args
     let args: Vec<String> = env::args().collect();
 
-    // instantiate QuicP2p with custom config
-    let qp2p: QuicP2p<XId> = QuicP2p::with_config(Config {
-        idle_timeout: Duration::from_secs(60 * 60).into(), // 1 hour idle timeout.
-        ..Default::default()
-    })?;
-
     // create an endpoint for us to listen on and send from.
-    let (node, _incoming_conns, mut incoming_messages, _disconnections) =
-        qp2p.new_endpoint((Ipv4Addr::LOCALHOST, 0).into()).await?;
+    let (node, _incoming_conns, mut incoming_messages, _disconnections, _contact) =
+        Endpoint::<XId>::new(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+            &[],
+            Config {
+                idle_timeout: Duration::from_secs(60 * 60).into(), // 1 hour idle timeout.
+                ..Default::default()
+            },
+        )
+        .await?;
 
     // if we received args then we parse them as SocketAddr and send a "marco" msg to each peer.
     if args.len() > 1 {

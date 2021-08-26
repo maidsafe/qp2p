@@ -29,7 +29,7 @@ use super::{
 use backoff::{future::retry, ExponentialBackoff};
 use bytes::Bytes;
 use std::net::SocketAddr;
-use tokio::sync::broadcast::{self, Receiver, Sender};
+use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender};
 use tokio::time::{timeout, Duration};
 use tracing::{debug, error, info, trace, warn};
@@ -251,108 +251,6 @@ impl<I: ConnId> Endpoint<I> {
         Ok(endpoint)
     }
 
-    pub(crate) async fn _new(
-        quic_endpoint: quinn::Endpoint,
-        quic_incoming: quinn::Incoming,
-        bootstrap_nodes: Vec<SocketAddr>,
-        config: InternalConfig,
-    ) -> Result<(
-        Self,
-        IncomingConnections,
-        IncomingMessages,
-        DisconnectionEvents,
-    )> {
-        let local_addr = quic_endpoint.local_addr()?;
-        let public_addr = match (config.external_ip, config.external_port) {
-            (Some(ip), Some(port)) => Some(SocketAddr::new(ip, port)),
-            _ => None,
-        };
-        let connection_pool = ConnectionPool::new();
-
-        let (message_tx, message_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
-        let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
-        let (disconnection_tx, disconnection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
-        let (termination_tx, termination_rx) = broadcast::channel(1);
-
-        let mut endpoint = Self {
-            local_addr,
-            public_addr,
-            quic_endpoint,
-            message_tx: message_tx.clone(),
-            disconnection_tx: disconnection_tx.clone(),
-            bootstrap_nodes,
-            config,
-            termination_tx,
-            connection_pool: connection_pool.clone(),
-            connection_deduplicator: ConnectionDeduplicator::new(),
-        };
-
-        if let Some(addr) = endpoint.public_addr {
-            // External IP and port number is provided
-            // This means that the user has performed manual port-forwarding
-            // Verify that the given socket address is reachable
-            if let Some(contact) = endpoint.bootstrap_nodes.get(0) {
-                info!("Verifying provided public IP address");
-                let connection = endpoint.get_or_connect_to(contact).await?;
-                let (mut send, mut recv) = connection.open_bi(0).await?;
-                send.send(WireMsg::EndpointVerificationReq(addr)).await?;
-                let response = timeout(
-                    ECHO_SERVICE_QUERY_TIMEOUT,
-                    WireMsg::read_from_stream(&mut recv.quinn_recv_stream),
-                )
-                .await;
-                match response {
-                    Ok(Ok(WireMsg::EndpointVerificationResp(valid))) => {
-                        if valid {
-                            info!("Endpoint verification successful! {} is reachable.", addr);
-                        } else {
-                            error!("Endpoint verification failed! {} is not reachable.", addr);
-                            return Err(Error::IncorrectPublicAddress);
-                        }
-                    }
-                    Ok(Ok(other)) => {
-                        error!(
-                            "Unexpected message when verifying public endpoint: {}",
-                            other
-                        );
-                        return Err(Error::Recv(SerializationError::unexpected(other).into()));
-                    }
-                    Ok(Err(err)) => {
-                        error!("Error while verifying Public IP Address");
-                        return Err(err.into());
-                    }
-                    Err(err) => {
-                        error!(
-                            "Timeout while trying to validate Public IP address: {}",
-                            err
-                        );
-                        return Err(Error::IncorrectPublicAddress);
-                    }
-                }
-            } else {
-                warn!("Public IP address not verified since bootstrap contacts are empty");
-            }
-        } else {
-            endpoint.public_addr = Some(endpoint.fetch_public_address(termination_rx).await?);
-        }
-
-        listen_for_incoming_connections(
-            quic_incoming,
-            connection_pool,
-            message_tx,
-            connection_tx,
-            disconnection_tx,
-            endpoint.clone(),
-        );
-
-        Ok((
-            endpoint,
-            IncomingConnections(connection_rx),
-            IncomingMessages(message_rx),
-            DisconnectionEvents(disconnection_rx),
-        ))
-    }
-
     /// Endpoint local address
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
@@ -361,72 +259,6 @@ impl<I: ConnId> Endpoint<I> {
     /// Get the public address of the endpoint.
     pub fn public_addr(&self) -> SocketAddr {
         self.public_addr.unwrap_or(self.local_addr)
-    }
-
-    /// Get our connection address to give to others for them to connect to us.
-    ///
-    /// Attempts to use UPnP to automatically find the public endpoint and forward a port.
-    /// Will use hard coded contacts to ask for our endpoint. If no contact is given then we'll
-    /// simply build our connection info by querying the underlying bound socket for our address.
-    /// Note that if such an obtained address is of unspecified category we will ignore that as
-    /// such an address cannot be reached and hence not useful.
-    async fn fetch_public_address(
-        &mut self,
-        #[allow(unused)] termination_rx: Receiver<()>,
-    ) -> Result<SocketAddr> {
-        // Skip port forwarding
-        if self.local_addr.ip().is_loopback() || !self.config.forward_port {
-            self.public_addr = Some(self.local_addr);
-        }
-
-        if let Some(socket_addr) = self.public_addr {
-            return Ok(socket_addr);
-        }
-
-        let mut addr = None;
-
-        #[cfg(feature = "no-igd")]
-        if self.config.forward_port {
-            warn!("Ignoring 'forward_port' flag from config since IGD has been disabled (feature 'no-igd' has been set)");
-        }
-
-        // Try to contact an echo service
-        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, self.query_ip_echo_service()).await {
-            Ok(Ok(echo_res)) => addr = Some(echo_res),
-            Ok(Err(err)) => info!("Could not contact echo service: {} - {:?}", err, err),
-            Err(err) => info!("Query to echo service timed out: {:?}", err),
-        }
-
-        #[cfg(not(feature = "no-igd"))]
-        if self.config.forward_port {
-            // Attempt to use IGD for port forwarding
-            match timeout(
-                PORT_FORWARD_TIMEOUT,
-                forward_port(
-                    self.local_addr.port(),
-                    self.local_addr,
-                    self.config.upnp_lease_duration,
-                    termination_rx,
-                ),
-            )
-            .await
-            {
-                Ok(res) => match res {
-                    Ok(()) => {}
-                    Err(e) => {
-                        info!("IGD request failed: {} - {:?}", e, e);
-                    }
-                },
-                Err(e) => {
-                    info!("IGD request timeout: {:?}", e);
-                }
-            }
-        }
-
-        addr.map_or(Err(Error::UnresolvedPublicIp), |socket_addr| {
-            self.public_addr = Some(socket_addr);
-            Ok(socket_addr)
-        })
     }
 
     /// Removes all existing connections to a given peer
@@ -613,38 +445,6 @@ impl<I: ConnId> Endpoint<I> {
     pub fn close(&self) {
         let _ = self.termination_tx.send(());
         self.quic_endpoint.close(0_u32.into(), b"")
-    }
-
-    // Private helper
-    async fn query_ip_echo_service(&self) -> Result<SocketAddr> {
-        // Bail out early if we don't have any contacts.
-        if self.bootstrap_nodes.is_empty() {
-            return Err(Error::NoEchoServerEndpointDefined);
-        }
-
-        let mut tasks = Vec::default();
-        for node in self.bootstrap_nodes.iter().cloned() {
-            let endpoint = self.clone();
-            let task_handle = tokio::spawn(async move {
-                debug!("Connecting to {:?}", &node);
-                let connection = endpoint.get_or_connect_to(&node).await?;
-                let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
-                send_stream.send(WireMsg::EndpointEchoReq).await?;
-                match WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await {
-                    Ok(WireMsg::EndpointEchoResp(socket_addr)) => Ok(socket_addr),
-                    Ok(msg) => Err(Error::Recv(SerializationError::unexpected(msg).into())),
-                    Err(err) => Err(err.into()),
-                }
-            });
-            tasks.push(task_handle);
-        }
-
-        let (result, _) = futures::future::select_ok(tasks).await.map_err(|err| {
-            error!("Failed to contact echo service: {}", err);
-            Error::EchoServiceFailure(err.to_string())
-        })?;
-
-        result
     }
 
     /// Returns the list of boostrap nodes that the endpoint will try bootstrapping to.
