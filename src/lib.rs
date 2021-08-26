@@ -47,7 +47,6 @@
     unused_results
 )]
 
-mod api;
 pub mod config;
 mod connection_deduplicator;
 mod connection_pool;
@@ -59,7 +58,6 @@ mod igd;
 mod utils;
 mod wire_msg;
 
-pub use api::QuicP2p;
 pub use config::{Config, ConfigError};
 pub use connection_pool::ConnId;
 pub use connections::{DisconnectionEvents, RecvStream, SendStream};

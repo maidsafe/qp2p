@@ -7,7 +7,8 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use super::{hash, local_addr, new_endpoint, new_qp2p, random_msg};
+use super::{hash, local_addr, new_endpoint, random_msg};
+use crate::{Config, Endpoint};
 use color_eyre::eyre::{bail, eyre, Report, Result};
 use futures::{future, stream::FuturesUnordered, StreamExt};
 use std::{collections::BTreeSet, time::Duration};
@@ -633,8 +634,17 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
 
     let contacts = vec![ep1.public_addr(), ep2.public_addr(), ep3.public_addr()];
 
-    let qp2p = new_qp2p()?;
-    let (ep, _, _, _, bootstrapped_peer) = qp2p.bootstrap(local_addr(), contacts.clone()).await?;
+    let (ep, _, _, _, bootstrapped_peer) = Endpoint::<[u8; 32]>::new(
+        local_addr(),
+        &contacts,
+        Config {
+            min_retry_duration: Duration::from_millis(500).into(),
+            ..Config::default()
+        },
+    )
+    .await?;
+    let bootstrapped_peer =
+        bootstrapped_peer.ok_or_else(|| eyre!("Failed to connecto to any contact"))?;
 
     for peer in contacts {
         if peer != bootstrapped_peer {

@@ -25,42 +25,13 @@ pub enum Error {
     /// quinn connection error
     #[error("Connection lost due to error: {0}")]
     ConnectionError(#[from] ConnectionError),
-    /// Error occurred when attempting to connect to any
-    /// of the peers provided as a list of contacts.
-    #[error("Network bootstrap failed")]
-    BootstrapFailure,
-    /// No peers/contacts found in the bootstrap nodes list.
-    #[error("No nodes/peers found defined for bootstrapping")]
-    EmptyBootstrapNodesList,
-    /// I/O failure when attempting to access a local resource.
-    #[error("I/O Error")]
-    Io(#[from] io::Error),
-    /// Failed to create a new endpoint.
-    #[error("Creating endpoint")]
-    Endpoint(#[from] quinn::EndpointError),
-    /// The contacts list was found empty when attempting
-    /// to contact peers for the echo service.
-    #[error("No peers found in the contacts list to send the echo request to")]
-    NoEchoServerEndpointDefined,
     /// Timeout occurred when awaiting for a response from
     /// any of the peers contacted for the echo service.
     #[error("No response received from echo services")]
     NoEchoServiceResponse,
-    /// Failure occurred when sending an echo request.
-    #[error("{0}")]
-    EchoServiceFailure(String),
-    /// Cannot assign port to endpoint
-    #[error("Cannot assign port to endpoint {0}")]
-    CannotAssignPort(u16),
-    /// Incorrect Public Address provided
-    #[error("Incorrect Public Address provided")]
-    IncorrectPublicAddress,
     /// Missing connection
     #[error("No connection to the dest peer")]
     MissingConnection,
-    /// Couldn't resolve Public IP address
-    #[error("Unresolved Public IP address")]
-    UnresolvedPublicIp,
     /// Failed to send message.
     #[error("Failed to send message")]
     Send(#[from] SendError),

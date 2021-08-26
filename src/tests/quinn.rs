@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use super::{hash, random_msg};
-use crate::{api::bind, config::InternalConfig};
+use crate::config::InternalConfig;
 use bytes::Bytes;
 use color_eyre::eyre::{eyre, Report, Result};
 use futures::stream::FuturesUnordered;
@@ -64,7 +64,10 @@ impl Peer {
     fn new(channel_size: usize) -> Result<(Self, ChannelReceiver<(SocketAddr, Bytes)>)> {
         let config = InternalConfig::try_from_config(Default::default())?;
 
-        let (endpoint, mut incoming) = bind(config.server, "127.0.0.1:0".parse()?)?;
+        let mut builder = quinn::Endpoint::builder();
+        let _ = builder.listen(config.server.clone());
+
+        let (endpoint, mut incoming) = builder.bind(&"127.0.0.1:0".parse()?)?;
 
         let (message_tx, message_rx) = if channel_size == 0 {
             let (message_tx, message_rx) = unbounded_channel();
