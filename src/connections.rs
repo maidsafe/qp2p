@@ -11,7 +11,7 @@ use crate::Endpoint;
 
 use super::{
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
-    error::{ConnectionError, Error, RecvError, Result, SendError, SerializationError},
+    error::{ConnectionError, Error, RecvError, SendError, SerializationError},
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
@@ -263,7 +263,7 @@ async fn read_on_uni_streams(
     uni_streams: &mut quinn::IncomingUniStreams,
     peer_addr: SocketAddr,
     message_tx: Sender<(SocketAddr, Bytes)>,
-) -> Result<()> {
+) -> Result<(), Error> {
     while let Some(result) = uni_streams.next().await {
         match result {
             Err(error @ quinn::ConnectionError::ConnectionClosed(_)) => {
@@ -308,7 +308,7 @@ async fn read_on_bi_streams<I: ConnId>(
     peer_addr: SocketAddr,
     message_tx: Sender<(SocketAddr, Bytes)>,
     endpoint: &Endpoint<I>,
-) -> Result<()> {
+) -> Result<(), Error> {
     while let Some(result) = bi_streams.next().await {
         match result {
             Err(error @ quinn::ConnectionError::ConnectionClosed(_)) => {
@@ -379,7 +379,7 @@ async fn read_on_bi_streams<I: ConnId>(
 async fn handle_endpoint_echo_req(
     peer_addr: SocketAddr,
     send_stream: &mut quinn::SendStream,
-) -> Result<()> {
+) -> Result<(), Error> {
     trace!("Received Echo Request from peer {:?}", peer_addr);
     let message = WireMsg::EndpointEchoResp(peer_addr);
     message.write_to_stream(send_stream).await?;
@@ -392,7 +392,7 @@ async fn handle_endpoint_verification_req<I: ConnId>(
     addr_sent: SocketAddr,
     send_stream: &mut quinn::SendStream,
     endpoint: &Endpoint<I>,
-) -> Result<()> {
+) -> Result<(), Error> {
     trace!(
         "Received Endpoint verification request {:?} from {:?}",
         addr_sent,

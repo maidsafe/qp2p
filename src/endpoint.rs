@@ -22,8 +22,8 @@ use super::{
         DisconnectionEvents, RecvStream, SendStream,
     },
     error::{
-        ClientEndpointError, ConnectionError, EndpointError, RecvError, Result, RpcError,
-        SendError, SerializationError,
+        ClientEndpointError, ConnectionError, EndpointError, RecvError, RpcError, SendError,
+        SerializationError,
     },
 };
 use backoff::{future::retry, ExponentialBackoff};
@@ -351,7 +351,7 @@ impl<I: ConnId> Endpoint<I> {
     /// Verify if an address is publicly reachable. This will attempt to create
     /// a new connection and use it to exchange a message and verify that the node
     /// can be reached.
-    pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<()> {
+    pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<(), Error> {
         trace!("Checking is reachable");
         let connection = self.get_or_connect_to(peer_addr).await?;
         let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
@@ -413,7 +413,7 @@ impl<I: ConnId> Endpoint<I> {
         msg: Bytes,
         dest: &SocketAddr,
         priority: i32,
-    ) -> Result<()> {
+    ) -> Result<(), Error> {
         if let Some((conn, guard)) = self.connection_pool.get_by_addr(dest).await {
             trace!("Connection exists in the connection pool: {}", dest);
             let connection = Connection::new(conn, guard);
