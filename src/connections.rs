@@ -11,7 +11,7 @@ use crate::Endpoint;
 
 use super::{
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
-    error::{ConnectionError, Error, RecvError, SendError, SerializationError},
+    error::{ConnectionError, RecvError, RpcError, SendError, SerializationError},
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
@@ -258,28 +258,36 @@ pub(super) fn listen_for_incoming_messages<I: ConnId>(
     });
 }
 
+// unify uni- and bi-stream errors
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+enum StreamError {
+    Uni(#[from] RecvError),
+    Bi(#[from] RpcError),
+}
+
 // Read messages sent by peer in an unidirectional stream.
 async fn read_on_uni_streams(
     uni_streams: &mut quinn::IncomingUniStreams,
     peer_addr: SocketAddr,
     message_tx: Sender<(SocketAddr, Bytes)>,
-) -> Result<(), Error> {
+) -> Result<(), StreamError> {
     while let Some(result) = uni_streams.next().await {
         match result {
             Err(error @ quinn::ConnectionError::ConnectionClosed(_)) => {
                 trace!("Connection closed by peer {:?}", peer_addr);
-                return Err(error.into());
+                return Err(StreamError::Uni(error.into()));
             }
             Err(error @ quinn::ConnectionError::ApplicationClosed(_)) => {
                 trace!("Connection closed by peer {:?}.", peer_addr);
-                return Err(error.into());
+                return Err(StreamError::Uni(error.into()));
             }
             Err(err) => {
                 warn!(
                     "Failed to read incoming message on uni-stream for peer {:?} with: {:?}",
                     peer_addr, err
                 );
-                return Err(err.into());
+                return Err(StreamError::Uni(err.into()));
             }
             Ok(mut recv) => loop {
                 match read_bytes(&mut recv).await {
@@ -308,23 +316,23 @@ async fn read_on_bi_streams<I: ConnId>(
     peer_addr: SocketAddr,
     message_tx: Sender<(SocketAddr, Bytes)>,
     endpoint: &Endpoint<I>,
-) -> Result<(), Error> {
+) -> Result<(), StreamError> {
     while let Some(result) = bi_streams.next().await {
         match result {
             Err(error @ quinn::ConnectionError::ConnectionClosed(_)) => {
                 trace!("Connection closed by peer {:?}", peer_addr);
-                return Err(error.into());
+                return Err(StreamError::Bi(error.into()));
             }
             Err(error @ quinn::ConnectionError::ApplicationClosed(_)) => {
                 trace!("Connection closed by peer {:?}.", peer_addr);
-                return Err(error.into());
+                return Err(StreamError::Bi(error.into()));
             }
             Err(err) => {
                 warn!(
                     "Failed to read incoming message on bi-stream for peer {:?} with: {:?}",
                     peer_addr, err
                 );
-                return Err(Error::from(err));
+                return Err(StreamError::Bi(err.into()));
             }
             Ok((mut send, mut recv)) => loop {
                 match read_bytes(&mut recv).await {
@@ -338,7 +346,7 @@ async fn read_on_bi_streams<I: ConnId>(
                                 peer_addr, error
                             );
 
-                            return Err(error);
+                            return Err(StreamError::Bi(error.into()));
                         }
                     }
                     Ok(WireMsg::EndpointVerificationReq(address_sent)) => {
@@ -352,7 +360,7 @@ async fn read_on_bi_streams<I: ConnId>(
                         {
                             warn!("Failed to handle Endpoint verification request for peer {:?} with: {:?}", peer_addr, error);
 
-                            return Err(error);
+                            return Err(StreamError::Bi(error));
                         }
                     }
                     Ok(msg) => {
@@ -379,7 +387,7 @@ async fn read_on_bi_streams<I: ConnId>(
 async fn handle_endpoint_echo_req(
     peer_addr: SocketAddr,
     send_stream: &mut quinn::SendStream,
-) -> Result<(), Error> {
+) -> Result<(), SendError> {
     trace!("Received Echo Request from peer {:?}", peer_addr);
     let message = WireMsg::EndpointEchoResp(peer_addr);
     message.write_to_stream(send_stream).await?;
@@ -392,7 +400,7 @@ async fn handle_endpoint_verification_req<I: ConnId>(
     addr_sent: SocketAddr,
     send_stream: &mut quinn::SendStream,
     endpoint: &Endpoint<I>,
-) -> Result<(), Error> {
+) -> Result<(), RpcError> {
     trace!(
         "Received Endpoint verification request {:?} from {:?}",
         addr_sent,

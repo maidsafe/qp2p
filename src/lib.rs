@@ -65,8 +65,8 @@ pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
 #[cfg(not(feature = "no-igd"))]
 pub use error::UpnpError;
 pub use error::{
-    ClientEndpointError, Close, ConnectionError, EndpointError, Error, InternalConfigError,
-    RecvError, RpcError, SendError, SerializationError, StreamError, TransportErrorCode,
+    ClientEndpointError, Close, ConnectionError, EndpointError, InternalConfigError, RecvError,
+    RpcError, SendError, SerializationError, StreamError, TransportErrorCode,
     UnsupportedStreamOperation,
 };
 
