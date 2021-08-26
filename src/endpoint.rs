@@ -77,7 +77,6 @@ pub struct Endpoint<I: ConnId> {
     quic_endpoint: quinn::Endpoint,
     message_tx: MpscSender<(SocketAddr, Bytes)>,
     disconnection_tx: MpscSender<SocketAddr>,
-    bootstrap_nodes: Vec<SocketAddr>,
     config: InternalConfig,
     termination_tx: Sender<()>,
     connection_pool: ConnectionPool<I>,
@@ -160,7 +159,6 @@ impl<I: ConnId> Endpoint<I> {
             quic_endpoint,
             message_tx: message_tx.clone(),
             disconnection_tx: disconnection_tx.clone(),
-            bootstrap_nodes: Default::default(),
             config,
             termination_tx,
             connection_pool: connection_pool.clone(),
@@ -240,7 +238,6 @@ impl<I: ConnId> Endpoint<I> {
             quic_endpoint,
             message_tx,
             disconnection_tx,
-            bootstrap_nodes: Default::default(),
             config,
             termination_tx,
             connection_pool: ConnectionPool::new(),
@@ -442,13 +439,6 @@ impl<I: ConnId> Endpoint<I> {
     pub fn close(&self) {
         let _ = self.termination_tx.send(());
         self.quic_endpoint.close(0_u32.into(), b"")
-    }
-
-    /// Returns the list of boostrap nodes that the endpoint will try bootstrapping to.
-    /// This is the combined list of contacts from the Hard Coded contacts in the config
-    /// and the bootstrap cache (if enabled)
-    pub fn bootstrap_nodes(&self) -> &[SocketAddr] {
-        &self.bootstrap_nodes
     }
 
     /// Get a connection from the pool, or create one, for the given `addr`.
