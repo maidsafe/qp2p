@@ -15,27 +15,6 @@ use bytes::Bytes;
 use std::{fmt, io, net::SocketAddr};
 use thiserror::Error;
 
-/// Error types returned by the qp2p public API.
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum Error {
-    /// quinn connection error
-    #[error("Connection lost due to error: {0}")]
-    ConnectionError(#[from] ConnectionError),
-    /// Failed to send message.
-    #[error("Failed to send message")]
-    Send(#[from] SendError),
-    /// Failed to receive message.
-    #[error("Failed to receive message")]
-    Recv(#[from] RecvError),
-}
-
-impl From<quinn::ConnectionError> for Error {
-    fn from(error: quinn::ConnectionError) -> Self {
-        Self::ConnectionError(error.into())
-    }
-}
-
 /// Errors returned from [`Endpoint::new`](crate::Endpoint::new).
 #[derive(Debug, Error)]
 pub enum EndpointError {
@@ -323,6 +302,12 @@ pub enum RpcError {
 // before sending.
 impl From<ConnectionError> for RpcError {
     fn from(error: ConnectionError) -> Self {
+        Self::Send(error.into())
+    }
+}
+
+impl From<quinn::ConnectionError> for RpcError {
+    fn from(error: quinn::ConnectionError) -> Self {
         Self::Send(error.into())
     }
 }
