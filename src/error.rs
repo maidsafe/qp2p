@@ -50,18 +50,6 @@ pub enum Error {
     /// Cannot assign port to endpoint
     #[error("Cannot assign port to endpoint {0}")]
     CannotAssignPort(u16),
-    /// Failure when trying to map a new port using IGD for automatic port forwarding.
-    #[error("Could not use IGD for automatic port forwarding")]
-    IgdAddPort(#[from] igd::AddAnyPortError),
-    /// Failure when trying to renew leasing of a port mapped using IGD.
-    #[error("Could not renew port mapping using IGD")]
-    IgdRenewPort(#[from] igd::AddPortError),
-    /// IGD gateway deice was not found.
-    #[error("Could not find the gateway device for IGD")]
-    IgdSearch(#[from] igd::SearchError),
-    /// IGD is not supported on IPv6
-    #[error("IGD is not supported on IPv6")]
-    IgdNotSupported,
     /// Incorrect Public Address provided
     #[error("Incorrect Public Address provided")]
     IncorrectPublicAddress,
