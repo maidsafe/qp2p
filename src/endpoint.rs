@@ -349,8 +349,12 @@ impl<I: ConnId> Endpoint<I> {
     /// can be reached.
     pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<(), RpcError> {
         trace!("Checking is reachable");
-        let connection = self.get_or_connect_to(peer_addr).await?;
-        let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
+
+        // avoid the connection pool
+        let quinn::NewConnection { connection, .. } = self.new_connection(peer_addr).await?;
+        let (send_stream, recv_stream) = connection.open_bi().await?;
+        let mut send_stream = SendStream::new(send_stream);
+        let mut recv_stream = RecvStream::new(recv_stream);
 
         send_stream.send(WireMsg::EndpointEchoReq).await?;
 
