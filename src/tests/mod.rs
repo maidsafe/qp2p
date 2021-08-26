@@ -7,7 +7,9 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{Config, ConnId, QuicP2p};
+use crate::{
+    Config, ConnId, DisconnectionEvents, Endpoint, IncomingConnections, IncomingMessages, QuicP2p,
+};
 use bytes::Bytes;
 use color_eyre::eyre::Result;
 use std::{
@@ -44,6 +46,25 @@ pub(crate) fn new_qp2p() -> Result<QuicP2p<[u8; 32]>> {
     })?;
 
     Ok(qp2p)
+}
+
+/// Construct an `Endpoint` with sane defaults for testing.
+pub(crate) async fn new_endpoint() -> Result<(
+    Endpoint<[u8; 32]>,
+    IncomingConnections,
+    IncomingMessages,
+    DisconnectionEvents,
+    Option<SocketAddr>,
+)> {
+    Ok(Endpoint::new(
+        local_addr(),
+        &[],
+        Config {
+            min_retry_duration: Duration::from_millis(500).into(),
+            ..Config::default()
+        },
+    )
+    .await?)
 }
 
 pub(crate) fn local_addr() -> SocketAddr {

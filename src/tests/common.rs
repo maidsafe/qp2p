@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use super::{hash, local_addr, new_qp2p, random_msg};
+use super::{hash, local_addr, new_endpoint, new_qp2p, random_msg};
 use color_eyre::eyre::{bail, eyre, Report, Result};
 use futures::{future, stream::FuturesUnordered, StreamExt};
 use std::{collections::BTreeSet, time::Duration};
@@ -17,11 +17,10 @@ use tracing_test::traced_test;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn successful_connection() -> Result<()> {
-    let qp2p = new_qp2p()?;
-    let (peer1, mut peer1_incoming_connections, _, _) = qp2p.new_endpoint(local_addr()).await?;
+    let (peer1, mut peer1_incoming_connections, _, _, _) = new_endpoint().await?;
     let peer1_addr = peer1.public_addr();
 
-    let (peer2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
+    let (peer2, _, _, _, _) = new_endpoint().await?;
     peer2.connect_to(&peer1_addr).await?;
     let peer2_addr = peer2.public_addr();
 
@@ -36,12 +35,11 @@ async fn successful_connection() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn single_message() -> Result<()> {
-    let qp2p = new_qp2p()?;
-    let (peer1, mut peer1_incoming_connections, mut peer1_incoming_messages, _) =
-        qp2p.new_endpoint(local_addr()).await?;
+    let (peer1, mut peer1_incoming_connections, mut peer1_incoming_messages, _, _) =
+        new_endpoint().await?;
     let peer1_addr = peer1.public_addr();
 
-    let (peer2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
+    let (peer2, _, _, _, _) = new_endpoint().await?;
     let peer2_addr = peer2.public_addr();
 
     // Peer 2 connects and sends a message
@@ -70,12 +68,11 @@ async fn single_message() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn reuse_outgoing_connection() -> Result<()> {
-    let qp2p = new_qp2p()?;
-    let (alice, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
+    let (alice, _, _, _, _) = new_endpoint().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
-        qp2p.new_endpoint(local_addr()).await?;
+    let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _, _) =
+        new_endpoint().await?;
     let bob_addr = bob.public_addr();
 
     // Connect for the first time and send a message.
@@ -120,13 +117,12 @@ async fn reuse_outgoing_connection() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn reuse_incoming_connection() -> Result<()> {
-    let qp2p = new_qp2p()?;
-    let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _) =
-        qp2p.new_endpoint(local_addr()).await?;
+    let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _, _) =
+        new_endpoint().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
-        qp2p.new_endpoint(local_addr()).await?;
+    let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _, _) =
+        new_endpoint().await?;
     let bob_addr = bob.public_addr();
 
     // Connect for the first time and send a message.
@@ -172,13 +168,11 @@ async fn reuse_incoming_connection() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn disconnection() -> Result<()> {
-    let qp2p = new_qp2p()?;
-    let (alice, mut alice_incoming_connections, _, mut alice_disconnections) =
-        qp2p.new_endpoint(local_addr()).await?;
+    let (alice, mut alice_incoming_connections, _, mut alice_disconnections, _) =
+        new_endpoint().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, mut bob_incoming_connections, _, mut bob_disconnections) =
-        qp2p.new_endpoint(local_addr()).await?;
+    let (bob, mut bob_incoming_connections, _, mut bob_disconnections, _) = new_endpoint().await?;
     let bob_addr = bob.public_addr();
 
     // Alice connects to Bob who should receive an incoming connection.
@@ -223,17 +217,17 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     // others connection first), two separate connections are created. This test verifies that
     // everything still works correctly even in this case.
 
-    let qp2p = new_qp2p()?;
     let (
         alice,
         mut alice_incoming_connections,
         mut alice_incoming_messages,
         mut alice_disconnections,
-    ) = qp2p.new_endpoint(local_addr()).await?;
+        _,
+    ) = new_endpoint().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _) =
-        qp2p.new_endpoint(local_addr()).await?;
+    let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _, _) =
+        new_endpoint().await?;
     let bob_addr = bob.public_addr();
 
     future::try_join(alice.connect_to(&bob_addr), bob.connect_to(&alice_addr)).await?;
@@ -303,12 +297,11 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
-    let qp2p = new_qp2p()?;
-    let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _) =
-        qp2p.new_endpoint(local_addr()).await?;
+    let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _, _) =
+        new_endpoint().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, _, mut bob_incoming_messages, _) = qp2p.new_endpoint(local_addr()).await?;
+    let (bob, _, mut bob_incoming_messages, _, _) = new_endpoint().await?;
     let bob_addr = bob.public_addr();
 
     // Try to establish two connections to the same peer at the same time.
@@ -361,9 +354,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     let num_messages_each: usize = 100;
     let num_messages_total: usize = 1000;
 
-    let qp2p = new_qp2p()?;
-    let (server_endpoint, _, mut recv_incoming_messages, _) =
-        qp2p.new_endpoint(local_addr()).await?;
+    let (server_endpoint, _, mut recv_incoming_messages, _, _) = new_endpoint().await?;
     let server_addr = server_endpoint.public_addr();
 
     let test_msgs: Vec<_> = (0..num_messages_each).map(|_| random_msg(1024)).collect();
@@ -416,9 +407,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     for id in 0..num_senders {
         let messages = sending_msgs.clone();
         tasks.push(tokio::spawn({
-            let qp2p = new_qp2p()?;
-            let (send_endpoint, _, mut recv_incoming_messages, _) =
-                qp2p.new_endpoint(local_addr()).await?;
+            let (send_endpoint, _, mut recv_incoming_messages, _, _) = new_endpoint().await?;
 
             async move {
                 let mut hash_results = BTreeSet::new();
@@ -469,9 +458,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
     let num_messages_each: usize = 100;
     let num_messages_total: usize = num_senders * num_messages_each;
 
-    let qp2p = new_qp2p()?;
-    let (server_endpoint, _, mut recv_incoming_messages, _) =
-        qp2p.new_endpoint(local_addr()).await?;
+    let (server_endpoint, _, mut recv_incoming_messages, _, _) = new_endpoint().await?;
     let server_addr = server_endpoint.public_addr();
 
     let test_msgs: Vec<_> = (0..num_messages_each)
@@ -526,9 +513,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
         assert!(!logs_contain("error"));
 
         tasks.push(tokio::spawn({
-            let qp2p = new_qp2p()?;
-            let (send_endpoint, _, mut recv_incoming_messages, _) =
-                qp2p.new_endpoint(local_addr()).await?;
+            let (send_endpoint, _, mut recv_incoming_messages, _, _) = new_endpoint().await?;
 
             async move {
                 let mut hash_results = BTreeSet::new();
@@ -586,9 +571,8 @@ async fn many_messages() -> Result<()> {
 
     let num_messages: usize = 10_000;
 
-    let qp2p = new_qp2p()?;
-    let (send_endpoint, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
-    let (recv_endpoint, _, mut recv_incoming_messages, _) = qp2p.new_endpoint(local_addr()).await?;
+    let (send_endpoint, _, _, _, _) = new_endpoint().await?;
+    let (recv_endpoint, _, mut recv_incoming_messages, _, _) = new_endpoint().await?;
 
     let send_addr = send_endpoint.public_addr();
     let recv_addr = recv_endpoint.public_addr();
@@ -643,11 +627,9 @@ async fn many_messages() -> Result<()> {
 // bootstrap contacts later.
 #[tokio::test(flavor = "multi_thread")]
 async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()> {
-    let qp2p = new_qp2p()?;
-
-    let (ep1, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
-    let (ep2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
-    let (ep3, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
+    let (ep1, _, _, _, _) = new_endpoint().await?;
+    let (ep2, _, _, _, _) = new_endpoint().await?;
+    let (ep3, _, _, _, _) = new_endpoint().await?;
 
     let contacts = vec![ep1.public_addr(), ep2.public_addr(), ep3.public_addr()];
 
@@ -664,10 +646,8 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
 
 #[tokio::test(flavor = "multi_thread")]
 async fn reachability() -> Result<()> {
-    let qp2p = new_qp2p()?;
-
-    let (ep1, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
-    let (ep2, _, _, _) = qp2p.new_endpoint(local_addr()).await?;
+    let (ep1, _, _, _, _) = new_endpoint().await?;
+    let (ep2, _, _, _, _) = new_endpoint().await?;
 
     if let Ok(()) = ep1.is_reachable(&"127.0.0.1:12345".parse()?).await {
         eyre!("Unexpected success");
@@ -682,9 +662,7 @@ async fn reachability() -> Result<()> {
 async fn client() -> Result<()> {
     use crate::{Config, Endpoint};
 
-    let qp2p = new_qp2p()?;
-
-    let (server, _, mut server_messages, _) = qp2p.new_endpoint(local_addr()).await?;
+    let (server, _, mut server_messages, _, _) = new_endpoint().await?;
     let client = Endpoint::<[u8; 32]>::new_client(
         local_addr(),
         Config {

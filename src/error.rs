@@ -9,6 +9,8 @@
 
 use super::wire_msg::WireMsg;
 use crate::config::ConfigError;
+#[cfg(not(feature = "no-igd"))]
+use crate::igd::IgdError;
 use bytes::Bytes;
 use std::{fmt, io, net::SocketAddr};
 use thiserror::Error;
@@ -70,6 +72,67 @@ pub enum Error {
 impl From<quinn::ConnectionError> for Error {
     fn from(error: quinn::ConnectionError) -> Self {
         Self::ConnectionError(error.into())
+    }
+}
+
+/// Errors returned from [`Endpoint::new`](crate::Endpoint::new).
+#[derive(Debug, Error)]
+pub enum EndpointError {
+    /// There was a problem with the provided configuration.
+    #[error("There was a problem with the provided configuration")]
+    Config(#[from] ConfigError),
+
+    /// Failed to bind UDP socket.
+    #[error("Failed to bind UDP socket")]
+    Socket(#[source] io::Error),
+
+    /// Failed to query our public address from peer.
+    #[error("Failed to query our public address from peer {peer}")]
+    EndpointEcho {
+        /// The peer we tried to query.
+        peer: SocketAddr,
+
+        /// The error that occurred.
+        #[source]
+        error: RpcError,
+    },
+
+    /// Failed to establish UPnP port forwarding.
+    #[cfg(not(feature = "no-igd"))]
+    #[error(transparent)]
+    Upnp(#[from] UpnpError),
+
+    /// Failed to verify our public address with peer.
+    #[error("Failed to verify our public address with peer {peer}")]
+    EndpointVerification {
+        /// The peer we asked to verify our public address.
+        peer: SocketAddr,
+
+        /// The error that occurred.
+        #[source]
+        error: RpcError,
+    },
+
+    /// Our determined public address is not reachable.
+    #[error("Our determined public address ({public_addr}) is not reachable")]
+    Unreachable {
+        /// The public address we thought we should have.
+        public_addr: SocketAddr,
+    },
+}
+
+impl From<quinn::EndpointError> for EndpointError {
+    fn from(error: quinn::EndpointError) -> Self {
+        match error {
+            quinn::EndpointError::Socket(error) => Self::Socket(error),
+        }
+    }
+}
+
+#[cfg(not(feature = "no-igd"))]
+impl From<IgdError> for EndpointError {
+    fn from(error: IgdError) -> Self {
+        Self::Upnp(UpnpError(error))
     }
 }
 
@@ -274,6 +337,41 @@ impl fmt::Display for TransportErrorCode {
     }
 }
 
+/// Errors that can occur when performing an RPC operation.
+///
+/// QuicP2P uses a number of RPC operations when establishing endpoints, in order to verify public
+/// addresses and check for reachability. This error type covers the ways in which these operations
+/// can fail, which is a combination of [`SendError`], and [`RecvError`].
+#[derive(Debug, Error)]
+pub enum RpcError {
+    /// We did not receive a response within the expected time.
+    #[error("We did not receive a response within the expected time")]
+    TimedOut,
+
+    /// Failed to send the request.
+    #[error("Failed to send the request")]
+    Send(#[from] SendError),
+
+    /// Failed to receive the response.
+    #[error("Failed to receive the response")]
+    Recv(#[from] RecvError),
+}
+
+// Treating `ConnectionError`s as happening on send works because we would only encounter them
+// directly (e.g. not part of `SendError` or `RecvError`) when establishing outgoing connections
+// before sending.
+impl From<ConnectionError> for RpcError {
+    fn from(error: ConnectionError) -> Self {
+        Self::Send(error.into())
+    }
+}
+
+impl From<tokio::time::error::Elapsed> for RpcError {
+    fn from(_: tokio::time::error::Elapsed) -> Self {
+        Self::TimedOut
+    }
+}
+
 /// Errors that can occur when sending messages.
 #[derive(Debug, Error)]
 pub enum SendError {
@@ -410,3 +508,9 @@ pub enum StreamError {
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub struct UnsupportedStreamOperation(Box<dyn std::error::Error + Send + Sync>);
+
+/// Failed to establish UPnP port forwarding.
+#[cfg(not(feature = "no-igd"))]
+#[derive(Debug, Error)]
+#[error("Failed to establish UPnP port forwarding")]
+pub struct UpnpError(IgdError);
