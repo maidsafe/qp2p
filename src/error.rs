@@ -22,10 +22,6 @@ pub enum Error {
     /// quinn connection error
     #[error("Connection lost due to error: {0}")]
     ConnectionError(#[from] ConnectionError),
-    /// Timeout occurred when awaiting for a response from
-    /// any of the peers contacted for the echo service.
-    #[error("No response received from echo services")]
-    NoEchoServiceResponse,
     /// Missing connection
     #[error("No connection to the dest peer")]
     MissingConnection,
