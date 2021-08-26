@@ -16,6 +16,9 @@ use tracing::{debug, info, warn};
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum IgdError {
+    #[error("Timed out waiting for the operation to complete")]
+    TimedOut,
+
     #[error("IGD is not supported for IPv6")]
     NotSupported,
 
@@ -28,6 +31,8 @@ pub(crate) enum IgdError {
     #[error(transparent)]
     Search(#[from] igd::SearchError),
 }
+
+impl IgdError {}
 
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
 pub(crate) async fn forward_port(

@@ -11,7 +11,7 @@ use crate::connection_pool::ConnId;
 
 use super::error::Error;
 #[cfg(not(feature = "no-igd"))]
-use super::igd::forward_port;
+use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig},
@@ -21,12 +21,14 @@ use super::{
         listen_for_incoming_connections, listen_for_incoming_messages, Connection,
         DisconnectionEvents, RecvStream, SendStream,
     },
-    error::{ClientEndpointError, ConnectionError, Result, SendError, SerializationError},
+    error::{
+        ClientEndpointError, ConnectionError, EndpointError, RecvError, Result, RpcError,
+        SendError, SerializationError,
+    },
 };
+use backoff::{future::retry, ExponentialBackoff};
 use bytes::Bytes;
 use std::net::SocketAddr;
-
-use backoff::{future::retry, ExponentialBackoff};
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::sync::mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender};
 use tokio::time::{timeout, Duration};
@@ -38,10 +40,10 @@ const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 
 // Number of seconds before timing out the IGD request to forward a port.
 #[cfg(not(feature = "no-igd"))]
-const PORT_FORWARD_TIMEOUT: u64 = 30;
+const PORT_FORWARD_TIMEOUT: Duration = Duration::from_secs(30);
 
 // Number of seconds before timing out the echo service query.
-const ECHO_SERVICE_QUERY_TIMEOUT: u64 = 30;
+const ECHO_SERVICE_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Standard size of our channel bounds
 const STANDARD_CHANNEL_SIZE: usize = 10000;
@@ -94,6 +96,124 @@ impl<I: ConnId> std::fmt::Debug for Endpoint<I> {
 }
 
 impl<I: ConnId> Endpoint<I> {
+    /// Create a peer endpoint at the given address.
+    ///
+    /// A peer endpoint, unlike a [client](Self::new_client) endpoint, can receive incoming
+    /// connections.
+    ///
+    /// # Bootstrapping
+    ///
+    /// When given a non-empty list of `contacts`, this will attempt to 'bootstrap' against them.
+    /// This involves connecting to all the contacts concurrently and selecting the first
+    /// successfully connected peer (if any), whose `SocketAddr` will be returned.
+    ///
+    /// If bootstrapping is successful, the connected peer will be used to perform a reachability
+    /// check to validate that this endpoint can be reached at its
+    /// [`public_addr`](Self::public_addr).
+    ///
+    /// **Note:** if no contacts are given, the [`public_addr`](Self::public_addr) of the endpoint
+    /// will not have been validated to be reachable by anyone
+    ///
+    /// # Port forwarding (UPnP)
+    ///
+    /// If configured (via `config.forward_port`), an external port mapping will be set up (using
+    /// the IGD UPnP protocol). The established external port will be reflected in
+    /// [`public_addr`](Self::public_addr), and the lease will be renewed automatically every
+    /// `config.upnp_lease_duration`.
+    pub async fn new(
+        local_addr: impl Into<SocketAddr>,
+        contacts: &[SocketAddr],
+        config: Config,
+    ) -> Result<
+        (
+            Self,
+            IncomingConnections,
+            IncomingMessages,
+            DisconnectionEvents,
+            Option<SocketAddr>,
+        ),
+        EndpointError,
+    > {
+        let config = InternalConfig::try_from_config(config)?;
+
+        let mut builder = quinn::Endpoint::builder();
+        let _ = builder.listen(config.server.clone());
+
+        let local_addr = local_addr.into();
+        let (quic_endpoint, quic_incoming) = builder.bind(&local_addr)?;
+        let local_addr = quic_endpoint.local_addr().map_err(EndpointError::Socket)?;
+
+        let (message_tx, message_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
+        let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
+        let (disconnection_tx, disconnection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
+
+        #[cfg(feature = "no-igd")]
+        let (termination_tx, _) = broadcast::channel(1);
+
+        #[cfg(not(feature = "no-igd"))]
+        let (termination_tx, termination_rx) = broadcast::channel(1);
+
+        let connection_pool = ConnectionPool::new();
+
+        let mut endpoint = Self {
+            local_addr,
+            public_addr: None,
+            quic_endpoint,
+            message_tx: message_tx.clone(),
+            disconnection_tx: disconnection_tx.clone(),
+            bootstrap_nodes: Default::default(),
+            config,
+            termination_tx,
+            connection_pool: connection_pool.clone(),
+            connection_deduplicator: ConnectionDeduplicator::new(),
+        };
+
+        let contact = endpoint.connect_to_any(contacts).await;
+        let public_addr = endpoint.resolve_public_addr(contact).await?;
+
+        #[cfg(not(feature = "no-igd"))]
+        if endpoint.config.forward_port {
+            timeout(
+                PORT_FORWARD_TIMEOUT,
+                forward_port(
+                    public_addr.port(),
+                    local_addr,
+                    endpoint.config.upnp_lease_duration,
+                    termination_rx,
+                ),
+            )
+            .await
+            .map_err(|_| IgdError::TimedOut)??;
+        }
+
+        listen_for_incoming_connections(
+            quic_incoming,
+            connection_pool,
+            message_tx,
+            connection_tx,
+            disconnection_tx,
+            endpoint.clone(),
+        );
+
+        if let Some(peer) = contact {
+            let valid = endpoint
+                .endpoint_verification(peer, public_addr)
+                .await
+                .map_err(|error| EndpointError::EndpointVerification { peer, error })?;
+            if !valid {
+                return Err(EndpointError::Unreachable { public_addr });
+            }
+        }
+
+        Ok((
+            endpoint,
+            IncomingConnections(connection_rx),
+            IncomingMessages(message_rx),
+            DisconnectionEvents(disconnection_rx),
+            contact,
+        ))
+    }
+
     /// Create a client endpoint at the given address.
     ///
     /// A client endpoint cannot receive incoming connections, as such they also do not need to be
@@ -177,7 +297,7 @@ impl<I: ConnId> Endpoint<I> {
                 let (mut send, mut recv) = connection.open_bi(0).await?;
                 send.send(WireMsg::EndpointVerificationReq(addr)).await?;
                 let response = timeout(
-                    Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
+                    ECHO_SERVICE_QUERY_TIMEOUT,
                     WireMsg::read_from_stream(&mut recv.quinn_recv_stream),
                 )
                 .await;
@@ -271,12 +391,7 @@ impl<I: ConnId> Endpoint<I> {
         }
 
         // Try to contact an echo service
-        match timeout(
-            Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
-            self.query_ip_echo_service(),
-        )
-        .await
-        {
+        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, self.query_ip_echo_service()).await {
             Ok(Ok(echo_res)) => addr = Some(echo_res),
             Ok(Err(err)) => info!("Could not contact echo service: {} - {:?}", err, err),
             Err(err) => info!("Query to echo service timed out: {:?}", err),
@@ -286,7 +401,7 @@ impl<I: ConnId> Endpoint<I> {
         if self.config.forward_port {
             // Attempt to use IGD for port forwarding
             match timeout(
-                Duration::from_secs(PORT_FORWARD_TIMEOUT),
+                PORT_FORWARD_TIMEOUT,
                 forward_port(
                     self.local_addr.port(),
                     self.local_addr,
@@ -411,12 +526,7 @@ impl<I: ConnId> Endpoint<I> {
 
         send_stream.send(WireMsg::EndpointEchoReq).await?;
 
-        match timeout(
-            Duration::from_secs(ECHO_SERVICE_QUERY_TIMEOUT),
-            recv_stream.next_wire_msg(),
-        )
-        .await
-        {
+        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv_stream.next_wire_msg()).await {
             Ok(Ok(WireMsg::EndpointEchoResp(_))) => Ok(()),
             Ok(Ok(other)) => {
                 info!(
@@ -631,6 +741,109 @@ impl<I: ConnId> Endpoint<I> {
         .await
     }
 
+    // set an appropriate public address based on `config` and a reachability check.
+    async fn resolve_public_addr(
+        &mut self,
+        contact: Option<SocketAddr>,
+    ) -> Result<SocketAddr, EndpointError> {
+        let mut public_addr = self.local_addr;
+
+        // get the IP seen for us by our contact
+        let visible_addr = if let Some(peer) = contact {
+            Some(
+                self.endpoint_echo(peer)
+                    .await
+                    .map_err(|error| EndpointError::EndpointEcho { peer, error })?,
+            )
+        } else {
+            None
+        };
+
+        if let Some(external_ip) = self.config.external_ip {
+            // set the public IP based on config
+            public_addr.set_ip(external_ip);
+
+            if let Some(visible_addr) = visible_addr {
+                // if we set a different external IP than peers can see, we will have a bad time
+                if visible_addr.ip() != external_ip {
+                    warn!(
+                        "Configured external IP ({}) does not match that seen by peers ({})",
+                        external_ip,
+                        visible_addr.ip()
+                    );
+                }
+            }
+        } else if let Some(visible_addr) = visible_addr {
+            // set the public IP based on that seen by the peer
+            public_addr.set_ip(visible_addr.ip());
+        } else {
+            // we have no good source for public IP, leave it as the local IP and warn
+            warn!(
+                "Could not determine better public IP than local IP ({})",
+                public_addr.ip()
+            );
+        }
+
+        if let Some(external_port) = self.config.external_port {
+            // set the public port based on config
+            public_addr.set_port(external_port);
+
+            if let Some(visible_addr) = visible_addr {
+                // if we set a different external IP than peers can see, we will have a bad time
+                if visible_addr.port() != external_port {
+                    warn!(
+                        "Configured external port ({}) does not match that seen by peers ({})",
+                        external_port,
+                        visible_addr.port()
+                    );
+                }
+            }
+        } else if let Some(visible_addr) = visible_addr {
+            // set the public port based on that seen by the peer
+            public_addr.set_port(visible_addr.port());
+        } else {
+            // we have no good source for public port, leave it as the local port and warn
+            warn!(
+                "Could not determine better public port than local port ({})",
+                public_addr.port()
+            );
+        }
+
+        self.public_addr = Some(public_addr);
+
+        // Return the address so callers can avoid the optionality of `self.public_addr`
+        Ok(public_addr)
+    }
+
+    /// Perform the endpoint echo RPC with the given peer.
+    async fn endpoint_echo(&self, peer: SocketAddr) -> Result<SocketAddr, RpcError> {
+        let (mut send, mut recv) = self.open_bidirectional_stream(&peer, 0).await?;
+
+        send.send(WireMsg::EndpointEchoReq).await?;
+
+        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
+            WireMsg::EndpointEchoResp(addr) => Ok(addr),
+            msg => Err(RecvError::Serialization(SerializationError::unexpected(msg)).into()),
+        }
+    }
+
+    /// Perform the endpoint verification RPC with the given peer.
+    async fn endpoint_verification(
+        &self,
+        peer: SocketAddr,
+        public_addr: SocketAddr,
+    ) -> Result<bool, RpcError> {
+        let (mut send, mut recv) = self.open_bidirectional_stream(&peer, 0).await?;
+
+        send.send(WireMsg::EndpointVerificationReq(public_addr))
+            .await?;
+
+        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
+            WireMsg::EndpointVerificationResp(valid) => Ok(valid),
+            msg => Err(RecvError::Serialization(SerializationError::unexpected(msg)).into()),
+        }
+    }
+
     fn retry<R, E, Fn, Fut>(&self, op: Fn) -> impl futures::Future<Output = Result<R, E>>
     where
         Fn: FnMut() -> Fut,
@@ -641,5 +854,87 @@ impl<I: ConnId> Endpoint<I> {
             ..Default::default()
         };
         retry(backoff, op)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Endpoint;
+    use crate::{tests::local_addr, Config};
+    use color_eyre::eyre::Result;
+    use std::net::SocketAddr;
+
+    #[tokio::test]
+    async fn new_without_external_addr() -> Result<()> {
+        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+            local_addr(),
+            &[],
+            Config {
+                external_ip: None,
+                external_port: None,
+                ..Default::default()
+            },
+        )
+        .await?;
+        assert_eq!(endpoint.public_addr(), endpoint.local_addr());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn new_with_external_ip() -> Result<()> {
+        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+            local_addr(),
+            &[],
+            Config {
+                external_ip: Some([123u8, 123, 123, 123].into()),
+                external_port: None,
+                ..Default::default()
+            },
+        )
+        .await?;
+        assert_eq!(
+            endpoint.public_addr(),
+            SocketAddr::new([123u8, 123, 123, 123].into(), endpoint.local_addr().port())
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn new_with_external_port() -> Result<()> {
+        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+            local_addr(),
+            &[],
+            Config {
+                external_ip: None,
+                external_port: Some(123),
+                ..Default::default()
+            },
+        )
+        .await?;
+        assert_eq!(
+            endpoint.public_addr(),
+            SocketAddr::new(endpoint.local_addr().ip(), 123)
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn new_with_external_addr() -> Result<()> {
+        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+            local_addr(),
+            &[],
+            Config {
+                external_ip: Some([123u8, 123, 123, 123].into()),
+                external_port: Some(123),
+                ..Default::default()
+            },
+        )
+        .await?;
+        assert_eq!(endpoint.public_addr(), "123.123.123.123:123".parse()?);
+
+        Ok(())
     }
 }
