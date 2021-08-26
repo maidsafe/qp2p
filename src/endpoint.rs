@@ -9,7 +9,6 @@
 
 use crate::connection_pool::ConnId;
 
-use super::error::Error;
 #[cfg(not(feature = "no-igd"))]
 use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
@@ -397,22 +396,28 @@ impl<I: ConnId> Endpoint<I> {
         connection.open_bi(priority).await
     }
 
-    /// Sends a message to a peer. This will attempt to use an existing connection
-    /// to the destination  peer. If a connection does not exist, this will fail with `Error::MissingConnection`
+    /// Send a message to a peer over an existing connection.
+    ///
     /// Priority default is 0. Both lower and higher can be passed in.
+    ///
+    /// # Errors
+    ///
+    /// If a connection with `dest` exists in the pool but the message fails to send,
+    /// `Err(Some(_))` will be returned. If there's no connection with `dest` in the pool, then
+    /// `Err(None)` will be returned.
     pub async fn try_send_message(
         &self,
         msg: Bytes,
         dest: &SocketAddr,
         priority: i32,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Option<SendError>> {
         if let Some((conn, guard)) = self.connection_pool.get_by_addr(dest).await {
             trace!("Connection exists in the connection pool: {}", dest);
             let connection = Connection::new(conn, guard);
             connection.send_uni(msg, priority).await?;
             Ok(())
         } else {
-            Err(Error::MissingConnection)
+            Err(None)
         }
     }
 

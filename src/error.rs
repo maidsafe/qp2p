@@ -22,9 +22,6 @@ pub enum Error {
     /// quinn connection error
     #[error("Connection lost due to error: {0}")]
     ConnectionError(#[from] ConnectionError),
-    /// Missing connection
-    #[error("No connection to the dest peer")]
-    MissingConnection,
     /// Failed to send message.
     #[error("Failed to send message")]
     Send(#[from] SendError),
