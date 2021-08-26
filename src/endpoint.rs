@@ -351,29 +351,21 @@ impl<I: ConnId> Endpoint<I> {
     /// Verify if an address is publicly reachable. This will attempt to create
     /// a new connection and use it to exchange a message and verify that the node
     /// can be reached.
-    pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<(), Error> {
+    pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<(), RpcError> {
         trace!("Checking is reachable");
         let connection = self.get_or_connect_to(peer_addr).await?;
         let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
 
         send_stream.send(WireMsg::EndpointEchoReq).await?;
 
-        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv_stream.next_wire_msg()).await {
-            Ok(Ok(WireMsg::EndpointEchoResp(_))) => Ok(()),
-            Ok(Ok(other)) => {
+        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv_stream.next_wire_msg()).await?? {
+            WireMsg::EndpointEchoResp(_) => Ok(()),
+            other => {
                 info!(
                     "Unexpected message type when verifying reachability: {}",
                     &other
                 );
                 Ok(())
-            }
-            Ok(Err(err)) => {
-                info!("Unable to contact peer: {:?}", err);
-                Err(err.into())
-            }
-            Err(err) => {
-                info!("Unable to contact peer: {:?}", err);
-                Err(Error::NoEchoServiceResponse)
             }
         }
     }
