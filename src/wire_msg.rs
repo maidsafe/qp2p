@@ -8,7 +8,7 @@
 // Software.
 
 use crate::{
-    error::{RecvError, Result, SendError, SerializationError},
+    error::{RecvError, SendError, SerializationError},
     utils,
 };
 use bytes::Bytes;

@@ -15,9 +15,6 @@ use bytes::Bytes;
 use std::{fmt, io, net::SocketAddr};
 use thiserror::Error;
 
-/// Result used by `QuicP2p`.
-pub type Result<T, E = Error> = std::result::Result<T, E>;
-
 /// Error types returned by the qp2p public API.
 #[derive(Debug, Error)]
 #[non_exhaustive]

@@ -66,7 +66,7 @@ pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
 pub use error::UpnpError;
 pub use error::{
     ClientEndpointError, Close, ConnectionError, EndpointError, Error, InternalConfigError,
-    RecvError, Result, RpcError, SendError, SerializationError, StreamError, TransportErrorCode,
+    RecvError, RpcError, SendError, SerializationError, StreamError, TransportErrorCode,
     UnsupportedStreamOperation,
 };
 
