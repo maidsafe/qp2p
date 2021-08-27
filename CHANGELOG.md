@@ -2,6 +2,161 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.16.0](https://github.com/maidsafe/qp2p/compare/v0.15.3...v0.16.0) (2021-08-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* The `Endpoint::bootstrap_nodes` method has been
+removed since it is no longer set.
+* The `Error` type has been removed.
+* `Endpoint::try_send_message` now returns `Result<(),
+Option<SendError>>` rather than `Result<(), Error>`. The
+`Error::MissingConnection` variant has been removed.
+* `Endpoint::is_reachable` now returns `Result<(),
+RpcError>`, rather than `Result<(), Error>`.
+* The `Result` alias has been removed. It can be replaced
+by `std::result::Result<T, qp2p::Error>`.
+* The `QuicP2p` type has been removed. Use
+`Endpoint::new` or `Endpoint::new_client` instead. The
+`BootstrapFailure`, `EmptyBootstrapNodesList`, `Io`, `Endpoint`,
+`NoEchoServerEndpointDefined`, `EchoServiceFailure`, `CannotAssignPort`,
+`IncorrectPublicAddress`, and `UnresolvedPublicIp` `Error` variants have
+been removed.
+* The `IgdAddPort`, `IgdRenewPort`, `IgdSearch`, and
+`IgdNotSupported` variants have been removed from `Error`. These
+variants would never have been returned, but may be referenced in
+matches against `Error` values.
+* The `RecvNextError` and `UnexpectedMessageType` types
+have been removed. `RecvError` is used where `RecvNextError` was used
+previously.
+* The `SendError::TooLong` variant has been removed. The
+same condition (attempting to send a message longer than `u32::MAX`
+bytes) will now return `SendError::Serialization`.
+* `RecvStream::next` now returns `RecvNextError` as the
+error type. The following `Error` variants have been removed:
+
+- `Error::Serialisation` (this is now fully covered by `SendError` and
+  `RecvError`).
+- `Error::InvalidMsgFlag` (this case is now covered by
+  `RecvError::Serialization`).
+- `Error::StreamRead` (this is now covered by `RecvError`).
+- `Error::EmptyResponse` (this case is now covered by
+  `RecvError::Serialization`).
+- `Error::UnexpectedMessageType` (this case is now covered by
+  `ReadNextError::UnexpectedMessageType).
+
+Finally, a `Recv` variant has been added to `Error`.
+* The following APIs had their error type changed from
+`Error` to `SendError`:
+
+- `SendStream::send_user_msg`
+- `SendStream::send`
+- `SendStream::finish`
+- `Endpoint::send_message`
+
+Additionally, the `StreamWrite` and `MaxLengthExceeded` variants have
+been removed from `Error`, and a `Send` variant has been added.
+* `SendStream::send` is no longer public.
+`Error::UnexpectedMessageType` now contains a simple error struct.
+* `Endpoint::connect_to` and
+`Endpoint::open_bidirectional_stream` now use `ConnectionError`, rather
+than `Error`, for error results.
+* `Endpoint::disconnect_from` now returns `()`.
+* - The `Error::UnknownStream` variant has been removed.
+- `SendStream::set_priority` is now infallible and returns `()`.
+- `SendStream::priority` has been removed.
+* The `Error::Connect` and `Error::ConnectionClosed`
+variants have been removed. Several additional variants have been added
+to `ConnectionError`.
+* `Endpoint::connect_to_any` now returns
+`Option<SocketAddr>` instead of `Result<SocketAddr>`.
+* The `ConnId::generate` method now returns `Self`, and
+doesn't allow for errors. The `Error::ConnectionIdGeneration` variant
+has been removed.
+* `Endpoint::socket_addr` has been renamed to
+`public_addr`.
+* The `Error::UnexpectedError` variant has been removed.
+* The `Error::DisconnectionNotification` and
+`Error::Configuration` variants have been removed.
+* There are several breaking changes:
+
+- `QuicP2p::from_config` now returns `Result<Self, ConfigError>`.
+- The `Error::CertificateParse` variant has been removed.
+- The `Error::CertificatePkParse` variant has been removed.
+- The `Error::CertificateGen` variant has been removed.
+- The `Error::Tls` variant has been removed.
+* The `Error::Base64Decode` variant has been removed.
+* The duration fields in config have all changed:
+
+- `idle_timeout_msec` is renamed `idle_timeout` and is now an
+  `Option<Duration>`.
+- `keep_alive_interval_msec` is renamed `keep_alive_interval` and is now
+  an `Option<Duration>`.
+- `upnp_lease_duration` is now an `Option<Duration>`.
+- `retry_duration_msec` is renamed `min_retry_duration` and is now an
+  `Option<Duration>`.
+* `QuicP2p::from_config` now takes a `Config` argument,
+rather than `Option<Config>`. `Config::default()` (or
+`Option::unwrap_or_default`) should be used instead.
+* `Config::hard_coded_contacts` and
+`Config::bootstrap_cache_dir` have been removed. Additionally,
+`QuicP2p::with_config` no longer takes `bootstrap_nodes` – these should
+instead be passed to `QuicP2p::bootstrap`. Finally, the
+`Error::InvalidPath` and `Error::UserHomeDir` variants have been
+removed.
+* `Config::local_ip` and `Config::local_port` have been
+removed. `QuicP2p::bootstrap` and `QuicP2p::new_endpoint` now require a
+local address to bind to. The `Error::UnspecifiedLocalIp` variant has
+been removed.
+* This is a breaking behavioural change. It is now up to
+the caller if they want to retry with a different port.
+* `Config::max_msg_size_allowed` has been removed.
+
+### Features
+
+* Add `Endpoint::connect_to_any` ([59d0b5e](https://github.com/maidsafe/qp2p/commit/59d0b5e4815319369b31dd6c5307101292155adb))
+* Add `Endpoint::new_client` constructor ([176d025](https://github.com/maidsafe/qp2p/commit/176d0257536f062a2743bd344e7803ce88c5dce8))
+* Add `RecvNextError` for receive-specific errors ([7e6e4a9](https://github.com/maidsafe/qp2p/commit/7e6e4a97d76e164f82fa96af9896a0fa6e38710a))
+* Add `SendError` for send-specific errors ([73c6501](https://github.com/maidsafe/qp2p/commit/73c65010fc6bd59493c197c4c8c8a509677e644a))
+* Add public `Endpoint::new` constructor ([c448df2](https://github.com/maidsafe/qp2p/commit/c448df23db749c4ab8de309df050df020278d1fd))
+
+
+### Bug Fixes
+
+* Add missing re-export for `TransportErrorCode` ([8cf4f88](https://github.com/maidsafe/qp2p/commit/8cf4f88cfa85a7628d731faa53e30491edfeee67))
+* Don't use connection pool in `Endpoint::is_reachable` ([8a7260b](https://github.com/maidsafe/qp2p/commit/8a7260b5063a21cb0fd06b63e3ffb29d663061bd))
+* Fix `WireMsg` visibility ([33e9b3b](https://github.com/maidsafe/qp2p/commit/33e9b3b78f9f8eaedc16af1fbac7c5c624c8e1fe))
+* Make connection deduplicator handle cancellations ([a0404ac](https://github.com/maidsafe/qp2p/commit/a0404ac8ba8a46c0741609558655478ab0634d32))
+
+
+* Delete `SerializableCertificate` ([4bbcd29](https://github.com/maidsafe/qp2p/commit/4bbcd29f381e412e51ede5c439e978a937044adf))
+* Make `Config` in `QuicP2p::from_config` non-optional ([19b3795](https://github.com/maidsafe/qp2p/commit/19b379595d25564bd8eb71dba20e50e803f12b02))
+* Make `ConnId::generate` infallible ([ea089ac](https://github.com/maidsafe/qp2p/commit/ea089acc7472b2c3e93dfe5dcaba7e9ac10053c7))
+* Make `Endpoint::disconnect_from` infallible ([9eb947f](https://github.com/maidsafe/qp2p/commit/9eb947fe3b600af4e0a8744768e0ba9c94122b49))
+* Merge 'connect' and 'close' errors with `ConnectionError` ([9aae2e3](https://github.com/maidsafe/qp2p/commit/9aae2e3758302410ca3a2142bc164c96f81bc1c4))
+* Move local address from config to `QuicP2p::bootstrap` ([de9763d](https://github.com/maidsafe/qp2p/commit/de9763d811a95f2c38d4e00677400b53bc4286d8))
+* Refactor `WireMsg::read_from_stream` to avoid logic error ([047d071](https://github.com/maidsafe/qp2p/commit/047d0711ecce339d14faade7d85f8cf2ea8063bf))
+* Remove `BootstrapCache` and hard-coded contacts ([df3fef8](https://github.com/maidsafe/qp2p/commit/df3fef827eb68d019cc713eb7cd003ec477715cd))
+* Remove `Endpoint::bootstrap_nodes` ([c399bca](https://github.com/maidsafe/qp2p/commit/c399bca3f5e6469b71471a292e435af168e15096))
+* Remove `Error::UnknownStream` variant ([2386486](https://github.com/maidsafe/qp2p/commit/2386486ae156add6ccbe5036aaedea3779e9d07b))
+* Remove `Error` ([5608f27](https://github.com/maidsafe/qp2p/commit/5608f27634439828eab22b53a2fb858b60d7249f))
+* Remove `QuicP2p` ([44d964c](https://github.com/maidsafe/qp2p/commit/44d964c6f3723eaf6899e84dc967a3bb457b56f3))
+* Remove `Result` alias ([e528134](https://github.com/maidsafe/qp2p/commit/e52813455e942432254f501da95cfcf7571146e5))
+* Remove random port fallback ([9b1612a](https://github.com/maidsafe/qp2p/commit/9b1612a248162eefbf08fcf22cdbe2c702066002))
+* Remove unused `Config::max_msg_size_allowed` ([44d750f](https://github.com/maidsafe/qp2p/commit/44d750fbcd6bf68d0cf07b4a6edb90d23dc63a59))
+* Remove unused `Error` variants ([3b8174a](https://github.com/maidsafe/qp2p/commit/3b8174ae7f85d62d27f69f7405f35e00b2feb1c1))
+* Rename `Endpoint::socket_addr` to `public_addr` ([91d8457](https://github.com/maidsafe/qp2p/commit/91d8457b50f165ab8641eab3145614bba9e1f74a))
+* Return `Option` from `Endpoint::connect_to_any` ([5d374fa](https://github.com/maidsafe/qp2p/commit/5d374fa6010ffc585fe79bcd87e1743fcf1bc40a))
+* Return `RpcError` from `Endpoint::is_reachable` ([674ad2d](https://github.com/maidsafe/qp2p/commit/674ad2d4df9a2b29cb9267f03524fb99b4ff49cf))
+* Return `SendError` in `Endpoint::try_send_message` ([c43855b](https://github.com/maidsafe/qp2p/commit/c43855bc57265216731a6a2ed7f0289486504b02))
+* Separate `ConfigError` from `Error` ([e837aca](https://github.com/maidsafe/qp2p/commit/e837aca1981553624ecd82133c93706b08741b35))
+* Treat unexpected messages as serialization errors ([e0695c3](https://github.com/maidsafe/qp2p/commit/e0695c3116bed6f830939a8eafbe045a2de39b61))
+* Use `ConnectionError` when possible ([db74509](https://github.com/maidsafe/qp2p/commit/db74509cb456c3930fd0eee4b67687a9291e4b00))
+* Use `Duration` in config and centralise defaults ([86f886b](https://github.com/maidsafe/qp2p/commit/86f886bb3f0a582e4db83b9fff26ba6fddc00a7f))
+* Use `SerializationError` for too long messages ([5bf79c1](https://github.com/maidsafe/qp2p/commit/5bf79c178491bbc1a5aa1412794601303cb2807a))
+* Use a separate type for IGD errors ([d9413de](https://github.com/maidsafe/qp2p/commit/d9413deec367be3d6be332d5200d719fe8ba878c))
+
 ### [0.15.3](https://github.com/maidsafe/qp2p/compare/v0.15.2...v0.15.3) (2021-08-24)
 
 ### [0.15.2](https://github.com/maidsafe/qp2p/compare/v0.15.1...v0.15.2) (2021-08-11)
