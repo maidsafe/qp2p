@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.17.1](https://github.com/maidsafe/qp2p/compare/v0.17.0...v0.17.1) (2021-08-31)
+
+
+### Bug Fixes
+
+* Correctly mark `UpnpError` source ([728d6b4](https://github.com/maidsafe/qp2p/commit/728d6b49d87d7c3f7a45a291ff94c71c3a60bb55))
+
 ## [0.17.0](https://github.com/maidsafe/qp2p/compare/v0.16.0...v0.17.0) (2021-08-31)
 
 
