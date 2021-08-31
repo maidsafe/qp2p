@@ -673,13 +673,14 @@ async fn client() -> Result<()> {
     use crate::{Config, Endpoint};
 
     let (server, _, mut server_messages, _, _) = new_endpoint().await?;
-    let client = Endpoint::<[u8; 32]>::new_client(
-        local_addr(),
-        Config {
-            min_retry_duration: Some(Duration::from_millis(500)),
-            ..Default::default()
-        },
-    )?;
+    let (client, mut client_messages, mut client_disconnections) =
+        Endpoint::<[u8; 32]>::new_client(
+            local_addr(),
+            Config {
+                min_retry_duration: Some(Duration::from_millis(500)),
+                ..Default::default()
+            },
+        )?;
 
     client
         .send_message(b"hello"[..].into(), &server.public_addr(), 0)
@@ -691,6 +692,23 @@ async fn client() -> Result<()> {
         .ok_or_else(|| eyre!("Did not receive expected message"))?;
     assert_eq!(sender, client.public_addr());
     assert_eq!(&message[..], b"hello");
+
+    server
+        .send_message(b"world"[..].into(), &client.public_addr(), 0)
+        .await?;
+    let (sender, message) = client_messages
+        .next()
+        .await
+        .ok_or_else(|| eyre!("Did not receive expected message"))?;
+    assert_eq!(sender, server.public_addr());
+    assert_eq!(&message[..], b"world");
+
+    server.disconnect_from(&client.public_addr()).await;
+    let disconnector = client_disconnections
+        .next()
+        .await
+        .ok_or_else(|| eyre!("Did not receive expected disconnection"))?;
+    assert_eq!(disconnector, server.public_addr());
 
     Ok(())
 }
