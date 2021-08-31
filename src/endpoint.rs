@@ -194,13 +194,17 @@ impl<I: ConnId> Endpoint<I> {
     pub fn new_client(
         local_addr: impl Into<SocketAddr>,
         config: Config,
-    ) -> Result<Self, ClientEndpointError> {
+    ) -> Result<(Self, IncomingMessages, DisconnectionEvents), ClientEndpointError> {
         let config = InternalConfig::try_from_config(config)?;
 
-        let (endpoint, _, _) =
+        let (endpoint, _, channels) =
             Self::build_endpoint(local_addr.into(), config, quinn::Endpoint::builder())?;
 
-        Ok(endpoint)
+        Ok((
+            endpoint,
+            IncomingMessages(channels.message.1),
+            DisconnectionEvents(channels.disconnection.1),
+        ))
     }
 
     // A private helper for initialising an endpoint.
