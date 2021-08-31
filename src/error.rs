@@ -459,4 +459,4 @@ pub struct UnsupportedStreamOperation(Box<dyn std::error::Error + Send + Sync>);
 #[cfg(not(feature = "no-igd"))]
 #[derive(Debug, Error)]
 #[error("Failed to establish UPnP port forwarding")]
-pub struct UpnpError(IgdError);
+pub struct UpnpError(#[source] IgdError);
