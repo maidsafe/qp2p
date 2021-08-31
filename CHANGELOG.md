@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.17.0](https://github.com/maidsafe/qp2p/compare/v0.16.0...v0.17.0) (2021-08-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* The signature of `Endpoint::new_client` has changed to
+return a tuple of `(Endpoint, IncomingMessages, DisconnectionEvents)`
+rather than just the `Endpoint`.
+
+### Features
+
+* Client support for incoming messages and disconnections ([cb945a9](https://github.com/maidsafe/qp2p/commit/cb945a948b11da07f23151b0738c38a5e13a8bab))
+
 ## [0.16.0](https://github.com/maidsafe/qp2p/compare/v0.15.3...v0.16.0) (2021-08-27)
 
 
