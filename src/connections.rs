@@ -29,6 +29,7 @@ pub(crate) struct Connection<I: ConnId> {
 }
 
 /// Disconnection events, and the result that led to disconnection.
+#[derive(Debug)]
 pub struct DisconnectionEvents(pub Receiver<SocketAddr>);
 
 /// Disconnection

@@ -48,6 +48,7 @@ const ECHO_SERVICE_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 const STANDARD_CHANNEL_SIZE: usize = 10000;
 
 /// Channel on which incoming messages can be listened to
+#[derive(Debug)]
 pub struct IncomingMessages(pub(crate) MpscReceiver<(SocketAddr, Bytes)>);
 
 impl IncomingMessages {
