@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.17.2](https://github.com/maidsafe/qp2p/compare/v0.17.1...v0.17.2) (2021-09-01)
+
+
+### Features
+
+* derive debug for public channels ([4d262de](https://github.com/maidsafe/qp2p/commit/4d262de3c37937592a120000cf0d466bf310eea7))
+
 ### [0.17.1](https://github.com/maidsafe/qp2p/compare/v0.17.0...v0.17.1) (2021-08-31)
 
 
