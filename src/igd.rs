@@ -23,9 +23,6 @@ pub(crate) enum IgdError {
     NotSupported,
 
     #[error(transparent)]
-    AddAnyPort(#[from] igd::AddAnyPortError),
-
-    #[error(transparent)]
     AddPort(#[from] igd::AddPortError),
 
     #[error(transparent)]
