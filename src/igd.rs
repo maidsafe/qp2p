@@ -29,8 +29,6 @@ pub(crate) enum IgdError {
     Search(#[from] igd::SearchError),
 }
 
-impl IgdError {}
-
 /// Automatically forwards a port and setups a tokio task to renew it periodically.
 pub(crate) async fn forward_port(
     ext_port: u16,
