@@ -84,7 +84,7 @@ pub(crate) async fn add_port(
 
     debug!("IGD gateway found: {:?}", gateway);
 
-    debug!("Our local address is: {:?}", local_addr);
+    debug!("Adding port mapping for {} -> {}", ext_port, local_addr);
 
     let local_addr = match local_addr {
         SocketAddr::V4(local_addr) => local_addr,
