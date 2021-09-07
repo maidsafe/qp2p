@@ -348,11 +348,18 @@ impl<I: ConnId> Endpoint<I> {
         send_stream.send(WireMsg::EndpointEchoReq).await?;
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv_stream.next_wire_msg()).await?? {
-            WireMsg::EndpointEchoResp(_) => Ok(()),
-            other => {
+            Some(WireMsg::EndpointEchoResp(_)) => Ok(()),
+            Some(other) => {
                 info!(
                     "Unexpected message type when verifying reachability: {}",
                     &other
+                );
+                Ok(())
+            }
+            None => {
+                info!(
+                    "Peer {} did not reply when verifying reachability",
+                    peer_addr
                 );
                 Ok(())
             }
@@ -602,7 +609,7 @@ impl<I: ConnId> Endpoint<I> {
         send.send(WireMsg::EndpointEchoReq).await?;
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
-            WireMsg::EndpointEchoResp(addr) => Ok(addr),
+            Some(WireMsg::EndpointEchoResp(addr)) => Ok(addr),
             msg => Err(RecvError::Serialization(SerializationError::unexpected(msg)).into()),
         }
     }
@@ -619,7 +626,7 @@ impl<I: ConnId> Endpoint<I> {
             .await?;
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
-            WireMsg::EndpointVerificationResp(valid) => Ok(valid),
+            Some(WireMsg::EndpointVerificationResp(valid)) => Ok(valid),
             msg => Err(RecvError::Serialization(SerializationError::unexpected(msg)).into()),
         }
     }

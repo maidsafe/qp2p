@@ -107,13 +107,13 @@ impl RecvStream {
     /// Read next user message from the stream
     pub async fn next(&mut self) -> Result<Bytes, RecvError> {
         match self.next_wire_msg().await? {
-            WireMsg::UserMsg(bytes) => Ok(bytes),
+            Some(WireMsg::UserMsg(bytes)) => Ok(bytes),
             msg => Err(SerializationError::unexpected(msg).into()),
         }
     }
 
     /// Read next wire msg from the stream
-    pub(crate) async fn next_wire_msg(&mut self) -> Result<WireMsg, RecvError> {
+    pub(crate) async fn next_wire_msg(&mut self) -> Result<Option<WireMsg>, RecvError> {
         read_bytes(&mut self.quinn_recv_stream).await
     }
 }
@@ -172,7 +172,7 @@ impl Debug for SendStream {
 }
 
 // Helper to read the message's bytes from the provided stream
-async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<WireMsg, RecvError> {
+async fn read_bytes(recv: &mut quinn::RecvStream) -> Result<Option<WireMsg>, RecvError> {
     WireMsg::read_from_stream(recv).await
 }
 
@@ -290,22 +290,24 @@ async fn read_on_uni_streams(
                 );
                 return Err(StreamError::Uni(err.into()));
             }
-            Ok(mut recv) => loop {
-                match read_bytes(&mut recv).await {
-                    Ok(WireMsg::UserMsg(bytes)) => {
-                        trace!("bytes received fine from: {:?} ", peer_addr);
-                        let _ = message_tx.send((peer_addr, bytes)).await;
-                    }
-                    Ok(msg) => warn!("Unexpected message type: {:?}", msg),
-                    Err(err) => {
-                        warn!(
-                            "Failed reading from a uni-stream for peer {:?} with: {:?}",
-                            peer_addr, err
-                        );
-                        break;
+            Ok(mut recv) => {
+                while let Some(res) = read_bytes(&mut recv).await.transpose() {
+                    match res {
+                        Ok(WireMsg::UserMsg(bytes)) => {
+                            trace!("bytes received fine from: {:?} ", peer_addr);
+                            let _ = message_tx.send((peer_addr, bytes)).await;
+                        }
+                        Ok(msg) => warn!("Unexpected message type: {:?}", msg),
+                        Err(err) => {
+                            warn!(
+                                "Failed reading from a uni-stream for peer {:?} with: {:?}",
+                                peer_addr, err
+                            );
+                            break;
+                        }
                     }
                 }
-            },
+            }
         }
     }
     Ok(())
@@ -335,50 +337,53 @@ async fn read_on_bi_streams<I: ConnId>(
                 );
                 return Err(StreamError::Bi(err.into()));
             }
-            Ok((mut send, mut recv)) => loop {
-                match read_bytes(&mut recv).await {
-                    Ok(WireMsg::UserMsg(bytes)) => {
-                        let _ = message_tx.send((peer_addr, bytes)).await;
-                    }
-                    Ok(WireMsg::EndpointEchoReq) => {
-                        if let Err(error) = handle_endpoint_echo_req(peer_addr, &mut send).await {
+            Ok((mut send, mut recv)) => {
+                while let Some(res) = read_bytes(&mut recv).await.transpose() {
+                    match res {
+                        Ok(WireMsg::UserMsg(bytes)) => {
+                            let _ = message_tx.send((peer_addr, bytes)).await;
+                        }
+                        Ok(WireMsg::EndpointEchoReq) => {
+                            if let Err(error) = handle_endpoint_echo_req(peer_addr, &mut send).await
+                            {
+                                warn!(
+                                    "Failed to handle Echo Request for peer {:?} with: {:?}",
+                                    peer_addr, error
+                                );
+
+                                return Err(StreamError::Bi(error.into()));
+                            }
+                        }
+                        Ok(WireMsg::EndpointVerificationReq(address_sent)) => {
+                            if let Err(error) = handle_endpoint_verification_req(
+                                peer_addr,
+                                address_sent,
+                                &mut send,
+                                endpoint,
+                            )
+                            .await
+                            {
+                                warn!("Failed to handle Endpoint verification request for peer {:?} with: {:?}", peer_addr, error);
+
+                                return Err(StreamError::Bi(error));
+                            }
+                        }
+                        Ok(msg) => {
                             warn!(
-                                "Failed to handle Echo Request for peer {:?} with: {:?}",
-                                peer_addr, error
+                                "Unexpected message type from peer {:?}: {:?}",
+                                peer_addr, msg
                             );
-
-                            return Err(StreamError::Bi(error.into()));
                         }
-                    }
-                    Ok(WireMsg::EndpointVerificationReq(address_sent)) => {
-                        if let Err(error) = handle_endpoint_verification_req(
-                            peer_addr,
-                            address_sent,
-                            &mut send,
-                            endpoint,
-                        )
-                        .await
-                        {
-                            warn!("Failed to handle Endpoint verification request for peer {:?} with: {:?}", peer_addr, error);
-
-                            return Err(StreamError::Bi(error));
+                        Err(err) => {
+                            warn!(
+                                "Failed reading from a bi-stream for peer {:?} with: {:?}",
+                                peer_addr, err
+                            );
+                            break;
                         }
-                    }
-                    Ok(msg) => {
-                        warn!(
-                            "Unexpected message type from peer {:?}: {:?}",
-                            peer_addr, msg
-                        );
-                    }
-                    Err(err) => {
-                        warn!(
-                            "Failed reading from a bi-stream for peer {:?} with: {:?}",
-                            peer_addr, err
-                        );
-                        break;
                     }
                 }
-            },
+            }
         }
     }
 
@@ -419,7 +424,7 @@ async fn handle_endpoint_verification_req<I: ConnId>(
             WireMsg::read_from_stream(&mut temp_recv.quinn_recv_stream)
         )
         .await,
-        Ok(Ok(WireMsg::EndpointEchoResp(_)))
+        Ok(Ok(Some(WireMsg::EndpointEchoResp(_))))
     );
 
     let message = WireMsg::EndpointVerificationResp(verified);
@@ -459,7 +464,7 @@ mod tests {
             .write_to_stream(&mut send_stream.quinn_send_stream)
             .await?;
         let message = WireMsg::read_from_stream(&mut recv_stream.quinn_recv_stream).await?;
-        if let WireMsg::EndpointEchoResp(addr) = message {
+        if let Some(WireMsg::EndpointEchoResp(addr)) = message {
             assert_eq!(addr, peer1_addr);
         } else {
             eyre!("Unexpected response to EchoService request");
