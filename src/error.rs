@@ -391,22 +391,28 @@ impl From<bincode::Error> for RecvError {
     }
 }
 
-impl From<quinn::ReadExactError> for RecvError {
-    fn from(error: quinn::ReadExactError) -> Self {
-        use quinn::{ReadError, ReadExactError};
+impl From<quinn::ReadError> for RecvError {
+    fn from(error: quinn::ReadError) -> Self {
+        use quinn::ReadError;
 
         match error {
-            ReadExactError::FinishedEarly => Self::Serialization(SerializationError::new(
+            ReadError::Reset(code) => Self::StreamLost(StreamError::Stopped(code.into())),
+            ReadError::ConnectionClosed(error) => Self::ConnectionLost(error.into()),
+            ReadError::UnknownStream => Self::StreamLost(StreamError::Gone),
+            ReadError::IllegalOrderedRead | ReadError::ZeroRttRejected => Self::StreamLost(
+                StreamError::Unsupported(UnsupportedStreamOperation(error.into())),
+            ),
+        }
+    }
+}
+
+impl From<quinn::ReadExactError> for RecvError {
+    fn from(error: quinn::ReadExactError) -> Self {
+        match error {
+            quinn::ReadExactError::FinishedEarly => Self::Serialization(SerializationError::new(
                 "Received too few bytes for message",
             )),
-            ReadExactError::ReadError(error) => match error {
-                ReadError::Reset(code) => Self::StreamLost(StreamError::Stopped(code.into())),
-                ReadError::ConnectionClosed(error) => Self::ConnectionLost(error.into()),
-                ReadError::UnknownStream => Self::StreamLost(StreamError::Gone),
-                ReadError::IllegalOrderedRead | ReadError::ZeroRttRejected => Self::StreamLost(
-                    StreamError::Unsupported(UnsupportedStreamOperation(error.into())),
-                ),
-            },
+            quinn::ReadExactError::ReadError(error) => error.into(),
         }
     }
 }
@@ -423,11 +429,15 @@ impl SerializationError {
     }
 
     /// Construct a `SerializationError` for an unexpected message.
-    pub(crate) fn unexpected(actual: WireMsg) -> Self {
-        Self::new(format!(
-            "The message received was not the expected one: {}",
-            actual
-        ))
+    pub(crate) fn unexpected(actual: Option<WireMsg>) -> Self {
+        if let Some(actual) = actual {
+            Self::new(format!(
+                "The message received was not the expected one: {}",
+                actual
+            ))
+        } else {
+            Self::new("Unexpected end of stream")
+        }
     }
 }
 

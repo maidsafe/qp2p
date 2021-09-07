@@ -34,9 +34,19 @@ const ECHO_SRVC_MSG_FLAG: u8 = 0x01;
 
 impl WireMsg {
     // Read a message's bytes from the provided stream
-    pub(crate) async fn read_from_stream(recv: &mut quinn::RecvStream) -> Result<Self, RecvError> {
+    pub(crate) async fn read_from_stream(
+        recv: &mut quinn::RecvStream,
+    ) -> Result<Option<Self>, RecvError> {
         let mut header_bytes = [0; MSG_HEADER_LEN];
-        recv.read_exact(&mut header_bytes).await?;
+
+        match recv.read(&mut header_bytes).await? {
+            None => return Ok(None),
+            Some(len) => {
+                if len < MSG_HEADER_LEN {
+                    recv.read_exact(&mut header_bytes[len..]).await?;
+                }
+            }
+        }
 
         let msg_header = MsgHeader::from_bytes(header_bytes);
         // https://github.com/rust-lang/rust/issues/70460 for work on a cleaner alternative:
@@ -55,9 +65,9 @@ impl WireMsg {
         if data.is_empty() {
             Err(SerializationError::new("Empty message received from peer").into())
         } else if msg_flag == USER_MSG_FLAG {
-            Ok(WireMsg::UserMsg(From::from(data)))
+            Ok(Some(WireMsg::UserMsg(From::from(data))))
         } else if msg_flag == ECHO_SRVC_MSG_FLAG {
-            Ok(bincode::deserialize(&data)?)
+            Ok(Some(bincode::deserialize(&data)?))
         } else {
             Err(SerializationError::new(format!(
                 "Invalid message type flag found in message header: {}",
