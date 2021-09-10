@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.18.0](https://github.com/maidsafe/qp2p/compare/v0.17.4...v0.18.0) (2021-09-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* The `port_forward` field on `Config` is only present
+with the `igd` feature enabled (default).
+* The `no-igd` feature has been removed.
+
+* Make `Config::port_forward` depend on `igd` feature ([ce3e602](https://github.com/maidsafe/qp2p/commit/ce3e602c7c641aa3cf5c7ffc316d9e203d18e847))
+* Remove `no-igd` feature ([b5e2938](https://github.com/maidsafe/qp2p/commit/b5e2938e70cc6d00e97e1da4260bd17f88745ef3))
+
 ### [0.17.4](https://github.com/maidsafe/qp2p/compare/v0.17.3...v0.17.4) (2021-09-07)
 
 
