@@ -168,8 +168,10 @@ jobs:
           key: ${{ runner.os }}-cargo-cache-${{ hashFiles('**/Cargo.lock') }}
 
       # Run tests.
-      - name: Run tests
+      - name: Run tests (default features)
         run: cargo test --release --workspace -- --skip echo_service # test would timeout on CI
+      - name: Run tests (no default features)
+        run: cargo test --no-default-features --release --workspace -- --skip echo_service # test would timeout on CI
 
   # Test publish using --dry-run.
   test-publish:
