@@ -75,6 +75,7 @@ pub struct CertificateGenerationError(
 pub struct Config {
     /// Specify if port forwarding via UPnP should be done or not. This can be set to false if the network
     /// is run locally on the network loopback or on a local area network.
+    #[cfg(feature = "igd")]
     #[structopt(long)]
     pub forward_port: bool,
 
@@ -141,6 +142,7 @@ fn parse_millis(millis: &str) -> Result<Duration, std::num::ParseIntError> {
 pub(crate) struct InternalConfig {
     pub(crate) client: quinn::ClientConfig,
     pub(crate) server: quinn::ServerConfig,
+    #[cfg(feature = "igd")]
     pub(crate) forward_port: bool,
     pub(crate) external_port: Option<u16>,
     pub(crate) external_ip: Option<IpAddr>,
@@ -168,6 +170,7 @@ impl InternalConfig {
         Ok(Self {
             client,
             server,
+            #[cfg(feature = "igd")]
             forward_port: config.forward_port,
             external_port: config.external_port,
             external_ip: config.external_ip,
