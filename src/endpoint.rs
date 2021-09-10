@@ -9,7 +9,7 @@
 
 use crate::connection_pool::ConnId;
 
-#[cfg(not(feature = "no-igd"))]
+#[cfg(feature = "igd")]
 use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
@@ -38,7 +38,7 @@ use tracing::{debug, error, info, trace, warn};
 const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 
 // Number of seconds before timing out the IGD request to forward a port.
-#[cfg(not(feature = "no-igd"))]
+#[cfg(feature = "igd")]
 const PORT_FORWARD_TIMEOUT: Duration = Duration::from_secs(30);
 
 // Number of seconds before timing out the echo service query.
@@ -144,7 +144,7 @@ impl<I: ConnId> Endpoint<I> {
         let contact = endpoint.connect_to_any(contacts).await;
         let public_addr = endpoint.resolve_public_addr(contact).await?;
 
-        #[cfg(not(feature = "no-igd"))]
+        #[cfg(feature = "igd")]
         if endpoint.config.forward_port {
             timeout(
                 PORT_FORWARD_TIMEOUT,

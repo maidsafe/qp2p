@@ -9,7 +9,7 @@
 
 use super::wire_msg::WireMsg;
 use crate::config::ConfigError;
-#[cfg(not(feature = "no-igd"))]
+#[cfg(feature = "igd")]
 use crate::igd::IgdError;
 use bytes::Bytes;
 use std::{fmt, io, net::SocketAddr};
@@ -38,7 +38,7 @@ pub enum EndpointError {
     },
 
     /// Failed to establish UPnP port forwarding.
-    #[cfg(not(feature = "no-igd"))]
+    #[cfg(feature = "igd")]
     #[error(transparent)]
     Upnp(#[from] UpnpError),
 
@@ -69,7 +69,7 @@ impl From<quinn::EndpointError> for EndpointError {
     }
 }
 
-#[cfg(not(feature = "no-igd"))]
+#[cfg(feature = "igd")]
 impl From<IgdError> for EndpointError {
     fn from(error: IgdError) -> Self {
         Self::Upnp(UpnpError(error))
@@ -466,7 +466,7 @@ pub enum StreamError {
 pub struct UnsupportedStreamOperation(Box<dyn std::error::Error + Send + Sync>);
 
 /// Failed to establish UPnP port forwarding.
-#[cfg(not(feature = "no-igd"))]
+#[cfg(feature = "igd")]
 #[derive(Debug, Error)]
 #[error("Failed to establish UPnP port forwarding")]
 pub struct UpnpError(#[source] IgdError);

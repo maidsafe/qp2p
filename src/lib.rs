@@ -53,7 +53,7 @@ mod connection_pool;
 mod connections;
 mod endpoint;
 mod error;
-#[cfg(not(feature = "no-igd"))]
+#[cfg(feature = "igd")]
 mod igd;
 mod utils;
 mod wire_msg;
@@ -62,7 +62,7 @@ pub use config::{Config, ConfigError};
 pub use connection_pool::ConnId;
 pub use connections::{DisconnectionEvents, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
-#[cfg(not(feature = "no-igd"))]
+#[cfg(feature = "igd")]
 pub use error::UpnpError;
 pub use error::{
     ClientEndpointError, Close, ConnectionError, EndpointError, InternalConfigError, RecvError,

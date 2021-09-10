@@ -74,4 +74,3 @@ tracing-subscriber = "0.2.19"
 
 [features]
 default = [ "igd" ]
-no-igd = [ ]
