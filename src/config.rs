@@ -16,10 +16,10 @@ use std::{net::IpAddr, sync::Arc, time::Duration};
 ///
 /// This is based on average time in which routers would close the UDP mapping to the peer if they
 /// see no conversation between them.
-pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Default for [`Config::keep_alive_interval`] (20 seconds).
-pub const DEFAULT_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(20);
+pub const DEFAULT_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Default for [`Config::upnp_lease_duration`] (2 minutes).
 pub const DEFAULT_UPNP_LEASE_DURATION: Duration = Duration::from_secs(120);

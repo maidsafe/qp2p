@@ -430,11 +430,16 @@ impl<I: ConnId> Endpoint<I> {
         if let Some((conn, guard)) = self.connection_pool.get_by_addr(dest).await {
             trace!("Connection exists in the connection pool: {}", dest);
             let connection = Connection::new(conn, guard);
-            let msg_retry_cfg = retries.unwrap_or(self.config.retry_config);
-            Self::retry(msg_retry_cfg, || async {
-                Ok(connection.send_uni(msg.clone(), priority).await?)
-            })
-            .await?;
+
+            if let Some(config) = retries {
+                Self::retry(config, || async {
+                    Ok(connection.send_uni(msg.clone(), priority).await?)
+                })
+                .await?;
+            } else {
+                connection.send_uni(msg.clone(), priority).await?;
+            }
+
             Ok(())
         } else {
             Err(None)
@@ -467,11 +472,15 @@ impl<I: ConnId> Endpoint<I> {
         retries: Option<RetryConfig>,
     ) -> Result<(), SendError> {
         let connection = self.get_or_connect_to(dest).await?;
-        let msg_retry_cfg = retries.unwrap_or(self.config.retry_config);
-        Self::retry(msg_retry_cfg, || async {
-            Ok(connection.send_uni(msg.clone(), priority).await?)
-        })
-        .await?;
+
+        if let Some(config) = retries {
+            Self::retry(config, || async {
+                Ok(connection.send_uni(msg.clone(), priority).await?)
+            })
+            .await?;
+        } else {
+            connection.send_uni(msg.clone(), priority).await?;
+        }
 
         Ok(())
     }
@@ -539,34 +548,31 @@ impl<I: ConnId> Endpoint<I> {
         &self,
         node_addr: &SocketAddr,
     ) -> Result<quinn::NewConnection, ConnectionError> {
-        Self::retry(self.config.retry_config, || async {
-            trace!("Attempting to connect to {:?}", node_addr);
-            let connecting = match self.quic_endpoint.connect_with(
-                self.config.client.clone(),
-                node_addr,
-                CERT_SERVER_NAME,
-            ) {
-                Ok(conn) => Ok(conn),
-                Err(error) => {
-                    warn!("Connection attempt failed due to {:?}", error);
-                    Err(ConnectionError::from(error))
-                }
-            }?;
+        trace!("Attempting to connect to {:?}", node_addr);
+        let connecting = match self.quic_endpoint.connect_with(
+            self.config.client.clone(),
+            node_addr,
+            CERT_SERVER_NAME,
+        ) {
+            Ok(conn) => Ok(conn),
+            Err(error) => {
+                warn!("Connection attempt failed due to {:?}", error);
+                Err(ConnectionError::from(error))
+            }
+        }?;
 
-            let new_conn = match connecting.await {
-                Ok(new_conn) => {
-                    debug!("okay was had");
-                    Ok(new_conn)
-                }
-                Err(error) => {
-                    error!("some error: {:?}", error);
-                    Err(ConnectionError::from(error))
-                }
-            }?;
+        let new_conn = match connecting.await {
+            Ok(new_conn) => {
+                debug!("okay was had");
+                Ok(new_conn)
+            }
+            Err(error) => {
+                error!("some error: {:?}", error);
+                Err(ConnectionError::from(error))
+            }
+        }?;
 
-            Ok(new_conn)
-        })
-        .await
+        Ok(new_conn)
     }
 
     // set an appropriate public address based on `config` and a reachability check.
