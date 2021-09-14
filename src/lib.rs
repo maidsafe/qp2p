@@ -58,7 +58,7 @@ mod igd;
 mod utils;
 mod wire_msg;
 
-pub use config::{Config, ConfigError};
+pub use config::{Config, ConfigError, RetryConfig};
 pub use connection_pool::ConnId;
 pub use connections::{DisconnectionEvents, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
