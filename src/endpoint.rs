@@ -7,6 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use crate::config::RetryConfig;
 use crate::connection_pool::ConnId;
 
 #[cfg(feature = "igd")]
@@ -408,10 +409,35 @@ impl<I: ConnId> Endpoint<I> {
         dest: &SocketAddr,
         priority: i32,
     ) -> Result<(), Option<SendError>> {
+        self.try_send_message_with(msg, dest, priority, None).await
+    }
+
+    /// Send a message to a peer over an existing connection.
+    ///
+    /// Priority default is 0. Both lower and higher can be passed in.
+    ///
+    /// Optional retry config is passed in, for custom retry policy.
+    ///
+    /// # Errors
+    ///
+    /// If a connection with `dest` exists in the pool but the message fails to send,
+    /// `Err(Some(_))` will be returned. If there's no connection with `dest` in the pool, then
+    /// `Err(None)` will be returned.
+    pub async fn try_send_message_with(
+        &self,
+        msg: Bytes,
+        dest: &SocketAddr,
+        priority: i32,
+        retries: Option<RetryConfig>,
+    ) -> Result<(), Option<SendError>> {
         if let Some((conn, guard)) = self.connection_pool.get_by_addr(dest).await {
             trace!("Connection exists in the connection pool: {}", dest);
             let connection = Connection::new(conn, guard);
-            connection.send_uni(msg, priority).await?;
+            let msg_retry_cfg = retries.unwrap_or(self.config.retry_config);
+            Self::retry(msg_retry_cfg, || async {
+                Ok(connection.send_uni(msg.clone(), priority).await?)
+            })
+            .await?;
             Ok(())
         } else {
             Err(None)
@@ -428,9 +454,27 @@ impl<I: ConnId> Endpoint<I> {
         dest: &SocketAddr,
         priority: i32,
     ) -> Result<(), SendError> {
+        self.send_message_with(msg, dest, priority, None).await
+    }
+
+    /// Sends a message to a peer. This will attempt to use an existing connection
+    /// to the peer first. If this connection is broken or doesn't exist
+    /// a new connection is created and the message is sent.
+    /// Priority default is 0. Both lower and higher can be passed in.
+    /// Optional retry config is passed in, for custom retry policy.
+    pub async fn send_message_with(
+        &self,
+        msg: Bytes,
+        dest: &SocketAddr,
+        priority: i32,
+        retries: Option<RetryConfig>,
+    ) -> Result<(), SendError> {
         let connection = self.get_or_connect_to(dest).await?;
-        self.retry(|| async { Ok(connection.send_uni(msg.clone(), priority).await?) })
-            .await?;
+        let msg_retry_cfg = retries.unwrap_or(self.config.retry_config);
+        Self::retry(msg_retry_cfg, || async {
+            Ok(connection.send_uni(msg.clone(), priority).await?)
+        })
+        .await?;
 
         Ok(())
     }
@@ -498,7 +542,7 @@ impl<I: ConnId> Endpoint<I> {
         &self,
         node_addr: &SocketAddr,
     ) -> Result<quinn::NewConnection, ConnectionError> {
-        self.retry(|| async {
+        Self::retry(self.config.retry_config, || async {
             trace!("Attempting to connect to {:?}", node_addr);
             let connecting = match self.quic_endpoint.connect_with(
                 self.config.client.clone(),
@@ -631,13 +675,17 @@ impl<I: ConnId> Endpoint<I> {
         }
     }
 
-    fn retry<R, E, Fn, Fut>(&self, op: Fn) -> impl futures::Future<Output = Result<R, E>>
+    fn retry<R, E, Fn, Fut>(cfg: RetryConfig, op: Fn) -> impl futures::Future<Output = Result<R, E>>
     where
         Fn: FnMut() -> Fut,
         Fut: futures::Future<Output = Result<R, backoff::Error<E>>>,
     {
         let backoff = ExponentialBackoff {
-            max_elapsed_time: Some(self.config.min_retry_duration),
+            initial_interval: cfg.initial_retry_interval,
+            randomization_factor: cfg.retry_delay_rand_factor,
+            multiplier: cfg.retry_delay_multiplier,
+            max_interval: cfg.max_retry_interval,
+            max_elapsed_time: Some(cfg.retrying_max_elapsed_time),
             ..Default::default()
         };
         retry(backoff, op)
