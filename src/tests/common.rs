@@ -638,7 +638,7 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
         local_addr(),
         &contacts,
         Config {
-            min_retry_duration: Duration::from_millis(500).into(),
+            max_retry_interval: Duration::from_millis(500).into(),
             ..Config::default()
         },
     )
@@ -677,7 +677,7 @@ async fn client() -> Result<()> {
         Endpoint::<[u8; 32]>::new_client(
             local_addr(),
             Config {
-                min_retry_duration: Some(Duration::from_millis(500)),
+                max_retry_interval: Some(Duration::from_millis(500)),
                 ..Default::default()
             },
         )?;
