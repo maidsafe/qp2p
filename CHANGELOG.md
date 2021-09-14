@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.19.0](https://github.com/maidsafe/qp2p/compare/v0.18.0...v0.19.0) (2021-09-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **retries:** Removal of Eq and PartialEq derivations on config.
+
+### Features
+
+* **config:** nest retry config ([edc5493](https://github.com/maidsafe/qp2p/commit/edc5493294e6ede45ebbd0023be51757c355793d))
+* **retries:** extend send msg api with retry cfg ([af6fe59](https://github.com/maidsafe/qp2p/commit/af6fe590abc0d09f6380e6f2bb403700f76440e4))
+
 ## [0.18.0](https://github.com/maidsafe/qp2p/compare/v0.17.4...v0.18.0) (2021-09-10)
 
 
