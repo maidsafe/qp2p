@@ -7,7 +7,10 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{Config, ConnId, DisconnectionEvents, Endpoint, IncomingConnections, IncomingMessages};
+use crate::{
+    Config, ConnId, DisconnectionEvents, Endpoint, IncomingConnections, IncomingMessages,
+    RetryConfig,
+};
 use bytes::Bytes;
 use color_eyre::eyre::Result;
 use std::{
@@ -45,7 +48,10 @@ pub(crate) async fn new_endpoint() -> Result<(
         local_addr(),
         &[],
         Config {
-            max_retry_interval: Duration::from_millis(500).into(),
+            retry_config: RetryConfig {
+                retrying_max_elapsed_time: Duration::from_millis(500),
+                ..RetryConfig::default()
+            },
             ..Config::default()
         },
     )

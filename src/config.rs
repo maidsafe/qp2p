@@ -11,7 +11,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::{net::IpAddr, sync::Arc, time::Duration};
-use structopt::StructOpt;
 
 /// Default for [`Config::idle_timeout`] (1 minute).
 ///
@@ -25,29 +24,29 @@ pub const DEFAULT_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(20);
 /// Default for [`Config::upnp_lease_duration`] (2 minutes).
 pub const DEFAULT_UPNP_LEASE_DURATION: Duration = Duration::from_secs(120);
 
-/// Default for [`Config::max_retry_interval`] (500 ms).
+/// Default for [`RetryConfig::max_retry_interval`] (500 ms).
 ///
 /// Together with the default max and multiplier,
-/// gives 27.8 s total retry time, and 8 retries.
+/// gives 5-6 retries in ~30 s total retry time.
 pub const DEFAULT_INITIAL_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Default for [`Config::max_retry_interval`] (15 s).
+/// Default for [`RetryConfig::max_retry_interval`] (15 s).
 ///
 /// Together with the default min and multiplier,
-/// gives 27.8 s total retry time, and 8 retries.
+/// gives 5-6 retries in ~30 s total retry time.
 pub const DEFAULT_MAX_RETRY_INTERVAL: Duration = Duration::from_secs(15);
 
-/// Default for [`Config::retry_interval_multiplier`] (x1.5).
+/// Default for [`RetryConfig::retry_interval_multiplier`] (x1.5).
 ///
 /// Together with the default max and initial,
-/// gives 27.8 s total retry time, and 8 retries.
+/// gives 5-6 retries in ~30 s total retry time.
 pub const DEFAULT_RETRY_INTERVAL_MULTIPLIER: f64 = 1.5;
 
-/// Default for [`Config::retry_delay_rand_factor`] (0.3).
+/// Default for [`RetryConfig::retry_delay_rand_factor`] (0.3).
 pub const DEFAULT_RETRY_DELAY_RAND_FACTOR: f64 = 0.3;
 
-/// Default for [`Config::retrying_max_elapsed_time`] (60 s).
-pub const DEFAULT_RETRYING_MAX_ELAPSED_TIME: Duration = Duration::from_secs(60);
+/// Default for [`RetryConfig::retrying_max_elapsed_time`] (30 s).
+pub const DEFAULT_RETRYING_MAX_ELAPSED_TIME: Duration = Duration::from_secs(30);
 
 const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
 
@@ -92,24 +91,21 @@ pub struct CertificateGenerationError(
 );
 
 /// QuicP2p configurations
-#[derive(Clone, Debug, Default, Serialize, Deserialize, StructOpt)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     /// Specify if port forwarding via UPnP should be done or not. This can be set to false if the network
     /// is run locally on the network loopback or on a local area network.
     #[cfg(feature = "igd")]
-    #[structopt(long)]
     pub forward_port: bool,
 
     /// External port number assigned to the socket address of the program.
     /// If this is provided, QP2p considers that the local port provided has been mapped to the
     /// provided external port number and automatic port forwarding will be skipped.
-    #[structopt(long)]
     pub external_port: Option<u16>,
 
     /// External IP address of the computer on the WAN. This field is mandatory if the node is the genesis node and
     /// port forwarding is not available. In case of non-genesis nodes, the external IP address will be resolved
     /// using the Echo service.
-    #[structopt(long)]
     pub external_ip: Option<IpAddr>,
 
     /// How long to wait to hear from a peer before timing out a connection.
@@ -119,7 +115,6 @@ pub struct Config {
     ///
     /// If unspecified, this will default to [`DEFAULT_IDLE_TIMEOUT`].
     #[serde(default)]
-    #[structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS")]
     pub idle_timeout: Option<Duration>,
 
     /// Interval at which to send keep-alives to maintain otherwise idle connections.
@@ -128,7 +123,6 @@ pub struct Config {
     ///
     /// If unspecified, this will default to [`DEFAULT_KEEP_ALIVE_INTERVAL`].
     #[serde(default)]
-    #[structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS")]
     pub keep_alive_interval: Option<Duration>,
 
     /// How long UPnP port mappings will last.
@@ -138,62 +132,12 @@ pub struct Config {
     /// If unspecified, this will default to [`DEFAULT_UPNP_LEASE_DURATION`], which should be
     /// suitable in most cases but some routers may clear UPnP port mapping more frequently.
     #[serde(default)]
-    #[structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS")]
     pub upnp_lease_duration: Option<Duration>,
 
-    /// The initial retry interval.
-    ///
-    /// This is the first delay before a retry, for establishing connections and sending messages.
-    /// The subsequent delay will be decided by the `retry_delay_multiplier`.
-    ///
-    /// If unspecified, this will default to [`DEFAULT_INITIAL_RETRY_INTERVAL`].
+    /// Retry configurations for establishing connections and sending messages.
+    /// Determines the retry behaviour of requests, by setting the back off strategy used.
     #[serde(default)]
-    #[structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS")]
-    pub initial_retry_interval: Option<Duration>,
-
-    /// The maximum value of the back off period. Once the retry interval reaches this
-    /// value it stops increasing.
-    ///
-    /// This is the longest duration we will have,
-    /// for establishing connections and sending messages.
-    /// Retrying continues even after the duration times have reached this duration.
-    /// The number of retries before that happens, will be decided by the `retry_delay_multiplier`.
-    /// The number of retries after that, will be decided by the `retrying_max_elapsed_time`.
-    ///
-    /// If unspecified, this will default to [`DEFAULT_MAX_RETRY_INTERVAL`].
-    #[serde(default)]
-    #[structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS")]
-    pub max_retry_interval: Option<Duration>,
-
-    /// The value to multiply the current interval with for each retry attempt.
-    ///
-    /// If unspecified, this will default to [`DEFAULT_RETRY_INTERVAL_MULTIPLIER`].
-    #[serde(default)]
-    #[structopt(long)]
-    pub retry_delay_multiplier: Option<f64>,
-
-    /// The randomization factor to use for creating a range around the retry interval.
-    ///
-    /// A randomization factor of 0.5 results in a random period ranging between 50% below and 50%
-    /// above the retry interval.
-    /// If unspecified, this will default to [`DEFAULT_RETRY_DELAY_RAND_FACTOR`].
-    #[serde(default)]
-    #[structopt(long)]
-    pub retry_delay_rand_factor: Option<f64>,
-
-    /// The maximum elapsed time after instantiating
-    ///
-    /// Retrying continues until this time has elapsed.
-    /// The number of retries before that happens, will be decided by the other retry config options.
-    ///
-    /// If unspecified, this will default to [`DEFAULT_RETRYING_MAX_ELAPSED_TIME`].
-    #[serde(default)]
-    #[structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS")]
-    pub retrying_max_elapsed_time: Option<Duration>,
-}
-
-fn parse_millis(millis: &str) -> Result<Duration, std::num::ParseIntError> {
-    Ok(Duration::from_millis(millis.parse()?))
+    pub retry_config: RetryConfig,
 }
 
 /// Config that has passed validation.
@@ -211,13 +155,14 @@ pub(crate) struct InternalConfig {
     pub(crate) retry_config: RetryConfig,
 }
 
-/// Retry config that has passed validation.
-///
 /// Retry configurations for establishing connections and sending messages.
 /// Determines the retry behaviour of requests, by setting the back off strategy used.
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, Serialize, Deserialize)]
 pub struct RetryConfig {
     /// The initial retry interval.
+    ///
+    /// This is the first delay before a retry, for establishing connections and sending messages.
+    /// The subsequent delay will be decided by the `retry_delay_multiplier`.
     pub initial_retry_interval: Duration,
     /// The maximum value of the back off period. Once the retry interval reaches this
     /// value it stops increasing.
@@ -245,11 +190,11 @@ pub struct RetryConfig {
 impl Default for RetryConfig {
     fn default() -> Self {
         Self {
-            initial_retry_interval: Duration::from_millis(200),
-            max_retry_interval: Duration::from_secs(10),
-            retry_delay_multiplier: 1.5,
-            retry_delay_rand_factor: 0.3,
-            retrying_max_elapsed_time: Duration::from_secs(30),
+            initial_retry_interval: DEFAULT_INITIAL_RETRY_INTERVAL,
+            max_retry_interval: DEFAULT_MAX_RETRY_INTERVAL,
+            retry_delay_multiplier: DEFAULT_RETRY_INTERVAL_MULTIPLIER,
+            retry_delay_rand_factor: DEFAULT_RETRY_DELAY_RAND_FACTOR,
+            retrying_max_elapsed_time: DEFAULT_RETRYING_MAX_ELAPSED_TIME,
         }
     }
 }
@@ -263,21 +208,6 @@ impl InternalConfig {
         let upnp_lease_duration = config
             .upnp_lease_duration
             .unwrap_or(DEFAULT_UPNP_LEASE_DURATION);
-        let initial_retry_interval = config
-            .initial_retry_interval
-            .unwrap_or(DEFAULT_INITIAL_RETRY_INTERVAL);
-        let max_retry_interval = config
-            .max_retry_interval
-            .unwrap_or(DEFAULT_MAX_RETRY_INTERVAL);
-        let retry_delay_multiplier = config
-            .retry_delay_multiplier
-            .unwrap_or(DEFAULT_RETRY_INTERVAL_MULTIPLIER);
-        let retry_delay_rand_factor = config
-            .retry_delay_rand_factor
-            .unwrap_or(DEFAULT_RETRY_DELAY_RAND_FACTOR);
-        let retrying_max_elapsed_time = config
-            .retrying_max_elapsed_time
-            .unwrap_or(DEFAULT_RETRYING_MAX_ELAPSED_TIME);
 
         let transport = Self::new_transport_config(idle_timeout, keep_alive_interval);
         let client = Self::new_client_config(transport.clone());
@@ -291,13 +221,7 @@ impl InternalConfig {
             external_port: config.external_port,
             external_ip: config.external_ip,
             upnp_lease_duration,
-            retry_config: RetryConfig {
-                initial_retry_interval,
-                max_retry_interval,
-                retry_delay_multiplier,
-                retry_delay_rand_factor,
-                retrying_max_elapsed_time,
-            },
+            retry_config: config.retry_config,
         })
     }
 

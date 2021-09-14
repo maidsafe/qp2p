@@ -7,16 +7,13 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::config::RetryConfig;
-use crate::connection_pool::ConnId;
-
 #[cfg(feature = "igd")]
 use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
-    config::{Config, InternalConfig},
+    config::{Config, InternalConfig, RetryConfig},
     connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
-    connection_pool::ConnectionPool,
+    connection_pool::{ConnId, ConnectionPool},
     connections::{
         listen_for_incoming_connections, listen_for_incoming_messages, Connection,
         DisconnectionEvents, RecvStream, SendStream,

@@ -8,7 +8,7 @@
 // Software.
 
 use super::{hash, local_addr, new_endpoint, random_msg};
-use crate::{Config, Endpoint};
+use crate::{Config, Endpoint, RetryConfig};
 use color_eyre::eyre::{bail, eyre, Report, Result};
 use futures::{future, stream::FuturesUnordered, StreamExt};
 use std::{collections::BTreeSet, time::Duration};
@@ -638,7 +638,10 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
         local_addr(),
         &contacts,
         Config {
-            max_retry_interval: Duration::from_millis(500).into(),
+            retry_config: RetryConfig {
+                retrying_max_elapsed_time: Duration::from_millis(500),
+                ..RetryConfig::default()
+            },
             ..Config::default()
         },
     )
@@ -677,8 +680,11 @@ async fn client() -> Result<()> {
         Endpoint::<[u8; 32]>::new_client(
             local_addr(),
             Config {
-                max_retry_interval: Some(Duration::from_millis(500)),
-                ..Default::default()
+                retry_config: RetryConfig {
+                    retrying_max_elapsed_time: Duration::from_millis(500),
+                    ..RetryConfig::default()
+                },
+                ..Config::default()
             },
         )?;
 
