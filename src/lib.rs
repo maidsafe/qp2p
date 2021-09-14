@@ -33,8 +33,7 @@
     unused_features,
     unused_parens,
     while_true,
-    clippy::unicode_not_nfc,
-    warnings
+    clippy::unicode_not_nfc
 )]
 #![warn(
     trivial_casts,
