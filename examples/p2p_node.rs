@@ -14,7 +14,7 @@
 
 use bytes::Bytes;
 use color_eyre::eyre::Result;
-use qp2p::{Config, ConnId, Endpoint};
+use qp2p::{Config, Endpoint};
 use std::{
     env,
     net::{Ipv4Addr, SocketAddr},
@@ -23,12 +23,6 @@ use std::{
 
 #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
 struct XId(pub [u8; 32]);
-
-impl ConnId for XId {
-    fn generate(_socket_addr: &SocketAddr) -> Self {
-        XId(rand::random())
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,16 +35,15 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     // create an endpoint for us to listen on and send from.
-    let (node, _incoming_conns, mut incoming_messages, _disconnections, _contact) =
-        Endpoint::<XId>::new(
-            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
-            &[],
-            Config {
-                idle_timeout: Duration::from_secs(60 * 60).into(), // 1 hour idle timeout.
-                ..Default::default()
-            },
-        )
-        .await?;
+    let (node, _incoming_conns, mut incoming_messages, _disconnections, _contact) = Endpoint::new(
+        SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+        &[],
+        Config {
+            idle_timeout: Duration::from_secs(60 * 60).into(), // 1 hour idle timeout.
+            ..Default::default()
+        },
+    )
+    .await?;
 
     // if we received args then we parse them as SocketAddr and send a "marco" msg to each peer.
     if args.len() > 1 {
@@ -60,8 +53,8 @@ async fn main() -> Result<()> {
                 .expect("Invalid SocketAddr.  Use the form 127.0.0.1:1234");
             let msg = Bytes::from(MSG_MARCO);
             println!("Sending to {:?} --> {:?}\n", peer, msg);
-            node.connect_to(&peer).await?;
-            node.send_message(msg.clone(), &peer, 0).await?;
+            let conn = node.connect_to(&peer).await?;
+            conn.send_uni(msg.clone(), 0).await?;
         }
     }
 
@@ -70,12 +63,12 @@ async fn main() -> Result<()> {
     println!("---\n");
 
     // loop over incoming messages
-    while let Some((socket_addr, bytes)) = incoming_messages.next().await {
-        println!("Received from {:?} --> {:?}", socket_addr, bytes);
+    while let Some((src, bytes)) = incoming_messages.next().await {
+        println!("Received from {:?} --> {:?}", src.remote_address(), bytes);
         if bytes == *MSG_MARCO {
             let reply = Bytes::from(MSG_POLO);
-            node.send_message(reply.clone(), &socket_addr, 0).await?;
-            println!("Replied to {:?} --> {:?}", socket_addr, reply);
+            src.send_uni(reply.clone(), 0).await?;
+            println!("Replied to {:?} --> {:?}", src.remote_address(), reply);
         }
         println!();
     }

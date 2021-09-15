@@ -8,7 +8,7 @@
 // Software.
 
 use crate::{
-    Config, ConnId, DisconnectionEvents, Endpoint, IncomingConnections, IncomingMessages,
+    Config, Connection, DisconnectionEvents, Endpoint, IncomingConnections, IncomingMessages,
     RetryConfig,
 };
 use bytes::Bytes;
@@ -30,24 +30,19 @@ fn setup() {
     color_eyre::install().expect("color_eyre::install() should only be called once");
 }
 
-impl ConnId for [u8; 32] {
-    fn generate(_socket_addr: &SocketAddr) -> Self {
-        rand::random()
-    }
-}
-
 /// Construct an `Endpoint` with sane defaults for testing.
 pub(crate) async fn new_endpoint() -> Result<(
-    Endpoint<[u8; 32]>,
+    Endpoint,
     IncomingConnections,
     IncomingMessages,
     DisconnectionEvents,
-    Option<SocketAddr>,
+    Option<Connection>,
 )> {
     Ok(Endpoint::new(
         local_addr(),
         &[],
         Config {
+            idle_timeout: Some(Duration::from_secs(10)),
             retry_config: RetryConfig {
                 retrying_max_elapsed_time: Duration::from_millis(500),
                 ..RetryConfig::default()

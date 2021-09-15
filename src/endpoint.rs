@@ -12,14 +12,12 @@ use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig, RetryConfig},
-    connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
-    connection_pool::{ConnId, ConnectionPool},
     connections::{
         listen_for_incoming_connections, listen_for_incoming_messages, Connection,
         DisconnectionEvents, RecvStream, SendStream,
     },
     error::{
-        ClientEndpointError, ConnectionError, EndpointError, RecvError, RpcError, SendError,
+        ClientEndpointError, ConnectionError, EndpointError, RecvError, RpcError,
         SerializationError,
     },
 };
@@ -47,11 +45,11 @@ const STANDARD_CHANNEL_SIZE: usize = 10000;
 
 /// Channel on which incoming messages can be listened to
 #[derive(Debug)]
-pub struct IncomingMessages(pub(crate) MpscReceiver<(SocketAddr, Bytes)>);
+pub struct IncomingMessages(pub(crate) MpscReceiver<(Connection, Bytes)>);
 
 impl IncomingMessages {
     /// Blocks and returns the next incoming message and the source peer address
-    pub async fn next(&mut self) -> Option<(SocketAddr, Bytes)> {
+    pub async fn next(&mut self) -> Option<(Connection, Bytes)> {
         self.0.recv().await
     }
 }
@@ -70,19 +68,17 @@ impl IncomingConnections {
 /// Endpoint instance which can be used to create connections to peers,
 /// and listen to incoming messages from other peers.
 #[derive(Clone)]
-pub struct Endpoint<I: ConnId> {
+pub struct Endpoint {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
-    message_tx: MpscSender<(SocketAddr, Bytes)>,
+    message_tx: MpscSender<(Connection, Bytes)>,
     disconnection_tx: MpscSender<SocketAddr>,
     config: InternalConfig,
     termination_tx: Sender<()>,
-    connection_pool: ConnectionPool<I>,
-    connection_deduplicator: ConnectionDeduplicator,
 }
 
-impl<I: ConnId> std::fmt::Debug for Endpoint<I> {
+impl std::fmt::Debug for Endpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
@@ -92,7 +88,7 @@ impl<I: ConnId> std::fmt::Debug for Endpoint<I> {
     }
 }
 
-impl<I: ConnId> Endpoint<I> {
+impl Endpoint {
     /// Create a peer endpoint at the given address.
     ///
     /// A peer endpoint, unlike a [client](Self::new_client) endpoint, can receive incoming
@@ -127,7 +123,7 @@ impl<I: ConnId> Endpoint<I> {
             IncomingConnections,
             IncomingMessages,
             DisconnectionEvents,
-            Option<SocketAddr>,
+            Option<Connection>,
         ),
         EndpointError,
     > {
@@ -140,7 +136,7 @@ impl<I: ConnId> Endpoint<I> {
             Self::build_endpoint(local_addr.into(), config, builder)?;
 
         let contact = endpoint.connect_to_any(contacts).await;
-        let public_addr = endpoint.resolve_public_addr(contact).await?;
+        let public_addr = endpoint.resolve_public_addr(contact.as_ref()).await?;
 
         #[cfg(feature = "igd")]
         if endpoint.config.forward_port {
@@ -159,18 +155,20 @@ impl<I: ConnId> Endpoint<I> {
 
         listen_for_incoming_connections(
             quic_incoming,
-            endpoint.connection_pool.clone(),
             channels.message.0.clone(),
             channels.connection.0,
             channels.disconnection.0.clone(),
             endpoint.clone(),
         );
 
-        if let Some(peer) = contact {
+        if let Some(peer) = &contact {
             let valid = endpoint
                 .endpoint_verification(peer, public_addr)
                 .await
-                .map_err(|error| EndpointError::EndpointVerification { peer, error })?;
+                .map_err(|error| EndpointError::EndpointVerification {
+                    peer: peer.remote_address(),
+                    error,
+                })?;
             if !valid {
                 return Err(EndpointError::Unreachable { public_addr });
             }
@@ -227,8 +225,6 @@ impl<I: ConnId> Endpoint<I> {
             disconnection_tx: channels.disconnection.0.clone(),
             config,
             termination_tx: channels.termination.0.clone(),
-            connection_pool: ConnectionPool::new(),
-            connection_deduplicator: ConnectionDeduplicator::new(),
         };
 
         Ok((endpoint, quic_incoming, channels))
@@ -242,17 +238,6 @@ impl<I: ConnId> Endpoint<I> {
     /// Get the public address of the endpoint.
     pub fn public_addr(&self) -> SocketAddr {
         self.public_addr.unwrap_or(self.local_addr)
-    }
-
-    /// Removes all existing connections to a given peer
-    pub async fn disconnect_from(&self, peer_addr: &SocketAddr) {
-        self.connection_pool
-            .remove(peer_addr)
-            .await
-            .iter()
-            .for_each(|conn| {
-                conn.close(0u8.into(), b"");
-            });
     }
 
     /// Connects to another peer, retries for `config.retry_duration_msec` if the connection fails.
@@ -296,9 +281,24 @@ impl<I: ConnId> Endpoint<I> {
     /// When sending a message on `Connection` fails, the connection is also automatically removed
     /// from the pool and the subsequent call to `connect_to` is guaranteed to reopen new connection
     /// too.
-    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(), ConnectionError> {
-        let _ = self.get_or_connect_to(node_addr).await?;
-        Ok(())
+    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<Connection, ConnectionError> {
+        let new_connection = self.new_connection(node_addr).await?;
+
+        trace!("Successfully connected to peer: {}", node_addr);
+
+        let connection = Connection::new(new_connection.connection);
+
+        listen_for_incoming_messages(
+            connection.remote_address(),
+            connection.clone(),
+            new_connection.uni_streams,
+            new_connection.bi_streams,
+            self.message_tx.clone(),
+            self.disconnection_tx.clone(),
+            self.clone(),
+        );
+
+        Ok(connection)
     }
 
     /// Connect to any of the given peers.
@@ -311,7 +311,7 @@ impl<I: ConnId> Endpoint<I> {
     ///
     /// The successful connection, if any, will be stored in the connection pool (see
     /// [`connect_to`](Self::connect_to) for more info on connection pooling).
-    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Option<SocketAddr> {
+    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Option<Connection> {
         trace!("Connecting to any of {:?}", peer_addrs);
         if peer_addrs.is_empty() {
             return None;
@@ -320,10 +320,10 @@ impl<I: ConnId> Endpoint<I> {
         // Attempt to create a new connection to all nodes and return the first one to succeed
         let tasks = peer_addrs
             .iter()
-            .map(|addr| Box::pin(self.get_or_connect_to(addr)));
+            .map(|addr| Box::pin(self.connect_to(addr)));
 
         match futures::future::select_ok(tasks).await {
-            Ok((connection, _)) => Some(connection.remote_address()),
+            Ok((connection, _)) => Some(connection),
             Err(error) => {
                 error!("Failed to bootstrap to the network, last error: {}", error);
                 None
@@ -364,171 +364,10 @@ impl<I: ConnId> Endpoint<I> {
         }
     }
 
-    /// Get the connection ID of an existing connection with the provided socket address
-    pub async fn get_connection_id(&self, addr: &SocketAddr) -> Option<I> {
-        self.connection_pool
-            .get_by_addr(addr)
-            .await
-            .map(|(_, remover)| remover.id())
-    }
-
-    /// Get the SocketAddr of a connection using the connection ID
-    pub async fn get_socket_addr_by_id(&self, addr: &I) -> Option<SocketAddr> {
-        self.connection_pool
-            .get_by_id(addr)
-            .await
-            .map(|(_, remover)| *remover.remote_addr())
-    }
-
-    /// Open a bi-directional peer with a given peer
-    /// Priority default is 0. Both lower and higher can be passed in.
-    pub async fn open_bidirectional_stream(
-        &self,
-        peer_addr: &SocketAddr,
-        priority: i32,
-    ) -> Result<(SendStream, RecvStream), ConnectionError> {
-        let connection = self.get_or_connect_to(peer_addr).await?;
-        connection.open_bi(priority).await
-    }
-
-    /// Send a message to a peer over an existing connection.
-    ///
-    /// Priority default is 0. Both lower and higher can be passed in.
-    ///
-    /// # Errors
-    ///
-    /// If a connection with `dest` exists in the pool but the message fails to send,
-    /// `Err(Some(_))` will be returned. If there's no connection with `dest` in the pool, then
-    /// `Err(None)` will be returned.
-    pub async fn try_send_message(
-        &self,
-        msg: Bytes,
-        dest: &SocketAddr,
-        priority: i32,
-    ) -> Result<(), Option<SendError>> {
-        self.try_send_message_with(msg, dest, priority, None).await
-    }
-
-    /// Send a message to a peer over an existing connection.
-    ///
-    /// Priority default is 0. Both lower and higher can be passed in.
-    ///
-    /// Optional retry config is passed in, for custom retry policy.
-    ///
-    /// # Errors
-    ///
-    /// If a connection with `dest` exists in the pool but the message fails to send,
-    /// `Err(Some(_))` will be returned. If there's no connection with `dest` in the pool, then
-    /// `Err(None)` will be returned.
-    pub async fn try_send_message_with(
-        &self,
-        msg: Bytes,
-        dest: &SocketAddr,
-        priority: i32,
-        retries: Option<RetryConfig>,
-    ) -> Result<(), Option<SendError>> {
-        if let Some((conn, guard)) = self.connection_pool.get_by_addr(dest).await {
-            trace!("Connection exists in the connection pool: {}", dest);
-            let connection = Connection::new(conn, guard);
-            let msg_retry_cfg = retries.unwrap_or(self.config.retry_config);
-            Self::retry(msg_retry_cfg, || async {
-                Ok(connection.send_uni(msg.clone(), priority).await?)
-            })
-            .await?;
-            Ok(())
-        } else {
-            Err(None)
-        }
-    }
-
-    /// Sends a message to a peer. This will attempt to use an existing connection
-    /// to the peer first. If this connection is broken or doesn't exist
-    /// a new connection is created and the message is sent.
-    /// Priority default is 0. Both lower and higher can be passed in.
-    pub async fn send_message(
-        &self,
-        msg: Bytes,
-        dest: &SocketAddr,
-        priority: i32,
-    ) -> Result<(), SendError> {
-        self.send_message_with(msg, dest, priority, None).await
-    }
-
-    /// Sends a message to a peer. This will attempt to use an existing connection
-    /// to the peer first. If this connection is broken or doesn't exist
-    /// a new connection is created and the message is sent.
-    /// Priority default is 0. Both lower and higher can be passed in.
-    /// Optional retry config is passed in, for custom retry policy.
-    pub async fn send_message_with(
-        &self,
-        msg: Bytes,
-        dest: &SocketAddr,
-        priority: i32,
-        retries: Option<RetryConfig>,
-    ) -> Result<(), SendError> {
-        let connection = self.get_or_connect_to(dest).await?;
-        let msg_retry_cfg = retries.unwrap_or(self.config.retry_config);
-        Self::retry(msg_retry_cfg, || async {
-            Ok(connection.send_uni(msg.clone(), priority).await?)
-        })
-        .await?;
-
-        Ok(())
-    }
-
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
     pub fn close(&self) {
         let _ = self.termination_tx.send(());
         self.quic_endpoint.close(0_u32.into(), b"")
-    }
-
-    /// Get a connection from the pool, or create one, for the given `addr`.
-    pub(crate) async fn get_or_connect_to(
-        &self,
-        addr: &SocketAddr,
-    ) -> Result<Connection<I>, ConnectionError> {
-        let completion = loop {
-            if let Some((conn, remover)) = self.connection_pool.get_by_addr(addr).await {
-                trace!("We are already connected to this peer: {}", addr);
-                return Ok(Connection::new(conn, remover));
-            }
-
-            // Check if a connect attempt to this address is already in progress.
-            match self.connection_deduplicator.query(addr).await {
-                DedupHandle::Dup(Ok(())) => continue, // the connection should now be in the pool
-                DedupHandle::Dup(Err(error)) => return Err(error), // cannot connect
-                DedupHandle::New(completion) => break completion,
-            }
-        };
-
-        match self.new_connection(addr).await {
-            Ok(new_connection) => {
-                trace!("Successfully connected to peer: {}", addr);
-
-                let connection = new_connection.connection;
-                let id = ConnId::generate(&connection.remote_address());
-                let remover = self
-                    .connection_pool
-                    .insert(id, connection.remote_address(), connection.clone())
-                    .await;
-
-                listen_for_incoming_messages(
-                    new_connection.uni_streams,
-                    new_connection.bi_streams,
-                    remover.clone(),
-                    self.message_tx.clone(),
-                    self.disconnection_tx.clone(),
-                    self.clone(),
-                );
-
-                let _ = completion.complete(Ok(()));
-                Ok(Connection::new(connection, remover))
-            }
-            Err(error) => {
-                let _ = completion.complete(Err(error.clone()));
-                Err(error)
-            }
-        }
     }
 
     /// Attempt a connection to a node_addr.
@@ -572,20 +411,22 @@ impl<I: ConnId> Endpoint<I> {
     // set an appropriate public address based on `config` and a reachability check.
     async fn resolve_public_addr(
         &mut self,
-        contact: Option<SocketAddr>,
+        contact: Option<&Connection>,
     ) -> Result<SocketAddr, EndpointError> {
         let mut public_addr = self.local_addr;
 
         // get the IP seen for us by our contact
-        let visible_addr = if let Some(peer) = contact {
-            Some(
-                self.endpoint_echo(peer)
-                    .await
-                    .map_err(|error| EndpointError::EndpointEcho { peer, error })?,
-            )
-        } else {
-            None
-        };
+        let visible_addr =
+            if let Some(peer) = contact {
+                Some(self.endpoint_echo(peer).await.map_err(|error| {
+                    EndpointError::EndpointEcho {
+                        peer: peer.remote_address(),
+                        error,
+                    }
+                })?)
+            } else {
+                None
+            };
 
         if let Some(external_ip) = self.config.external_ip {
             // set the public IP based on config
@@ -644,8 +485,8 @@ impl<I: ConnId> Endpoint<I> {
     }
 
     /// Perform the endpoint echo RPC with the given peer.
-    async fn endpoint_echo(&self, peer: SocketAddr) -> Result<SocketAddr, RpcError> {
-        let (mut send, mut recv) = self.open_bidirectional_stream(&peer, 0).await?;
+    async fn endpoint_echo(&self, peer: &Connection) -> Result<SocketAddr, RpcError> {
+        let (mut send, mut recv) = peer.open_bi(0).await?;
 
         send.send(WireMsg::EndpointEchoReq).await?;
 
@@ -658,10 +499,10 @@ impl<I: ConnId> Endpoint<I> {
     /// Perform the endpoint verification RPC with the given peer.
     async fn endpoint_verification(
         &self,
-        peer: SocketAddr,
+        peer: &Connection,
         public_addr: SocketAddr,
     ) -> Result<bool, RpcError> {
-        let (mut send, mut recv) = self.open_bidirectional_stream(&peer, 0).await?;
+        let (mut send, mut recv) = peer.open_bi(0).await?;
 
         send.send(WireMsg::EndpointVerificationReq(public_addr))
             .await?;
@@ -690,7 +531,7 @@ impl<I: ConnId> Endpoint<I> {
 }
 
 // a private helper struct for passing a bunch of channel-related things
-type Msg = (SocketAddr, Bytes);
+type Msg = (Connection, Bytes);
 struct Channels {
     connection: (MpscSender<SocketAddr>, MpscReceiver<SocketAddr>),
     message: (MpscSender<Msg>, MpscReceiver<Msg>),
@@ -718,7 +559,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_without_external_addr() -> Result<()> {
-        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _, _, _) = Endpoint::new(
             local_addr(),
             &[],
             Config {
@@ -735,7 +576,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_ip() -> Result<()> {
-        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _, _, _) = Endpoint::new(
             local_addr(),
             &[],
             Config {
@@ -755,7 +596,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_port() -> Result<()> {
-        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _, _, _) = Endpoint::new(
             local_addr(),
             &[],
             Config {
@@ -775,7 +616,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_addr() -> Result<()> {
-        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _, _, _) = Endpoint::new(
             local_addr(),
             &[],
             Config {

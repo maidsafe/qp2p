@@ -22,7 +22,7 @@ async fn successful_connection() -> Result<()> {
     let peer1_addr = peer1.public_addr();
 
     let (peer2, _, _, _, _) = new_endpoint().await?;
-    peer2.connect_to(&peer1_addr).await?;
+    peer2.connect_to(&peer1_addr).await.map(drop)?;
     let peer2_addr = peer2.public_addr();
 
     if let Some(connecting_peer) = peer1_incoming_connections.next().await {
@@ -44,11 +44,9 @@ async fn single_message() -> Result<()> {
     let peer2_addr = peer2.public_addr();
 
     // Peer 2 connects and sends a message
-    peer2.connect_to(&peer1_addr).await?;
+    let p2_to_1 = peer2.connect_to(&peer1_addr).await?;
     let msg_from_peer2 = random_msg(1024);
-    peer2
-        .send_message(msg_from_peer2.clone(), &peer1_addr, 0)
-        .await?;
+    p2_to_1.send_uni(msg_from_peer2.clone(), 0).await?;
 
     // Peer 1 gets an incoming connection
     if let Some(connecting_peer) = peer1_incoming_connections.next().await {
@@ -59,7 +57,7 @@ async fn single_message() -> Result<()> {
 
     // Peer 2 gets an incoming message
     if let Some((source, message)) = peer1_incoming_messages.next().await {
-        assert_eq!(source, peer2_addr);
+        assert_eq!(source.remote_address(), peer2_addr);
         assert_eq!(message, msg_from_peer2);
     } else {
         eyre!("No incoming message");
@@ -77,9 +75,9 @@ async fn reuse_outgoing_connection() -> Result<()> {
     let bob_addr = bob.public_addr();
 
     // Connect for the first time and send a message.
-    alice.connect_to(&bob_addr).await?;
+    let a_to_b = alice.connect_to(&bob_addr).await?;
     let msg0 = random_msg(1024);
-    alice.send_message(msg0.clone(), &bob_addr, 0).await?;
+    a_to_b.send_uni(msg0.clone(), 0).await?;
 
     // Bob should recieve an incoming connection and message
     if let Some(connecting_peer) = bob_incoming_connections.next().await {
@@ -89,16 +87,16 @@ async fn reuse_outgoing_connection() -> Result<()> {
     }
 
     if let Some((source, message)) = bob_incoming_messages.next().await {
-        assert_eq!(source, alice_addr);
+        assert_eq!(source.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
         eyre!("No incoming message");
     }
 
-    // Try connecting again and send a message
-    alice.connect_to(&bob_addr).await?;
+    // Send a message on the same connection
+    let a_to_b = alice.connect_to(&bob_addr).await?;
     let msg1 = random_msg(1024);
-    alice.send_message(msg1.clone(), &bob_addr, 0).await?;
+    a_to_b.send_uni(msg1.clone(), 0).await?;
 
     // Bob *should not* get an incoming connection since there is already a connection established
     if let Ok(Some(connecting_peer)) =
@@ -108,7 +106,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
     }
 
     if let Some((source, message)) = bob_incoming_messages.next().await {
-        assert_eq!(source, alice_addr);
+        assert_eq!(source.remote_address(), alice_addr);
         assert_eq!(message, msg1);
     } else {
         eyre!("No incoming message");
@@ -127,9 +125,9 @@ async fn reuse_incoming_connection() -> Result<()> {
     let bob_addr = bob.public_addr();
 
     // Connect for the first time and send a message.
-    alice.connect_to(&bob_addr).await?;
+    let a_to_b = alice.connect_to(&bob_addr).await?;
     let msg0 = random_msg(1024);
-    alice.send_message(msg0.clone(), &bob_addr, 0).await?;
+    a_to_b.send_uni(msg0.clone(), 0).await?;
 
     // Bob should recieve an incoming connection and message
     if let Some(connecting_peer) = bob_incoming_connections.next().await {
@@ -139,16 +137,16 @@ async fn reuse_incoming_connection() -> Result<()> {
     }
 
     if let Some((source, message)) = bob_incoming_messages.next().await {
-        assert_eq!(source, alice_addr);
+        assert_eq!(source.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
         eyre!("No incoming message");
     }
 
     // Bob tries to connect to alice and sends a message
-    bob.connect_to(&alice_addr).await?;
+    let b_to_a = bob.connect_to(&alice_addr).await?;
     let msg1 = random_msg(1024);
-    bob.send_message(msg1.clone(), &alice_addr, 0).await?;
+    b_to_a.send_uni(msg1.clone(), 0).await?;
 
     // Alice *will not* get an incoming connection since there is already a connection established
     // However, Alice will still get the incoming message
@@ -159,7 +157,7 @@ async fn reuse_incoming_connection() -> Result<()> {
     }
 
     if let Some((source, message)) = alice_incoming_messages.next().await {
-        assert_eq!(source, bob_addr);
+        assert_eq!(source.remote_address(), bob_addr);
         assert_eq!(message, msg1);
     } else {
         eyre!("No incoming message");
@@ -177,7 +175,7 @@ async fn disconnection() -> Result<()> {
     let bob_addr = bob.public_addr();
 
     // Alice connects to Bob who should receive an incoming connection.
-    alice.connect_to(&bob_addr).await?;
+    let a_to_b = alice.connect_to(&bob_addr).await?;
 
     if let Some(connecting_peer) = bob_incoming_connections.next().await {
         assert_eq!(connecting_peer, alice_addr);
@@ -186,7 +184,7 @@ async fn disconnection() -> Result<()> {
     }
 
     // After Alice disconnects from Bob both peers should receive the disconnected event.
-    alice.disconnect_from(&bob_addr).await;
+    drop(a_to_b);
 
     if let Some(disconnected_peer) = alice_disconnections.next().await {
         assert_eq!(disconnected_peer, bob_addr);
@@ -201,7 +199,7 @@ async fn disconnection() -> Result<()> {
     }
 
     // This time bob connects to Alice. Since this is a *new connection*, Alice should get the connection event
-    bob.connect_to(&alice_addr).await?;
+    bob.connect_to(&alice_addr).await.map(drop)?;
 
     if let Some(connected_peer) = alice_incoming_connections.next().await {
         assert_eq!(connected_peer, bob_addr);
@@ -231,7 +229,8 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
         new_endpoint().await?;
     let bob_addr = bob.public_addr();
 
-    future::try_join(alice.connect_to(&bob_addr), bob.connect_to(&alice_addr)).await?;
+    let (a_to_b, b_to_a) =
+        future::try_join(alice.connect_to(&bob_addr), bob.connect_to(&alice_addr)).await?;
 
     if let Some(connecting_peer) = alice_incoming_connections.next().await {
         assert_eq!(connecting_peer, bob_addr);
@@ -246,27 +245,27 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     }
 
     let msg0 = random_msg(1024);
-    alice.send_message(msg0.clone(), &bob_addr, 0).await?;
+    a_to_b.send_uni(msg0.clone(), 0).await?;
 
     let msg1 = random_msg(1024);
-    bob.send_message(msg1.clone(), &alice_addr, 0).await?;
+    b_to_a.send_uni(msg1.clone(), 0).await?;
 
     if let Some((src, message)) = alice_incoming_messages.next().await {
-        assert_eq!(src, bob_addr);
+        assert_eq!(src.remote_address(), bob_addr);
         assert_eq!(message, msg1);
     } else {
         eyre!("Missing incoming message");
     }
 
     if let Some((src, message)) = bob_incoming_messages.next().await {
-        assert_eq!(src, alice_addr);
+        assert_eq!(src.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
         eyre!("Missing incoming message");
     }
 
     // Drop the connection initiated by Bob.
-    bob.disconnect_from(&alice_addr).await;
+    drop(b_to_a);
 
     // It should be closed on Alice's side too.
     if let Some(disconnected_peer) = alice_disconnections.next().await {
@@ -277,7 +276,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
 
     // Bob connects to Alice again. This does not open a new connection but returns the connection
     // previously initiated by Alice from the pool.
-    bob.connect_to(&alice_addr).await?;
+    let b_to_a = bob.connect_to(&alice_addr).await?;
 
     if let Ok(Some(connecting_peer)) =
         timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
@@ -286,62 +285,11 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     }
 
     let msg2 = random_msg(1024);
-    bob.send_message(msg2.clone(), &alice_addr, 0).await?;
+    b_to_a.send_uni(msg2.clone(), 0).await?;
 
     if let Some((src, message)) = alice_incoming_messages.next().await {
-        assert_eq!(src, bob_addr);
+        assert_eq!(src.remote_address(), bob_addr);
         assert_eq!(message, msg2);
-    }
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
-    let (alice, mut alice_incoming_connections, mut alice_incoming_messages, _, _) =
-        new_endpoint().await?;
-    let alice_addr = alice.public_addr();
-
-    let (bob, _, mut bob_incoming_messages, _, _) = new_endpoint().await?;
-    let bob_addr = bob.public_addr();
-
-    // Try to establish two connections to the same peer at the same time.
-    let ((), ()) =
-        future::try_join(bob.connect_to(&alice_addr), bob.connect_to(&alice_addr)).await?;
-
-    // Alice get only one incoming connection
-    if let Some(connecting_peer) = alice_incoming_connections.next().await {
-        assert_eq!(connecting_peer, bob_addr);
-    } else {
-        eyre!("Missing incoming connection");
-    }
-
-    if let Ok(Some(connecting_peer)) =
-        timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
-    {
-        eyre!("Unexpected incoming connection from {}", connecting_peer);
-    }
-
-    // Send two messages, one from each end
-    let msg0 = random_msg(1024);
-    alice.send_message(msg0.clone(), &bob_addr, 0).await?;
-
-    let msg1 = random_msg(1024);
-    bob.send_message(msg1.clone(), &alice_addr, 0).await?;
-
-    // Both messages are received  at the other end
-    if let Some((src, message)) = alice_incoming_messages.next().await {
-        assert_eq!(src, bob_addr);
-        assert_eq!(message, msg1);
-    } else {
-        eyre!("No message received from Bob");
-    }
-
-    if let Some((src, message)) = bob_incoming_messages.next().await {
-        assert_eq!(src, alice_addr);
-        assert_eq!(message, msg0);
-    } else {
-        eyre!("No message from alice");
     }
 
     Ok(())
@@ -370,10 +318,12 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
             let mut sending_tasks = Vec::new();
 
             while let Some((src, msg)) = recv_incoming_messages.next().await {
-                info!("received from {:?} with message size {}", src, msg.len());
+                info!(
+                    "received from {:?} with message size {}",
+                    src.remote_address(),
+                    msg.len()
+                );
                 assert_eq!(msg.len(), test_msgs[0].len());
-
-                let sending_endpoint = server_endpoint.clone();
 
                 sending_tasks.push(tokio::spawn({
                     async move {
@@ -383,10 +333,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                             let _ = hash(&msg);
                         }
                         // Send the hash result back.
-                        sending_endpoint.connect_to(&src).await?;
-                        sending_endpoint
-                            .send_message(hash_result.to_vec().into(), &src, 0)
-                            .await?;
+                        src.send_uni(hash_result.to_vec().into(), 0).await?;
 
                         Ok::<_, Report>(())
                     }
@@ -412,13 +359,11 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 
             async move {
                 let mut hash_results = BTreeSet::new();
-                send_endpoint.connect_to(&server_addr).await?;
+                let conn = send_endpoint.connect_to(&server_addr).await?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
                     let _ = hash_results.insert(hash(message));
                     info!("sender #{} sending message #{}", id, index);
-                    send_endpoint
-                        .send_message(message.clone(), &server_addr, 0)
-                        .await?;
+                    conn.send_uni(message.clone(), 0).await?;
                 }
 
                 info!(
@@ -430,7 +375,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                     info!(
                         "#{} received from server {:?} with message size {}",
                         id,
-                        src,
+                        src.remote_address(),
                         msg.len()
                     );
 
@@ -476,12 +421,14 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
             assert!(!logs_contain("error"));
 
             while let Some((src, msg)) = recv_incoming_messages.next().await {
-                info!("received from {:?} with message size {}", src, msg.len());
+                info!(
+                    "received from {:?} with message size {}",
+                    src.remote_address(),
+                    msg.len()
+                );
                 assert!(!logs_contain("error"));
 
                 assert_eq!(msg.len(), test_msgs[0].len());
-
-                let sending_endpoint = server_endpoint.clone();
 
                 let hash_result = hash(&msg);
                 for _ in 0..5 {
@@ -489,9 +436,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                 }
 
                 // Send the hash result back.
-                sending_endpoint
-                    .send_message(hash_result.to_vec().into(), &src, 0)
-                    .await?;
+                src.send_uni(hash_result.to_vec().into(), 0).await?;
 
                 assert!(!logs_contain("error"));
 
@@ -519,14 +464,12 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
             async move {
                 let mut hash_results = BTreeSet::new();
 
-                send_endpoint.connect_to(&server_addr).await?;
+                let conn = send_endpoint.connect_to(&server_addr).await?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
                     let _ = hash_results.insert(hash(message));
 
                     info!("sender #{} sending message #{}", id, index);
-                    send_endpoint
-                        .send_message(message.clone(), &server_addr, 0)
-                        .await?;
+                    conn.send_uni(message.clone(), 0).await?;
                 }
 
                 info!(
@@ -539,7 +482,9 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
 
                     info!(
                         "sender #{} received from server {:?} with message size {:?}",
-                        id, src, msg
+                        id,
+                        src.remote_address(),
+                        msg
                     );
 
                     info!("Hash len before: {:?}", hash_results.len());
@@ -566,6 +511,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[traced_test]
 async fn many_messages() -> Result<()> {
     use futures::future;
     use std::{convert::TryInto, sync::Arc};
@@ -582,15 +528,15 @@ async fn many_messages() -> Result<()> {
 
     // Sender
     let send_endpoint = Arc::new(send_endpoint);
+    let send_connection = Arc::new(send_endpoint.connect_to(&recv_addr).await?);
 
     for id in 0..num_messages {
         tasks.push(tokio::spawn({
-            let endpoint = send_endpoint.clone();
+            let send_connection = Arc::clone(&send_connection);
             async move {
                 info!("sending {}", id);
                 let msg = id.to_le_bytes().to_vec().into();
-                endpoint.connect_to(&recv_addr).await?;
-                endpoint.send_message(msg, &recv_addr, 0).await?;
+                send_connection.send_uni(msg, 0).await?;
                 info!("sent {}", id);
 
                 Ok::<_, Report>(())
@@ -605,7 +551,7 @@ async fn many_messages() -> Result<()> {
 
             while let Some((src, msg)) = recv_incoming_messages.next().await {
                 let id = usize::from_le_bytes(msg[..].try_into().unwrap());
-                assert_eq!(src, send_addr);
+                assert_eq!(src.remote_address(), send_addr);
                 info!("received {}", id);
 
                 num_received += 1;
@@ -634,7 +580,7 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
 
     let contacts = vec![ep1.public_addr(), ep2.public_addr(), ep3.public_addr()];
 
-    let (ep, _, _, _, bootstrapped_peer) = Endpoint::<[u8; 32]>::new(
+    let (ep, _, _, _, bootstrapped_peer) = Endpoint::new(
         local_addr(),
         &contacts,
         Config {
@@ -650,8 +596,8 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
         bootstrapped_peer.ok_or_else(|| eyre!("Failed to connecto to any contact"))?;
 
     for peer in contacts {
-        if peer != bootstrapped_peer {
-            ep.connect_to(&peer).await?;
+        if peer != bootstrapped_peer.remote_address() {
+            ep.connect_to(&peer).await.map(drop)?;
         }
     }
     Ok(())
@@ -676,40 +622,44 @@ async fn client() -> Result<()> {
     use crate::{Config, Endpoint};
 
     let (server, _, mut server_messages, _, _) = new_endpoint().await?;
-    let (client, mut client_messages, mut client_disconnections) =
-        Endpoint::<[u8; 32]>::new_client(
-            local_addr(),
-            Config {
-                retry_config: RetryConfig {
-                    retrying_max_elapsed_time: Duration::from_millis(500),
-                    ..RetryConfig::default()
-                },
-                ..Config::default()
+    let (client, mut client_messages, mut client_disconnections) = Endpoint::new_client(
+        local_addr(),
+        Config {
+            idle_timeout: Some(Duration::from_millis(500)),
+            retry_config: RetryConfig {
+                retrying_max_elapsed_time: Duration::from_millis(500),
+                ..RetryConfig::default()
             },
-        )?;
+            ..Config::default()
+        },
+    )?;
 
+    println!("first send");
     client
-        .send_message(b"hello"[..].into(), &server.public_addr(), 0)
+        .connect_to(&server.public_addr())
+        .await?
+        .send_uni(b"hello"[..].into(), 0)
         .await?;
 
+    println!("first recv");
     let (sender, message) = server_messages
         .next()
         .await
         .ok_or_else(|| eyre!("Did not receive expected message"))?;
-    assert_eq!(sender, client.public_addr());
+    assert_eq!(sender.remote_address(), client.public_addr());
     assert_eq!(&message[..], b"hello");
 
-    server
-        .send_message(b"world"[..].into(), &client.public_addr(), 0)
-        .await?;
+    println!("second send");
+    sender.send_uni(b"world"[..].into(), 0).await?;
+    println!("second recv");
     let (sender, message) = client_messages
         .next()
         .await
         .ok_or_else(|| eyre!("Did not receive expected message"))?;
-    assert_eq!(sender, server.public_addr());
+    assert_eq!(sender.remote_address(), server.public_addr());
     assert_eq!(&message[..], b"world");
 
-    server.disconnect_from(&client.public_addr()).await;
+    println!("disconnection");
     let disconnector = client_disconnections
         .next()
         .await
