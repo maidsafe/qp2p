@@ -22,7 +22,7 @@ async fn successful_connection() -> Result<()> {
     let peer1_addr = peer1.public_addr();
 
     let (peer2, _, _, _, _) = new_endpoint().await?;
-    peer2.connect_to(&peer1_addr).await?;
+    peer2.connect_to(&peer1_addr).await.map(drop)?;
     let peer2_addr = peer2.public_addr();
 
     if let Some(connecting_peer) = peer1_incoming_connections.next().await {
@@ -44,7 +44,7 @@ async fn single_message() -> Result<()> {
     let peer2_addr = peer2.public_addr();
 
     // Peer 2 connects and sends a message
-    peer2.connect_to(&peer1_addr).await?;
+    peer2.connect_to(&peer1_addr).await.map(drop)?;
     let msg_from_peer2 = random_msg(1024);
     peer2
         .send_message(msg_from_peer2.clone(), &peer1_addr, 0)
@@ -77,7 +77,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
     let bob_addr = bob.public_addr();
 
     // Connect for the first time and send a message.
-    alice.connect_to(&bob_addr).await?;
+    alice.connect_to(&bob_addr).await.map(drop)?;
     let msg0 = random_msg(1024);
     alice.send_message(msg0.clone(), &bob_addr, 0).await?;
 
@@ -96,7 +96,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
     }
 
     // Try connecting again and send a message
-    alice.connect_to(&bob_addr).await?;
+    alice.connect_to(&bob_addr).await.map(drop)?;
     let msg1 = random_msg(1024);
     alice.send_message(msg1.clone(), &bob_addr, 0).await?;
 
@@ -127,7 +127,7 @@ async fn reuse_incoming_connection() -> Result<()> {
     let bob_addr = bob.public_addr();
 
     // Connect for the first time and send a message.
-    alice.connect_to(&bob_addr).await?;
+    alice.connect_to(&bob_addr).await.map(drop)?;
     let msg0 = random_msg(1024);
     alice.send_message(msg0.clone(), &bob_addr, 0).await?;
 
@@ -146,7 +146,7 @@ async fn reuse_incoming_connection() -> Result<()> {
     }
 
     // Bob tries to connect to alice and sends a message
-    bob.connect_to(&alice_addr).await?;
+    bob.connect_to(&alice_addr).await.map(drop)?;
     let msg1 = random_msg(1024);
     bob.send_message(msg1.clone(), &alice_addr, 0).await?;
 
@@ -177,7 +177,7 @@ async fn disconnection() -> Result<()> {
     let bob_addr = bob.public_addr();
 
     // Alice connects to Bob who should receive an incoming connection.
-    alice.connect_to(&bob_addr).await?;
+    alice.connect_to(&bob_addr).await.map(drop)?;
 
     if let Some(connecting_peer) = bob_incoming_connections.next().await {
         assert_eq!(connecting_peer, alice_addr);
@@ -201,7 +201,7 @@ async fn disconnection() -> Result<()> {
     }
 
     // This time bob connects to Alice. Since this is a *new connection*, Alice should get the connection event
-    bob.connect_to(&alice_addr).await?;
+    bob.connect_to(&alice_addr).await.map(drop)?;
 
     if let Some(connected_peer) = alice_incoming_connections.next().await {
         assert_eq!(connected_peer, bob_addr);
@@ -231,7 +231,9 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
         new_endpoint().await?;
     let bob_addr = bob.public_addr();
 
-    future::try_join(alice.connect_to(&bob_addr), bob.connect_to(&alice_addr)).await?;
+    future::try_join(alice.connect_to(&bob_addr), bob.connect_to(&alice_addr))
+        .await
+        .map(drop)?;
 
     if let Some(connecting_peer) = alice_incoming_connections.next().await {
         assert_eq!(connecting_peer, bob_addr);
@@ -277,7 +279,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
 
     // Bob connects to Alice again. This does not open a new connection but returns the connection
     // previously initiated by Alice from the pool.
-    bob.connect_to(&alice_addr).await?;
+    bob.connect_to(&alice_addr).await.map(drop)?;
 
     if let Ok(Some(connecting_peer)) =
         timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
@@ -306,8 +308,7 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     let bob_addr = bob.public_addr();
 
     // Try to establish two connections to the same peer at the same time.
-    let ((), ()) =
-        future::try_join(bob.connect_to(&alice_addr), bob.connect_to(&alice_addr)).await?;
+    let (_, _) = future::try_join(bob.connect_to(&alice_addr), bob.connect_to(&alice_addr)).await?;
 
     // Alice get only one incoming connection
     if let Some(connecting_peer) = alice_incoming_connections.next().await {
@@ -383,7 +384,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                             let _ = hash(&msg);
                         }
                         // Send the hash result back.
-                        sending_endpoint.connect_to(&src).await?;
+                        sending_endpoint.connect_to(&src).await.map(drop)?;
                         sending_endpoint
                             .send_message(hash_result.to_vec().into(), &src, 0)
                             .await?;
@@ -412,7 +413,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 
             async move {
                 let mut hash_results = BTreeSet::new();
-                send_endpoint.connect_to(&server_addr).await?;
+                send_endpoint.connect_to(&server_addr).await.map(drop)?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
                     let _ = hash_results.insert(hash(message));
                     info!("sender #{} sending message #{}", id, index);
@@ -519,7 +520,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
             async move {
                 let mut hash_results = BTreeSet::new();
 
-                send_endpoint.connect_to(&server_addr).await?;
+                send_endpoint.connect_to(&server_addr).await.map(drop)?;
                 for (index, message) in messages.iter().enumerate().take(num_messages_each) {
                     let _ = hash_results.insert(hash(message));
 
@@ -589,7 +590,7 @@ async fn many_messages() -> Result<()> {
             async move {
                 info!("sending {}", id);
                 let msg = id.to_le_bytes().to_vec().into();
-                endpoint.connect_to(&recv_addr).await?;
+                endpoint.connect_to(&recv_addr).await.map(drop)?;
                 endpoint.send_message(msg, &recv_addr, 0).await?;
                 info!("sent {}", id);
 
@@ -650,8 +651,8 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
         bootstrapped_peer.ok_or_else(|| eyre!("Failed to connecto to any contact"))?;
 
     for peer in contacts {
-        if peer != bootstrapped_peer {
-            ep.connect_to(&peer).await?;
+        if peer != bootstrapped_peer.remote_address() {
+            ep.connect_to(&peer).await.map(drop)?;
         }
     }
     Ok(())

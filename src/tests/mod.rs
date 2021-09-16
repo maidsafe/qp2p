@@ -8,8 +8,8 @@
 // Software.
 
 use crate::{
-    Config, ConnId, DisconnectionEvents, Endpoint, IncomingConnections, IncomingMessages,
-    RetryConfig,
+    Config, ConnId, Connection, DisconnectionEvents, Endpoint, IncomingConnections,
+    IncomingMessages, RetryConfig,
 };
 use bytes::Bytes;
 use color_eyre::eyre::Result;
@@ -42,7 +42,7 @@ pub(crate) async fn new_endpoint() -> Result<(
     IncomingConnections,
     IncomingMessages,
     DisconnectionEvents,
-    Option<SocketAddr>,
+    Option<Connection<[u8; 32]>>,
 )> {
     Ok(Endpoint::new(
         local_addr(),
