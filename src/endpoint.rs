@@ -67,8 +67,7 @@ impl IncomingConnections {
     }
 }
 
-/// Endpoint instance which can be used to create connections to peers,
-/// and listen to incoming messages from other peers.
+/// Endpoint instance which can be used to communicate with peers.
 #[derive(Clone)]
 pub struct Endpoint<I: ConnId> {
     local_addr: SocketAddr,
@@ -258,47 +257,27 @@ impl<I: ConnId> Endpoint<I> {
             });
     }
 
-    /// Connects to another peer, retries for `config.retry_duration_msec` if the connection fails.
+    /// Connect to a peer.
+    ///
+    /// Atttempts to connect to a peer at the given address. Connection attempts are retried based
+    /// on the [`Config::retry_config`] used to create the endpoint.
+    ///
+    /// Returns a [`Connection`], which is a handle representing the underlying connection. There's
+    /// presently little that you can do with a `Connection` itself, besides obtaining the
+    /// [`remote_address`](Connection::remote_address) which can then be used with other `Endpoint`
+    /// methods to communicate with the peer (the connection is retrieved via the connection pool –
+    /// see below).
     ///
     /// **Note:** this method is intended for use when it's necessary to connect to a specific peer.
     /// See [`connect_to_any`](Self::connect_to_any) if you just need a connection with any of a set
     /// of peers.
     ///
-    /// Returns `Connection` which is a handle for sending messages to the peer and
-    /// `IncomingMessages` which is a stream of messages received from the peer.
-    /// The incoming messages stream might be `None`. See the next section for more info.
-    ///
     /// # Connection pooling
     ///
-    /// Connection are stored in an internal pool and reused if possible. A connection remains in
-    /// the pool while its `IncomingMessages` instances exists and while the connection is open.
-    ///
-    /// When a new connection is established, this function returns both the `Connection` instance
-    /// and the `IncomingMessages` stream. If an existing connection is retrieved from the pool,
-    /// the incoming messages will be `None`. Multiple `Connection` instances can exists
-    /// simultaneously and they all share the same underlying connection resource. On the other
-    /// hand, at most one `IncomingMessages` stream can exist per peer.
-    ///
-    /// How to handle the `IncomingMessages` depends on the networking model of the application:
-    ///
-    /// In the peer-to-peer model, where peers can arbitrarily send and receive messages to/from
-    /// other peers, it is recommended to keep the `IncomingMessages` around and listen on it for
-    /// new messages by repeatedly calling `next` and only drop it when it returns `None`.
-    /// On the other hand, there is no need to keep `Connection` around as it can be cheaply
-    /// retrieved again when needed by calling `connect_to`. When the connection gets closed by the
-    /// peer or it timeouts due to inactivity, the incoming messages stream gets closed and once
-    /// it's dropped the connection gets removed from the pool automatically. Calling `connect_to`
-    /// afterwards will open a new connection.
-    ///
-    /// In the client-server model, where only the client send requests to the server and then
-    /// listens for responses and never the other way around, it's OK to ignore (drop) the incoming
-    /// messages stream and only use bi-directional streams obtained by calling
-    /// `Connection::open_bi`. In this case the connection won't be pooled and the application is
-    /// responsible for caching it.
-    ///
-    /// When sending a message on `Connection` fails, the connection is also automatically removed
-    /// from the pool and the subsequent call to `connect_to` is guaranteed to reopen new connection
-    /// too.
+    /// Connections are stored in an internal pool and reused if possible. A connection remains in
+    /// the pool until either side closes the connection (including due to timeouts or errors). This
+    /// method will check the pool before opening a new connection. If a new connection is opened,
+    /// it will be added to the pool.
     pub async fn connect_to(
         &self,
         node_addr: &SocketAddr,
@@ -312,10 +291,15 @@ impl<I: ConnId> Endpoint<I> {
     /// rather than having to connect to specific nodes. This method will start connecting to every
     /// peer in `peer_addrs`, and return the address of the first successfully established
     /// connection (the rest are cancelled and discarded). All connection attempts will be retried
-    /// for `config.retry_duration_msec` on failure.
+    /// based on the [`Config::retry_config`] used to create the endpoint.
     ///
-    /// The successful connection, if any, will be stored in the connection pool (see
-    /// [`connect_to`](Self::connect_to) for more info on connection pooling).
+    /// # Connection pooling
+    ///
+    /// Connections are stored in an internal pool and reused if possible. A connection remains in
+    /// the pool until either side closes the connection (including due to timeouts or errors). This
+    /// method will check the pool before opening each connection. If a new connection is opened, it
+    /// will be added to the pool. Note that already pooled connections will have a higher chance of
+    /// 'winning' the race, and being the selected peer.
     pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Option<Connection<I>> {
         trace!("Connecting to any of {:?}", peer_addrs);
         if peer_addrs.is_empty() {
@@ -339,6 +323,13 @@ impl<I: ConnId> Endpoint<I> {
     /// Verify if an address is publicly reachable. This will attempt to create
     /// a new connection and use it to exchange a message and verify that the node
     /// can be reached.
+    ///
+    /// # Connection pooling
+    ///
+    /// Note that unlike most methods on `Endpoint`, this **will not** use the connection pool. This
+    /// ensures that the reachability check is accurate, otherwise we may use a pooled connection
+    /// that was opened by the peer (which tells us nothing about whether we can open a connection
+    /// to the peer).
     pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<(), RpcError> {
         trace!("Checking is reachable");
 
@@ -369,7 +360,7 @@ impl<I: ConnId> Endpoint<I> {
         }
     }
 
-    /// Get the connection ID of an existing connection with the provided socket address
+    /// Get the connection ID of an existing pooled connection with the provided socket address.
     pub async fn get_connection_id(&self, addr: &SocketAddr) -> Option<I> {
         self.connection_pool
             .get_by_addr(addr)
@@ -377,7 +368,7 @@ impl<I: ConnId> Endpoint<I> {
             .map(|(_, remover)| remover.id())
     }
 
-    /// Get the SocketAddr of a connection using the connection ID
+    /// Get the `SocketAddr` of an existing pooled connection with the provided connection ID.
     pub async fn get_socket_addr_by_id(&self, id: &I) -> Option<SocketAddr> {
         self.connection_pool
             .get_by_id(id)
@@ -385,8 +376,23 @@ impl<I: ConnId> Endpoint<I> {
             .map(|(_, remover)| *remover.remote_addr())
     }
 
-    /// Open a bi-directional peer with a given peer
-    /// Priority default is 0. Both lower and higher can be passed in.
+    /// Open a bi-directional stream with a given peer.
+    ///
+    /// # Priority
+    ///
+    /// Locally buffered data from streams with higher priority will be transmitted before data from
+    /// streams with lower priority. Changing the priority of a stream with pending data may only
+    /// take effect after that data has been transmitted. Using many different priority levels per
+    /// connection may have a negative impact on performance.
+    ///
+    /// `0` is a sensible default for 'normal' priority.
+    ///
+    /// # Connection pooling
+    ///
+    /// Connections are stored in an internal pool and reused if possible. A connection remains in
+    /// the pool until either side closes the connection (including due to timeouts or errors). This
+    /// method will check the pool before opening a new connection. If a new connection is opened,
+    /// it will be added to the pool.
     pub async fn open_bidirectional_stream(
         &self,
         peer_addr: &SocketAddr,
@@ -398,7 +404,20 @@ impl<I: ConnId> Endpoint<I> {
 
     /// Send a message to a peer over an existing connection.
     ///
-    /// Priority default is 0. Both lower and higher can be passed in.
+    /// # Priority
+    ///
+    /// Locally buffered data from streams with higher priority will be transmitted before data from
+    /// streams with lower priority. Changing the priority of a stream with pending data may only
+    /// take effect after that data has been transmitted. Using many different priority levels per
+    /// connection may have a negative impact on performance.
+    ///
+    /// `0` is a sensible default for 'normal' priority.
+    ///
+    /// # Connection pooling
+    ///
+    /// Note that unlike most methods on `Endpoint`, this **will not** use the connection pool. This
+    /// method is intended to be used when it's necessary to send a message on an existing
+    /// connection only.
     ///
     /// # Errors
     ///
@@ -414,11 +433,19 @@ impl<I: ConnId> Endpoint<I> {
         self.try_send_message_with(msg, dest, priority, None).await
     }
 
-    /// Send a message to a peer over an existing connection.
+    /// Send a message to a peer over an existing connection using given retry configuration.
     ///
-    /// Priority default is 0. Both lower and higher can be passed in.
+    /// The given `retries`, if any, will override the [`Config::retry_config`] used to create the
+    /// endpoint.
     ///
-    /// Optional retry config is passed in, for custom retry policy.
+    /// # Priority
+    ///
+    /// Locally buffered data from streams with higher priority will be transmitted before data from
+    /// streams with lower priority. Changing the priority of a stream with pending data may only
+    /// take effect after that data has been transmitted. Using many different priority levels per
+    /// connection may have a negative impact on performance.
+    ///
+    /// `0` is a sensible default for 'normal' priority.
     ///
     /// # Errors
     ///
@@ -446,10 +473,23 @@ impl<I: ConnId> Endpoint<I> {
         }
     }
 
-    /// Sends a message to a peer. This will attempt to use an existing connection
-    /// to the peer first. If this connection is broken or doesn't exist
-    /// a new connection is created and the message is sent.
-    /// Priority default is 0. Both lower and higher can be passed in.
+    /// Sends a message to a peer.
+    ///
+    /// # Priority
+    ///
+    /// Locally buffered data from streams with higher priority will be transmitted before data from
+    /// streams with lower priority. Changing the priority of a stream with pending data may only
+    /// take effect after that data has been transmitted. Using many different priority levels per
+    /// connection may have a negative impact on performance.
+    ///
+    /// `0` is a sensible default for 'normal' priority.
+    ///
+    /// # Connection pooling
+    ///
+    /// Connections are stored in an internal pool and reused if possible. A connection remains in
+    /// the pool until either side closes the connection (including due to timeouts or errors). This
+    /// method will check the pool before opening a new connection. If a new connection is opened,
+    /// it will be added to the pool.
     pub async fn send_message(
         &self,
         msg: Bytes,
@@ -459,11 +499,26 @@ impl<I: ConnId> Endpoint<I> {
         self.send_message_with(msg, dest, priority, None).await
     }
 
-    /// Sends a message to a peer. This will attempt to use an existing connection
-    /// to the peer first. If this connection is broken or doesn't exist
-    /// a new connection is created and the message is sent.
-    /// Priority default is 0. Both lower and higher can be passed in.
-    /// Optional retry config is passed in, for custom retry policy.
+    /// Send a message to a peer using given retry configuration.
+    ///
+    /// The given `retries`, if any, will override the [`Config::retry_config`] used to create the
+    /// endpoint.
+    ///
+    /// # Priority
+    ///
+    /// Locally buffered data from streams with higher priority will be transmitted before data from
+    /// streams with lower priority. Changing the priority of a stream with pending data may only
+    /// take effect after that data has been transmitted. Using many different priority levels per
+    /// connection may have a negative impact on performance.
+    ///
+    /// `0` is a sensible default for 'normal' priority.
+    ///
+    /// # Connection pooling
+    ///
+    /// Connections are stored in an internal pool and reused if possible. A connection remains in
+    /// the pool until either side closes the connection (including due to timeouts or errors). This
+    /// method will check the pool before opening a new connection. If a new connection is opened,
+    /// it will be added to the pool.
     pub async fn send_message_with(
         &self,
         msg: Bytes,
@@ -649,7 +704,7 @@ impl<I: ConnId> Endpoint<I> {
         Ok(public_addr)
     }
 
-    /// Perform the endpoint echo RPC with the given peer.
+    /// Perform the endpoint echo RPC with the given contact.
     async fn endpoint_echo(&self, contact: &Connection<I>) -> Result<SocketAddr, RpcError> {
         let (mut send, mut recv) = contact.open_bi(0).await?;
 
