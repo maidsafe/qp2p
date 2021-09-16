@@ -127,7 +127,7 @@ impl<I: ConnId> Endpoint<I> {
             IncomingConnections,
             IncomingMessages,
             DisconnectionEvents,
-            Option<SocketAddr>,
+            Option<Connection<I>>,
         ),
         EndpointError,
     > {
@@ -140,7 +140,7 @@ impl<I: ConnId> Endpoint<I> {
             Self::build_endpoint(local_addr.into(), config, builder)?;
 
         let contact = endpoint.connect_to_any(contacts).await;
-        let public_addr = endpoint.resolve_public_addr(contact).await?;
+        let public_addr = endpoint.resolve_public_addr(contact.as_ref()).await?;
 
         #[cfg(feature = "igd")]
         if endpoint.config.forward_port {
@@ -166,11 +166,14 @@ impl<I: ConnId> Endpoint<I> {
             endpoint.clone(),
         );
 
-        if let Some(peer) = contact {
+        if let Some(contact) = contact.as_ref() {
             let valid = endpoint
-                .endpoint_verification(peer, public_addr)
+                .endpoint_verification(contact, public_addr)
                 .await
-                .map_err(|error| EndpointError::EndpointVerification { peer, error })?;
+                .map_err(|error| EndpointError::EndpointVerification {
+                    peer: contact.remote_address(),
+                    error,
+                })?;
             if !valid {
                 return Err(EndpointError::Unreachable { public_addr });
             }
@@ -296,9 +299,11 @@ impl<I: ConnId> Endpoint<I> {
     /// When sending a message on `Connection` fails, the connection is also automatically removed
     /// from the pool and the subsequent call to `connect_to` is guaranteed to reopen new connection
     /// too.
-    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<(), ConnectionError> {
-        let _ = self.get_or_connect_to(node_addr).await?;
-        Ok(())
+    pub async fn connect_to(
+        &self,
+        node_addr: &SocketAddr,
+    ) -> Result<Connection<I>, ConnectionError> {
+        self.get_or_connect_to(node_addr).await
     }
 
     /// Connect to any of the given peers.
@@ -311,7 +316,7 @@ impl<I: ConnId> Endpoint<I> {
     ///
     /// The successful connection, if any, will be stored in the connection pool (see
     /// [`connect_to`](Self::connect_to) for more info on connection pooling).
-    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Option<SocketAddr> {
+    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Option<Connection<I>> {
         trace!("Connecting to any of {:?}", peer_addrs);
         if peer_addrs.is_empty() {
             return None;
@@ -323,7 +328,7 @@ impl<I: ConnId> Endpoint<I> {
             .map(|addr| Box::pin(self.get_or_connect_to(addr)));
 
         match futures::future::select_ok(tasks).await {
-            Ok((connection, _)) => Some(connection.remote_address()),
+            Ok((connection, _)) => Some(connection),
             Err(error) => {
                 error!("Failed to bootstrap to the network, last error: {}", error);
                 None
@@ -373,9 +378,9 @@ impl<I: ConnId> Endpoint<I> {
     }
 
     /// Get the SocketAddr of a connection using the connection ID
-    pub async fn get_socket_addr_by_id(&self, addr: &I) -> Option<SocketAddr> {
+    pub async fn get_socket_addr_by_id(&self, id: &I) -> Option<SocketAddr> {
         self.connection_pool
-            .get_by_id(addr)
+            .get_by_id(id)
             .await
             .map(|(_, remover)| *remover.remote_addr())
     }
@@ -572,17 +577,18 @@ impl<I: ConnId> Endpoint<I> {
     // set an appropriate public address based on `config` and a reachability check.
     async fn resolve_public_addr(
         &mut self,
-        contact: Option<SocketAddr>,
+        contact: Option<&Connection<I>>,
     ) -> Result<SocketAddr, EndpointError> {
         let mut public_addr = self.local_addr;
 
         // get the IP seen for us by our contact
-        let visible_addr = if let Some(peer) = contact {
-            Some(
-                self.endpoint_echo(peer)
-                    .await
-                    .map_err(|error| EndpointError::EndpointEcho { peer, error })?,
-            )
+        let visible_addr = if let Some(contact) = contact {
+            Some(self.endpoint_echo(contact).await.map_err(|error| {
+                EndpointError::EndpointEcho {
+                    peer: contact.remote_address(),
+                    error,
+                }
+            })?)
         } else {
             None
         };
@@ -644,8 +650,8 @@ impl<I: ConnId> Endpoint<I> {
     }
 
     /// Perform the endpoint echo RPC with the given peer.
-    async fn endpoint_echo(&self, peer: SocketAddr) -> Result<SocketAddr, RpcError> {
-        let (mut send, mut recv) = self.open_bidirectional_stream(&peer, 0).await?;
+    async fn endpoint_echo(&self, contact: &Connection<I>) -> Result<SocketAddr, RpcError> {
+        let (mut send, mut recv) = contact.open_bi(0).await?;
 
         send.send(WireMsg::EndpointEchoReq).await?;
 
@@ -658,10 +664,10 @@ impl<I: ConnId> Endpoint<I> {
     /// Perform the endpoint verification RPC with the given peer.
     async fn endpoint_verification(
         &self,
-        peer: SocketAddr,
+        contact: &Connection<I>,
         public_addr: SocketAddr,
     ) -> Result<bool, RpcError> {
-        let (mut send, mut recv) = self.open_bidirectional_stream(&peer, 0).await?;
+        let (mut send, mut recv) = contact.open_bi(0).await?;
 
         send.send(WireMsg::EndpointVerificationReq(public_addr))
             .await?;

@@ -59,7 +59,7 @@ mod wire_msg;
 
 pub use config::{Config, ConfigError, RetryConfig};
 pub use connection_pool::ConnId;
-pub use connections::{DisconnectionEvents, RecvStream, SendStream};
+pub use connections::{Connection, DisconnectionEvents, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
 #[cfg(feature = "igd")]
 pub use error::UpnpError;

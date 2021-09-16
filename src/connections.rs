@@ -21,9 +21,18 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{timeout, Duration};
 use tracing::{trace, warn};
 
-/// Connection instance to a node which can be used to send messages to it
+/// A connection between two [`Endpoint`]s.
+///
+/// This is backed by an `Arc` and a small amount of metadata, so cloning is fairly cheap. The
+/// connection is also pooled, meaning the same underlying connection will be used when connecting
+/// multiple times to the same peer. If an error occurs on the connection, it will be removed from
+/// the pool. See the documentation of [`Endpoint::connect_to`] for more details about connection
+/// pooling.
+///
+/// [`Endpoint`]: crate::Endpoint
+/// [`Endpoint::connect_to`]: crate::Endpoint::connect_to
 #[derive(Clone)]
-pub(crate) struct Connection<I: ConnId> {
+pub struct Connection<I: ConnId> {
     quic_conn: quinn::Connection,
     remover: ConnectionRemover<I>,
 }
@@ -43,6 +52,11 @@ impl DisconnectionEvents {
 impl<I: ConnId> Connection<I> {
     pub(crate) fn new(quic_conn: quinn::Connection, remover: ConnectionRemover<I>) -> Self {
         Self { quic_conn, remover }
+    }
+
+    /// Get the address of the connected peer.
+    pub fn remote_address(&self) -> SocketAddr {
+        self.quic_conn.remote_address()
     }
 
     /// Priority default is 0. Both lower and higher can be passed in.
@@ -79,10 +93,6 @@ impl<I: ConnId> Connection<I> {
                 Ok(())
             }
         }
-    }
-
-    pub(crate) fn remote_address(&self) -> SocketAddr {
-        self.quic_conn.remote_address()
     }
 
     async fn handle_error<T, E>(&self, result: Result<T, E>) -> Result<T, E> {
