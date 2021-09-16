@@ -148,12 +148,11 @@ struct Store<I: ConnId> {
     id_gen: IdGen,
 }
 
-/// Unique key identifying a connection. Two connections will always have distict keys even if they
-/// have the same socket address.
+/// An application-defined identifier for a connection.
 pub trait ConnId:
     Clone + Copy + Eq + PartialEq + Ord + PartialOrd + Default + Send + Sync + 'static
 {
-    /// Generate
+    /// Generate an ID for the given `SocketAddr`.
     fn generate(socket_addr: &SocketAddr) -> Self;
 }
 

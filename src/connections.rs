@@ -54,6 +54,11 @@ impl<I: ConnId> Connection<I> {
         Self { quic_conn, remover }
     }
 
+    /// Get the ID under which the connection is stored in the pool.
+    pub fn id(&self) -> I {
+        self.remover.id()
+    }
+
     /// Get the address of the connected peer.
     pub fn remote_address(&self) -> SocketAddr {
         self.quic_conn.remote_address()
