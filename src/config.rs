@@ -36,7 +36,7 @@ pub const DEFAULT_INITIAL_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 /// gives 5-6 retries in ~30 s total retry time.
 pub const DEFAULT_MAX_RETRY_INTERVAL: Duration = Duration::from_secs(15);
 
-/// Default for [`RetryConfig::retry_interval_multiplier`] (x1.5).
+/// Default for [`RetryConfig::retry_delay_multiplier`] (x1.5).
 ///
 /// Together with the default max and initial,
 /// gives 5-6 retries in ~30 s total retry time.
