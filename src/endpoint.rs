@@ -360,20 +360,20 @@ impl<I: ConnId> Endpoint<I> {
         }
     }
 
-    /// Get the connection ID of an existing pooled connection with the provided socket address.
-    pub async fn get_connection_id(&self, addr: &SocketAddr) -> Option<I> {
+    /// Get the existing `Connection` for a `SocketAddr`.
+    pub async fn get_connection_by_addr(&self, addr: &SocketAddr) -> Option<Connection<I>> {
         self.connection_pool
             .get_by_addr(addr)
             .await
-            .map(|(_, remover)| remover.id())
+            .map(|(connection, remover)| Connection::new(connection, remover))
     }
 
-    /// Get the `SocketAddr` of an existing pooled connection with the provided connection ID.
-    pub async fn get_socket_addr_by_id(&self, id: &I) -> Option<SocketAddr> {
+    /// Get the existing `Connection` for the given ID.
+    pub async fn get_connection_by_id(&self, id: &I) -> Option<Connection<I>> {
         self.connection_pool
             .get_by_id(id)
             .await
-            .map(|(_, remover)| *remover.remote_addr())
+            .map(|(connection, remover)| Connection::new(connection, remover))
     }
 
     /// Open a bi-directional stream with a given peer.
