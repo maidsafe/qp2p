@@ -110,16 +110,17 @@ jobs:
       !startsWith(github.event.pull_request.title, 'Automated version bump')
     name: Unused dependency check
     runs-on: ubuntu-latest
+    env:
+      CARGO_HTTP_MULTIPLEXING: 'false'
+      RUSTFLAGS: ''
     steps:
       - uses: actions/checkout@v2
-      # Install Rust and required components
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
           override: true
-
       - name: Run cargo-udeps
-        uses: aig787/cargo-udeps-action@v1
+        uses: aig787/cargo-udeps-action@1cd634a329e14ccfbccfe7c96497d14dac24a743
         with:
           version: 'latest'
           args: '--all-targets'
