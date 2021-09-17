@@ -167,6 +167,6 @@ mod tests {
     }
 
     fn timeout<Fut: Future + Unpin>(fut: Fut) -> impl Future<Output = Result<Fut::Output>> + Unpin {
-        Box::pin(tokio::time::timeout(Duration::from_millis(100), fut).err_into())
+        Box::pin(tokio::time::timeout(Duration::from_millis(200), fut).err_into())
     }
 }
