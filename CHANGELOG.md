@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.20.0](https://github.com/maidsafe/qp2p/compare/v0.19.0...v0.20.0) (2021-09-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* `Endpoint::get_connection_id` and
+`Endpoint::get_socket_addr_by_id` have been removed.
+`Endpoint::get_connection_by_addr` and `Endpoint::get_connection_by_id`
+can be used instead to get a `Connection`, from which the `id` or
+`remote_address` can be retrieved.
+* `Endpoint::new`, `Endpoint::connect_to`, and
+`Endpoint::connect_to_any` now use `Connection<I>` instead of
+`SocketAddr` in their return type.
+
+### Features
+
+* return `Connection` from `Endpoint::connect_*` ([9ce6947](https://github.com/maidsafe/qp2p/commit/9ce6947f991a18eed665f1766bce6a1b9cdb8448))
+
+
+* replace `Endpoint` `addr`/`id` getters ([c2ab8a1](https://github.com/maidsafe/qp2p/commit/c2ab8a17b8d77dbdfac62ce254e59782c9087e83))
+
 ## [0.19.0](https://github.com/maidsafe/qp2p/compare/v0.18.0...v0.19.0) (2021-09-14)
 
 
