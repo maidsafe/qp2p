@@ -219,7 +219,7 @@ pub(crate) struct InternalConfig {
     pub(crate) external_port: Option<u16>,
     pub(crate) external_ip: Option<IpAddr>,
     pub(crate) upnp_lease_duration: Duration,
-    pub(crate) retry_config: RetryConfig,
+    pub(crate) retry_config: Arc<RetryConfig>,
 }
 
 impl InternalConfig {
@@ -244,7 +244,7 @@ impl InternalConfig {
             external_port: config.external_port,
             external_ip: config.external_ip,
             upnp_lease_duration,
-            retry_config: config.retry_config,
+            retry_config: Arc::new(config.retry_config),
         })
     }
 

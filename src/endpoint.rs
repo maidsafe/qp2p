@@ -13,7 +13,7 @@ use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig, RetryConfig},
     connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
-    connection_pool::{ConnId, ConnectionPool},
+    connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
     connections::{
         listen_for_incoming_connections, listen_for_incoming_messages, Connection,
         DisconnectionEvents, RecvStream, SendStream,
@@ -364,7 +364,7 @@ impl<I: ConnId> Endpoint<I> {
         self.connection_pool
             .get_by_addr(addr)
             .await
-            .map(|(connection, remover)| Connection::new(connection, remover))
+            .map(|(connection, remover)| self.wrap_connection(connection, remover))
     }
 
     /// Get the existing `Connection` for the given ID.
@@ -372,7 +372,7 @@ impl<I: ConnId> Endpoint<I> {
         self.connection_pool
             .get_by_id(id)
             .await
-            .map(|(connection, remover)| Connection::new(connection, remover))
+            .map(|(connection, remover)| self.wrap_connection(connection, remover))
     }
 
     /// Open a bi-directional stream with a given peer.
@@ -460,7 +460,7 @@ impl<I: ConnId> Endpoint<I> {
     ) -> Result<(), Option<SendError>> {
         if let Some((conn, guard)) = self.connection_pool.get_by_addr(dest).await {
             trace!("Connection exists in the connection pool: {}", dest);
-            let connection = Connection::new(conn, guard);
+            let connection = self.wrap_connection(conn, guard);
             retries
                 .unwrap_or(&self.config.retry_config)
                 .retry(|| async { Ok(connection.send_uni(msg.clone(), priority).await?) })
@@ -469,68 +469,6 @@ impl<I: ConnId> Endpoint<I> {
         } else {
             Err(None)
         }
-    }
-
-    /// Sends a message to a peer.
-    ///
-    /// # Priority
-    ///
-    /// Locally buffered data from streams with higher priority will be transmitted before data from
-    /// streams with lower priority. Changing the priority of a stream with pending data may only
-    /// take effect after that data has been transmitted. Using many different priority levels per
-    /// connection may have a negative impact on performance.
-    ///
-    /// `0` is a sensible default for 'normal' priority.
-    ///
-    /// # Connection pooling
-    ///
-    /// Connections are stored in an internal pool and reused if possible. A connection remains in
-    /// the pool until either side closes the connection (including due to timeouts or errors). This
-    /// method will check the pool before opening a new connection. If a new connection is opened,
-    /// it will be added to the pool.
-    pub async fn send_message(
-        &self,
-        msg: Bytes,
-        dest: &SocketAddr,
-        priority: i32,
-    ) -> Result<(), SendError> {
-        self.send_message_with(msg, dest, priority, None).await
-    }
-
-    /// Send a message to a peer using given retry configuration.
-    ///
-    /// The given `retries`, if any, will override the [`Config::retry_config`] used to create the
-    /// endpoint.
-    ///
-    /// # Priority
-    ///
-    /// Locally buffered data from streams with higher priority will be transmitted before data from
-    /// streams with lower priority. Changing the priority of a stream with pending data may only
-    /// take effect after that data has been transmitted. Using many different priority levels per
-    /// connection may have a negative impact on performance.
-    ///
-    /// `0` is a sensible default for 'normal' priority.
-    ///
-    /// # Connection pooling
-    ///
-    /// Connections are stored in an internal pool and reused if possible. A connection remains in
-    /// the pool until either side closes the connection (including due to timeouts or errors). This
-    /// method will check the pool before opening a new connection. If a new connection is opened,
-    /// it will be added to the pool.
-    pub async fn send_message_with(
-        &self,
-        msg: Bytes,
-        dest: &SocketAddr,
-        priority: i32,
-        retries: Option<&RetryConfig>,
-    ) -> Result<(), SendError> {
-        let connection = self.get_or_connect_to(dest).await?;
-        retries
-            .unwrap_or(&self.config.retry_config)
-            .retry(|| async { Ok(connection.send_uni(msg.clone(), priority).await?) })
-            .await?;
-
-        Ok(())
     }
 
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
@@ -547,7 +485,7 @@ impl<I: ConnId> Endpoint<I> {
         let completion = loop {
             if let Some((conn, remover)) = self.connection_pool.get_by_addr(addr).await {
                 trace!("We are already connected to this peer: {}", addr);
-                return Ok(Connection::new(conn, remover));
+                return Ok(self.wrap_connection(conn, remover));
             }
 
             // Check if a connect attempt to this address is already in progress.
@@ -579,7 +517,7 @@ impl<I: ConnId> Endpoint<I> {
                 );
 
                 let _ = completion.complete(Ok(()));
-                Ok(Connection::new(connection, remover))
+                Ok(self.wrap_connection(connection, remover))
             }
             Err(error) => {
                 let _ = completion.complete(Err(error.clone()));
@@ -730,6 +668,15 @@ impl<I: ConnId> Endpoint<I> {
             Some(WireMsg::EndpointVerificationResp(valid)) => Ok(valid),
             msg => Err(RecvError::Serialization(SerializationError::unexpected(msg)).into()),
         }
+    }
+
+    /// Wrap a quinn connection, setting the default retry config and pool remover.
+    fn wrap_connection(
+        &self,
+        connection: quinn::Connection,
+        remover: ConnectionRemover<I>,
+    ) -> Connection<I> {
+        Connection::new(connection, self.config.retry_config.clone(), remover)
     }
 }
 
