@@ -60,8 +60,7 @@ async fn main() -> Result<()> {
                 .expect("Invalid SocketAddr.  Use the form 127.0.0.1:1234");
             let msg = Bytes::from(MSG_MARCO);
             println!("Sending to {:?} --> {:?}\n", peer, msg);
-            node.connect_to(&peer).await?;
-            node.send_message(msg.clone(), &peer, 0).await?;
+            node.connect_to(&peer).await?.send(msg.clone()).await?;
         }
     }
 
@@ -74,7 +73,10 @@ async fn main() -> Result<()> {
         println!("Received from {:?} --> {:?}", socket_addr, bytes);
         if bytes == *MSG_MARCO {
             let reply = Bytes::from(MSG_POLO);
-            node.send_message(reply.clone(), &socket_addr, 0).await?;
+            node.connect_to(&socket_addr)
+                .await?
+                .send(reply.clone())
+                .await?;
             println!("Replied to {:?} --> {:?}", socket_addr, reply);
         }
         println!();

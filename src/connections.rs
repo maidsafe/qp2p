@@ -7,16 +7,15 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::Endpoint;
-
 use super::{
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
     error::{ConnectionError, RecvError, RpcError, SendError, SerializationError},
     wire_msg::WireMsg,
 };
+use crate::{Endpoint, RetryConfig};
 use bytes::Bytes;
 use futures::{future, stream::StreamExt};
-use std::{fmt::Debug, net::SocketAddr};
+use std::{fmt::Debug, net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{timeout, Duration};
 use tracing::{trace, warn};
@@ -34,6 +33,7 @@ use tracing::{trace, warn};
 #[derive(Clone)]
 pub struct Connection<I: ConnId> {
     quic_conn: quinn::Connection,
+    default_retry_config: Arc<RetryConfig>,
     remover: ConnectionRemover<I>,
 }
 
@@ -50,8 +50,16 @@ impl DisconnectionEvents {
 }
 
 impl<I: ConnId> Connection<I> {
-    pub(crate) fn new(quic_conn: quinn::Connection, remover: ConnectionRemover<I>) -> Self {
-        Self { quic_conn, remover }
+    pub(crate) fn new(
+        quic_conn: quinn::Connection,
+        default_retry_config: Arc<RetryConfig>,
+        remover: ConnectionRemover<I>,
+    ) -> Self {
+        Self {
+            quic_conn,
+            default_retry_config,
+            remover,
+        }
     }
 
     /// Get the ID under which the connection is stored in the pool.
@@ -62,6 +70,36 @@ impl<I: ConnId> Connection<I> {
     /// Get the address of the connected peer.
     pub fn remote_address(&self) -> SocketAddr {
         self.quic_conn.remote_address()
+    }
+
+    /// Send a message to the peer with default configuration.
+    ///
+    /// The message will be sent on a unidirectional QUIC stream, meaning the application is
+    /// responsible for correlating any anticipated responses from incoming streams.
+    ///
+    /// The priority will be `0` and retry behaviour will be determined by the
+    /// [`Config`](crate::Config) that was used to construct the [`Endpoint`] this connection
+    /// belongs to. See [`send_message_with`](Self::send_message_with) if you want to send a message
+    /// with specific configuration.
+    pub async fn send(&self, msg: Bytes) -> Result<(), SendError> {
+        self.send_with(msg, 0, None).await
+    }
+
+    /// Send a message to the peer using the given configuration.
+    ///
+    /// See [`send_message`](Self::send_message) if you want to send with the default configuration.
+    pub async fn send_with(
+        &self,
+        msg: Bytes,
+        priority: i32,
+        retry_config: Option<&RetryConfig>,
+    ) -> Result<(), SendError> {
+        retry_config
+            .unwrap_or_else(|| self.default_retry_config.as_ref())
+            .retry(|| async { Ok(self.send_uni(msg.clone(), priority).await?) })
+            .await?;
+
+        Ok(())
     }
 
     /// Priority default is 0. Both lower and higher can be passed in.
