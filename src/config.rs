@@ -140,21 +140,6 @@ pub struct Config {
     pub retry_config: RetryConfig,
 }
 
-/// Config that has passed validation.
-///
-/// Generally this is a copy of [`Config`] without optional values where we would use defaults.
-#[derive(Clone, Debug)]
-pub(crate) struct InternalConfig {
-    pub(crate) client: quinn::ClientConfig,
-    pub(crate) server: quinn::ServerConfig,
-    #[cfg(feature = "igd")]
-    pub(crate) forward_port: bool,
-    pub(crate) external_port: Option<u16>,
-    pub(crate) external_ip: Option<IpAddr>,
-    pub(crate) upnp_lease_duration: Duration,
-    pub(crate) retry_config: RetryConfig,
-}
-
 /// Retry configurations for establishing connections and sending messages.
 /// Determines the retry behaviour of requests, by setting the back off strategy used.
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
@@ -220,6 +205,21 @@ impl Default for RetryConfig {
             retrying_max_elapsed_time: DEFAULT_RETRYING_MAX_ELAPSED_TIME,
         }
     }
+}
+
+/// Config that has passed validation.
+///
+/// Generally this is a copy of [`Config`] without optional values where we would use defaults.
+#[derive(Clone, Debug)]
+pub(crate) struct InternalConfig {
+    pub(crate) client: quinn::ClientConfig,
+    pub(crate) server: quinn::ServerConfig,
+    #[cfg(feature = "igd")]
+    pub(crate) forward_port: bool,
+    pub(crate) external_port: Option<u16>,
+    pub(crate) external_ip: Option<IpAddr>,
+    pub(crate) upnp_lease_duration: Duration,
+    pub(crate) retry_config: RetryConfig,
 }
 
 impl InternalConfig {
