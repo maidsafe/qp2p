@@ -23,7 +23,6 @@ use super::{
         SerializationError,
     },
 };
-use backoff::{future::retry, ExponentialBackoff};
 use bytes::Bytes;
 use std::net::SocketAddr;
 use tokio::sync::broadcast::{self, Sender};
@@ -462,11 +461,10 @@ impl<I: ConnId> Endpoint<I> {
         if let Some((conn, guard)) = self.connection_pool.get_by_addr(dest).await {
             trace!("Connection exists in the connection pool: {}", dest);
             let connection = Connection::new(conn, guard);
-            let msg_retry_cfg = retries.unwrap_or(self.config.retry_config);
-            Self::retry(msg_retry_cfg, || async {
-                Ok(connection.send_uni(msg.clone(), priority).await?)
-            })
-            .await?;
+            retries
+                .unwrap_or(self.config.retry_config)
+                .retry(|| async { Ok(connection.send_uni(msg.clone(), priority).await?) })
+                .await?;
             Ok(())
         } else {
             Err(None)
@@ -527,11 +525,10 @@ impl<I: ConnId> Endpoint<I> {
         retries: Option<RetryConfig>,
     ) -> Result<(), SendError> {
         let connection = self.get_or_connect_to(dest).await?;
-        let msg_retry_cfg = retries.unwrap_or(self.config.retry_config);
-        Self::retry(msg_retry_cfg, || async {
-            Ok(connection.send_uni(msg.clone(), priority).await?)
-        })
-        .await?;
+        retries
+            .unwrap_or(self.config.retry_config)
+            .retry(|| async { Ok(connection.send_uni(msg.clone(), priority).await?) })
+            .await?;
 
         Ok(())
     }
@@ -599,34 +596,36 @@ impl<I: ConnId> Endpoint<I> {
         &self,
         node_addr: &SocketAddr,
     ) -> Result<quinn::NewConnection, ConnectionError> {
-        Self::retry(self.config.retry_config, || async {
-            trace!("Attempting to connect to {:?}", node_addr);
-            let connecting = match self.quic_endpoint.connect_with(
-                self.config.client.clone(),
-                node_addr,
-                CERT_SERVER_NAME,
-            ) {
-                Ok(conn) => Ok(conn),
-                Err(error) => {
-                    warn!("Connection attempt failed due to {:?}", error);
-                    Err(ConnectionError::from(error))
-                }
-            }?;
+        self.config
+            .retry_config
+            .retry(|| async {
+                trace!("Attempting to connect to {:?}", node_addr);
+                let connecting = match self.quic_endpoint.connect_with(
+                    self.config.client.clone(),
+                    node_addr,
+                    CERT_SERVER_NAME,
+                ) {
+                    Ok(conn) => Ok(conn),
+                    Err(error) => {
+                        warn!("Connection attempt failed due to {:?}", error);
+                        Err(ConnectionError::from(error))
+                    }
+                }?;
 
-            let new_conn = match connecting.await {
-                Ok(new_conn) => {
-                    debug!("okay was had");
-                    Ok(new_conn)
-                }
-                Err(error) => {
-                    error!("some error: {:?}", error);
-                    Err(ConnectionError::from(error))
-                }
-            }?;
+                let new_conn = match connecting.await {
+                    Ok(new_conn) => {
+                        debug!("okay was had");
+                        Ok(new_conn)
+                    }
+                    Err(error) => {
+                        error!("some error: {:?}", error);
+                        Err(ConnectionError::from(error))
+                    }
+                }?;
 
-            Ok(new_conn)
-        })
-        .await
+                Ok(new_conn)
+            })
+            .await
     }
 
     // set an appropriate public address based on `config` and a reachability check.
@@ -731,22 +730,6 @@ impl<I: ConnId> Endpoint<I> {
             Some(WireMsg::EndpointVerificationResp(valid)) => Ok(valid),
             msg => Err(RecvError::Serialization(SerializationError::unexpected(msg)).into()),
         }
-    }
-
-    fn retry<R, E, Fn, Fut>(cfg: RetryConfig, op: Fn) -> impl futures::Future<Output = Result<R, E>>
-    where
-        Fn: FnMut() -> Fut,
-        Fut: futures::Future<Output = Result<R, backoff::Error<E>>>,
-    {
-        let backoff = ExponentialBackoff {
-            initial_interval: cfg.initial_retry_interval,
-            randomization_factor: cfg.retry_delay_rand_factor,
-            multiplier: cfg.retry_delay_multiplier,
-            max_interval: cfg.max_retry_interval,
-            max_elapsed_time: Some(cfg.retrying_max_elapsed_time),
-            ..Default::default()
-        };
-        retry(backoff, op)
     }
 }
 

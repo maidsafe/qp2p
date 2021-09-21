@@ -10,7 +10,7 @@
 //! Configuration for `Endpoint`s.
 
 use serde::{Deserialize, Serialize};
-use std::{net::IpAddr, sync::Arc, time::Duration};
+use std::{future::Future, net::IpAddr, sync::Arc, time::Duration};
 
 /// Default for [`Config::idle_timeout`] (1 minute).
 ///
@@ -185,6 +185,29 @@ pub struct RetryConfig {
     /// Retrying continues until this time has elapsed.
     /// The number of retries before that happens, will be decided by the other retry config options.
     pub retrying_max_elapsed_time: Duration,
+}
+
+impl RetryConfig {
+    // Perform `op` and retry on errors as specified by this configuration.
+    //
+    // Note that `backoff::Error<E>` implements `From<E>` for any `E` by creating a
+    // `backoff::Error::Transient`, meaning that errors will be retried unless explicitly returning
+    // `backoff::Error::Permanent`.
+    pub(crate) fn retry<R, E, Fn, Fut>(&self, op: Fn) -> impl Future<Output = Result<R, E>>
+    where
+        Fn: FnMut() -> Fut,
+        Fut: Future<Output = Result<R, backoff::Error<E>>>,
+    {
+        let backoff = backoff::ExponentialBackoff {
+            initial_interval: self.initial_retry_interval,
+            randomization_factor: self.retry_delay_rand_factor,
+            multiplier: self.retry_delay_multiplier,
+            max_interval: self.max_retry_interval,
+            max_elapsed_time: Some(self.retrying_max_elapsed_time),
+            ..Default::default()
+        };
+        backoff::future::retry(backoff, op)
+    }
 }
 
 impl Default for RetryConfig {
