@@ -456,13 +456,13 @@ impl<I: ConnId> Endpoint<I> {
         msg: Bytes,
         dest: &SocketAddr,
         priority: i32,
-        retries: Option<RetryConfig>,
+        retries: Option<&RetryConfig>,
     ) -> Result<(), Option<SendError>> {
         if let Some((conn, guard)) = self.connection_pool.get_by_addr(dest).await {
             trace!("Connection exists in the connection pool: {}", dest);
             let connection = Connection::new(conn, guard);
             retries
-                .unwrap_or(self.config.retry_config)
+                .unwrap_or(&self.config.retry_config)
                 .retry(|| async { Ok(connection.send_uni(msg.clone(), priority).await?) })
                 .await?;
             Ok(())
@@ -522,11 +522,11 @@ impl<I: ConnId> Endpoint<I> {
         msg: Bytes,
         dest: &SocketAddr,
         priority: i32,
-        retries: Option<RetryConfig>,
+        retries: Option<&RetryConfig>,
     ) -> Result<(), SendError> {
         let connection = self.get_or_connect_to(dest).await?;
         retries
-            .unwrap_or(self.config.retry_config)
+            .unwrap_or(&self.config.retry_config)
             .retry(|| async { Ok(connection.send_uni(msg.clone(), priority).await?) })
             .await?;
 
