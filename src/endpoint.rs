@@ -46,22 +46,24 @@ const STANDARD_CHANNEL_SIZE: usize = 10000;
 
 /// Channel on which incoming messages can be listened to
 #[derive(Debug)]
-pub struct IncomingMessages(pub(crate) MpscReceiver<(SocketAddr, Bytes)>);
+pub struct IncomingMessages<I: ConnId>(pub(crate) MpscReceiver<(Connection<I>, Bytes)>);
 
-impl IncomingMessages {
-    /// Blocks and returns the next incoming message and the source peer address
-    pub async fn next(&mut self) -> Option<(SocketAddr, Bytes)> {
+impl<I: ConnId> IncomingMessages<I> {
+    /// Blocks and returns the next incoming message and the connection it arrived on.
+    ///
+    /// **Note:** holding on to `Connection`
+    pub async fn next(&mut self) -> Option<(Connection<I>, Bytes)> {
         self.0.recv().await
     }
 }
 
 /// Channel on which incoming connections are notified on
-pub struct IncomingConnections(pub(crate) MpscReceiver<SocketAddr>);
+pub struct IncomingConnections<I: ConnId>(pub(crate) MpscReceiver<Connection<I>>);
 
-impl IncomingConnections {
+impl<I: ConnId> IncomingConnections<I> {
     /// Blocks until there is an incoming connection and returns the address of the
     /// connecting peer
-    pub async fn next(&mut self) -> Option<SocketAddr> {
+    pub async fn next(&mut self) -> Option<Connection<I>> {
         self.0.recv().await
     }
 }
@@ -72,7 +74,7 @@ pub struct Endpoint<I: ConnId> {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
-    message_tx: MpscSender<(SocketAddr, Bytes)>,
+    message_tx: MpscSender<(Connection<I>, Bytes)>,
     disconnection_tx: MpscSender<SocketAddr>,
     config: InternalConfig,
     termination_tx: Sender<()>,
@@ -122,8 +124,8 @@ impl<I: ConnId> Endpoint<I> {
     ) -> Result<
         (
             Self,
-            IncomingConnections,
-            IncomingMessages,
+            IncomingConnections<I>,
+            IncomingMessages<I>,
             DisconnectionEvents,
             Option<Connection<I>>,
         ),
@@ -194,7 +196,7 @@ impl<I: ConnId> Endpoint<I> {
     pub fn new_client(
         local_addr: impl Into<SocketAddr>,
         config: Config,
-    ) -> Result<(Self, IncomingMessages, DisconnectionEvents), ClientEndpointError> {
+    ) -> Result<(Self, IncomingMessages<I>, DisconnectionEvents), ClientEndpointError> {
         let config = InternalConfig::try_from_config(config)?;
 
         let (endpoint, _, channels) =
@@ -212,7 +214,7 @@ impl<I: ConnId> Endpoint<I> {
         local_addr: SocketAddr,
         config: InternalConfig,
         builder: quinn::EndpointBuilder,
-    ) -> Result<(Self, quinn::Incoming, Channels), quinn::EndpointError> {
+    ) -> Result<(Self, quinn::Incoming, Channels<I>), quinn::EndpointError> {
         let (quic_endpoint, quic_incoming) = builder.bind(&local_addr)?;
         let local_addr = quic_endpoint
             .local_addr()
@@ -436,18 +438,19 @@ impl<I: ConnId> Endpoint<I> {
                     .connection_pool
                     .insert(id, connection.remote_address(), connection.clone())
                     .await;
+                let connection = self.wrap_connection(connection, remover);
 
                 listen_for_incoming_messages(
+                    connection.clone(),
                     new_connection.uni_streams,
                     new_connection.bi_streams,
-                    remover.clone(),
                     self.message_tx.clone(),
                     self.disconnection_tx.clone(),
                     self.clone(),
                 );
 
                 let _ = completion.complete(Ok(()));
-                Ok(self.wrap_connection(connection, remover))
+                Ok(connection)
             }
             Err(error) => {
                 let _ = completion.complete(Err(error.clone()));
@@ -601,7 +604,7 @@ impl<I: ConnId> Endpoint<I> {
     }
 
     /// Wrap a quinn connection, setting the default retry config and pool remover.
-    fn wrap_connection(
+    pub(crate) fn wrap_connection(
         &self,
         connection: quinn::Connection,
         remover: ConnectionRemover<I>,
@@ -611,15 +614,15 @@ impl<I: ConnId> Endpoint<I> {
 }
 
 // a private helper struct for passing a bunch of channel-related things
-type Msg = (SocketAddr, Bytes);
-struct Channels {
-    connection: (MpscSender<SocketAddr>, MpscReceiver<SocketAddr>),
-    message: (MpscSender<Msg>, MpscReceiver<Msg>),
+type Msg<I> = (Connection<I>, Bytes);
+struct Channels<I: ConnId> {
+    connection: (MpscSender<Connection<I>>, MpscReceiver<Connection<I>>),
+    message: (MpscSender<Msg<I>>, MpscReceiver<Msg<I>>),
     disconnection: (MpscSender<SocketAddr>, MpscReceiver<SocketAddr>),
     termination: (Sender<()>, broadcast::Receiver<()>),
 }
 
-impl Channels {
+impl<I: ConnId> Channels<I> {
     fn new() -> Self {
         Self {
             connection: mpsc::channel(STANDARD_CHANNEL_SIZE),

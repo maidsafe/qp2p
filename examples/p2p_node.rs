@@ -69,15 +69,13 @@ async fn main() -> Result<()> {
     println!("---\n");
 
     // loop over incoming messages
-    while let Some((socket_addr, bytes)) = incoming_messages.next().await {
-        println!("Received from {:?} --> {:?}", socket_addr, bytes);
+    while let Some((connection, bytes)) = incoming_messages.next().await {
+        let src = connection.remote_address();
+        println!("Received from {:?} --> {:?}", src, bytes);
         if bytes == *MSG_MARCO {
             let reply = Bytes::from(MSG_POLO);
-            node.connect_to(&socket_addr)
-                .await?
-                .send(reply.clone())
-                .await?;
-            println!("Replied to {:?} --> {:?}", socket_addr, reply);
+            connection.send(reply.clone()).await?;
+            println!("Replied to {:?} --> {:?}", src, reply);
         }
         println!();
     }

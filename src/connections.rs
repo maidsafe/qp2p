@@ -239,8 +239,8 @@ async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result
 pub(super) fn listen_for_incoming_connections<I: ConnId>(
     mut quinn_incoming: quinn::Incoming,
     connection_pool: ConnectionPool<I>,
-    message_tx: Sender<(SocketAddr, Bytes)>,
-    connection_tx: Sender<SocketAddr>,
+    message_tx: Sender<(Connection<I>, Bytes)>,
+    connection_tx: Sender<Connection<I>>,
     disconnection_tx: Sender<SocketAddr>,
     endpoint: Endpoint<I>,
 ) {
@@ -256,13 +256,15 @@ pub(super) fn listen_for_incoming_connections<I: ConnId>(
                     }) => {
                         let peer_address = connection.remote_address();
                         let id = ConnId::generate(&peer_address);
-                        let pool_handle =
-                            connection_pool.insert(id, peer_address, connection).await;
-                        let _ = connection_tx.send(peer_address).await;
+                        let pool_handle = connection_pool
+                            .insert(id, peer_address, connection.clone())
+                            .await;
+                        let connection = endpoint.wrap_connection(connection, pool_handle);
+                        let _ = connection_tx.send(connection.clone()).await;
                         listen_for_incoming_messages(
+                            connection,
                             uni_streams,
                             bi_streams,
-                            pool_handle,
                             message_tx.clone(),
                             disconnection_tx.clone(),
                             endpoint.clone(),
@@ -282,28 +284,28 @@ pub(super) fn listen_for_incoming_connections<I: ConnId>(
 }
 
 pub(super) fn listen_for_incoming_messages<I: ConnId>(
+    connection: Connection<I>,
     mut uni_streams: quinn::IncomingUniStreams,
     mut bi_streams: quinn::IncomingBiStreams,
-    remover: ConnectionRemover<I>,
-    message_tx: Sender<(SocketAddr, Bytes)>,
+    message_tx: Sender<(Connection<I>, Bytes)>,
     disconnection_tx: Sender<SocketAddr>,
     endpoint: Endpoint<I>,
 ) {
-    let src = *remover.remote_addr();
+    let src = connection.remote_address();
     let _ = tokio::spawn(async move {
         match future::try_join(
-            read_on_uni_streams(&mut uni_streams, src, message_tx.clone()),
-            read_on_bi_streams(&mut bi_streams, src, message_tx, &endpoint),
+            read_on_uni_streams(&connection, &mut uni_streams, message_tx.clone()),
+            read_on_bi_streams(&connection, &mut bi_streams, message_tx, &endpoint),
         )
         .await
         {
             Ok(_) => {
-                remover.remove().await;
+                connection.remover.remove().await;
                 let _ = disconnection_tx.send(src).await;
             }
             Err(error) => {
                 trace!("Issue on stream reading from: {:?} :: {:?}", src, error);
-                remover.remove().await;
+                connection.remover.remove().await;
                 let _ = disconnection_tx.send(src).await;
             }
         }
@@ -321,11 +323,12 @@ enum StreamError {
 }
 
 // Read messages sent by peer in an unidirectional stream.
-async fn read_on_uni_streams(
+async fn read_on_uni_streams<I: ConnId>(
+    connection: &Connection<I>,
     uni_streams: &mut quinn::IncomingUniStreams,
-    peer_addr: SocketAddr,
-    message_tx: Sender<(SocketAddr, Bytes)>,
+    message_tx: Sender<(Connection<I>, Bytes)>,
 ) -> Result<(), StreamError> {
+    let peer_addr = connection.remote_address();
     while let Some(result) = uni_streams.next().await {
         match result {
             Err(error @ quinn::ConnectionError::ConnectionClosed(_)) => {
@@ -348,7 +351,7 @@ async fn read_on_uni_streams(
                     match res {
                         Ok(WireMsg::UserMsg(bytes)) => {
                             trace!("bytes received fine from: {:?} ", peer_addr);
-                            let _ = message_tx.send((peer_addr, bytes)).await;
+                            let _ = message_tx.send((connection.clone(), bytes)).await;
                         }
                         Ok(msg) => warn!("Unexpected message type: {:?}", msg),
                         Err(err) => {
@@ -368,11 +371,12 @@ async fn read_on_uni_streams(
 
 // Read messages sent by peer in a bidirectional stream.
 async fn read_on_bi_streams<I: ConnId>(
+    connection: &Connection<I>,
     bi_streams: &mut quinn::IncomingBiStreams,
-    peer_addr: SocketAddr,
-    message_tx: Sender<(SocketAddr, Bytes)>,
+    message_tx: Sender<(Connection<I>, Bytes)>,
     endpoint: &Endpoint<I>,
 ) -> Result<(), StreamError> {
+    let peer_addr = connection.remote_address();
     while let Some(result) = bi_streams.next().await {
         match result {
             Err(error @ quinn::ConnectionError::ConnectionClosed(_)) => {
@@ -394,7 +398,7 @@ async fn read_on_bi_streams<I: ConnId>(
                 while let Some(res) = read_bytes(&mut recv).await.transpose() {
                     match res {
                         Ok(WireMsg::UserMsg(bytes)) => {
-                            let _ = message_tx.send((peer_addr, bytes)).await;
+                            let _ = message_tx.send((connection.clone(), bytes)).await;
                         }
                         Ok(WireMsg::EndpointEchoReq) => {
                             if let Err(error) = handle_endpoint_echo_req(peer_addr, &mut send).await
@@ -504,13 +508,13 @@ mod tests {
         let (peer2, _, _, _, _) = new_endpoint().await?;
         let peer2_addr = peer2.public_addr();
 
-        let _ = peer2.get_or_connect_to(&peer1_addr).await?;
+        let _ = peer2.connect_to(&peer1_addr).await?;
 
-        if let Some(connecting_peer) = peer1_connections.next().await {
-            assert_eq!(connecting_peer, peer2_addr);
+        if let Some(connection) = peer1_connections.next().await {
+            assert_eq!(connection.remote_address(), peer2_addr);
         }
 
-        let connection = peer1.get_or_connect_to(&peer2_addr).await?;
+        let connection = peer1.connect_to(&peer2_addr).await?;
         let (mut send_stream, mut recv_stream) = connection.open_bi(0).await?;
         let message = WireMsg::EndpointEchoReq;
         message
