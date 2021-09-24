@@ -39,8 +39,8 @@ impl ConnId for [u8; 32] {
 /// Construct an `Endpoint` with sane defaults for testing.
 pub(crate) async fn new_endpoint() -> Result<(
     Endpoint<[u8; 32]>,
-    IncomingConnections,
-    IncomingMessages,
+    IncomingConnections<[u8; 32]>,
+    IncomingMessages<[u8; 32]>,
     DisconnectionEvents,
     Option<Connection<[u8; 32]>>,
 )> {

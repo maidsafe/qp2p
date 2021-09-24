@@ -132,10 +132,6 @@ impl<I: ConnId> ConnectionRemover<I> {
         let _ = store.id_map.remove(&self.id);
     }
 
-    pub(crate) fn remote_addr(&self) -> &SocketAddr {
-        &self.key.addr
-    }
-
     pub(crate) fn id(&self) -> I {
         self.id
     }
