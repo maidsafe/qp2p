@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.21.0](https://github.com/maidsafe/qp2p/compare/v0.20.0...v0.21.0) (2021-09-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* `Endpoint::send_message` and
+`Endpoint::send_message_with` have been removed. Use
+`Endpoint::connect_to` in combination with `Connection::send` or
+`Connection::send_with` instead.
+* The `Endpoint::send_message_with` and
+`Endpoint::try_send_message_with` methods now take `retries` as an
+`Option<&RetryConfig>`, rather than `Option<RetryConfig>`.
+
+* move `Endpoint::send_*` to `Connection` ([0f95b8a](https://github.com/maidsafe/qp2p/commit/0f95b8a8137c2e6d5cbc72818fb4322344bcb539))
+* use `&RetryConfig` for retry overrides ([70835ed](https://github.com/maidsafe/qp2p/commit/70835edd20967793b5b564122dd6c59297b71257))
+
 ## [0.20.0](https://github.com/maidsafe/qp2p/compare/v0.19.0...v0.20.0) (2021-09-21)
 
 
