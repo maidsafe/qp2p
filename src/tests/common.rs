@@ -301,7 +301,8 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
         new_endpoint().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, _, mut bob_incoming_messages, _, _) = new_endpoint().await?;
+    let (bob, mut bob_incoming_connections, mut bob_incoming_messages, _, _) =
+        new_endpoint().await?;
     let bob_addr = bob.public_addr();
 
     // Try to establish two connections to the same peer at the same time.
@@ -324,16 +325,18 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     // Send two messages, one from each end
     let msg0 = random_msg(1024);
     alice
-        .try_send_message(msg0.clone(), &bob_addr, 0)
-        .await
-        .map_err(|error| {
-            error
-                .map(|error| eyre!(error))
-                .unwrap_or_else(|| eyre!("lost connection from alice to bob"))
-        })?;
+        .connect_to(&bob_addr)
+        .await?
+        .send(msg0.clone())
+        .await?;
 
     let msg1 = random_msg(1024);
     b_to_a.send(msg1.clone()).await?;
+
+    // Bob did not get a new incoming connection
+    if let Ok(Some(_)) = timeout(Duration::from_secs(2), bob_incoming_connections.next()).await {
+        eyre!("Unexpected incoming connection from alice to bob");
+    }
 
     // Both messages are received  at the other end
     if let Some((src, message)) = alice_incoming_messages.next().await {
@@ -706,13 +709,10 @@ async fn client() -> Result<()> {
     assert_eq!(&message[..], b"hello");
 
     server
-        .try_send_message(b"world"[..].into(), &client.public_addr(), 0)
-        .await
-        .map_err(|error| {
-            error
-                .map(|error| eyre!(error))
-                .unwrap_or_else(|| eyre!("no longer connected to client"))
-        })?;
+        .connect_to(&client.public_addr())
+        .await?
+        .send(b"world"[..].into())
+        .await?;
     let (sender, message) = client_messages
         .next()
         .await

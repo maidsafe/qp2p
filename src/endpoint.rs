@@ -11,7 +11,7 @@
 use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
-    config::{Config, InternalConfig, RetryConfig},
+    config::{Config, InternalConfig},
     connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
     connections::{
@@ -19,7 +19,7 @@ use super::{
         DisconnectionEvents, RecvStream, SendStream,
     },
     error::{
-        ClientEndpointError, ConnectionError, EndpointError, RecvError, RpcError, SendError,
+        ClientEndpointError, ConnectionError, EndpointError, RecvError, RpcError,
         SerializationError,
     },
 };
@@ -399,76 +399,6 @@ impl<I: ConnId> Endpoint<I> {
     ) -> Result<(SendStream, RecvStream), ConnectionError> {
         let connection = self.get_or_connect_to(peer_addr).await?;
         connection.open_bi(priority).await
-    }
-
-    /// Send a message to a peer over an existing connection.
-    ///
-    /// # Priority
-    ///
-    /// Locally buffered data from streams with higher priority will be transmitted before data from
-    /// streams with lower priority. Changing the priority of a stream with pending data may only
-    /// take effect after that data has been transmitted. Using many different priority levels per
-    /// connection may have a negative impact on performance.
-    ///
-    /// `0` is a sensible default for 'normal' priority.
-    ///
-    /// # Connection pooling
-    ///
-    /// Note that unlike most methods on `Endpoint`, this **will not** use the connection pool. This
-    /// method is intended to be used when it's necessary to send a message on an existing
-    /// connection only.
-    ///
-    /// # Errors
-    ///
-    /// If a connection with `dest` exists in the pool but the message fails to send,
-    /// `Err(Some(_))` will be returned. If there's no connection with `dest` in the pool, then
-    /// `Err(None)` will be returned.
-    pub async fn try_send_message(
-        &self,
-        msg: Bytes,
-        dest: &SocketAddr,
-        priority: i32,
-    ) -> Result<(), Option<SendError>> {
-        self.try_send_message_with(msg, dest, priority, None).await
-    }
-
-    /// Send a message to a peer over an existing connection using given retry configuration.
-    ///
-    /// The given `retries`, if any, will override the [`Config::retry_config`] used to create the
-    /// endpoint.
-    ///
-    /// # Priority
-    ///
-    /// Locally buffered data from streams with higher priority will be transmitted before data from
-    /// streams with lower priority. Changing the priority of a stream with pending data may only
-    /// take effect after that data has been transmitted. Using many different priority levels per
-    /// connection may have a negative impact on performance.
-    ///
-    /// `0` is a sensible default for 'normal' priority.
-    ///
-    /// # Errors
-    ///
-    /// If a connection with `dest` exists in the pool but the message fails to send,
-    /// `Err(Some(_))` will be returned. If there's no connection with `dest` in the pool, then
-    /// `Err(None)` will be returned.
-    pub async fn try_send_message_with(
-        &self,
-        msg: Bytes,
-        dest: &SocketAddr,
-        priority: i32,
-        retries: Option<&RetryConfig>,
-    ) -> Result<(), Option<SendError>> {
-        if let Some((conn, guard)) = self.connection_pool.get_by_addr(dest).await {
-            trace!("Connection exists in the connection pool: {}", dest);
-            let connection = self.wrap_connection(conn, guard);
-            retries
-                .unwrap_or(&self.config.retry_config)
-                .retry(|| async { Ok(connection.send_uni(msg.clone(), priority).await?) })
-                .await?;
-            Ok(())
-        } else {
-            Err(None)
-        }
     }
 
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
