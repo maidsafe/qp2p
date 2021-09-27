@@ -21,6 +21,7 @@ jobs:
         with:
           fetch-depth: '0'
       - name: Bump Version
-        uses: maidsafe/rust-version-bump-branch-creator@v2
+        uses: maidsafe/rust-version-bump-branch-creator@v3
         with:
           token: ${{ secrets.BRANCH_CREATOR_TOKEN }}
+          target_branch: master
