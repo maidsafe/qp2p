@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.22.0](https://github.com/maidsafe/qp2p/compare/v0.21.0...v0.22.0) (2021-09-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* `IncomingConnections::next` now returns
+`Option<Connection<I>>`. `IncomingMessages::next` now returns
+`Option<(Connection<I>, Bytes)>`.
+* `Endpoint::try_send_message` and
+`Endpoint::try_send_message_with` have been removed. Use
+`Endpoint::get_connection_by_addr` and `Connection::send_*` instead.
+
+* remove `Endpoint::try_send_*` ([3e1bff4](https://github.com/maidsafe/qp2p/commit/3e1bff4565a4ff268634b8a96ef17f9fd139cb1e))
+* yield `Connection`s from `Incoming*` streams ([60dd829](https://github.com/maidsafe/qp2p/commit/60dd8298b53f79e602378f5d4c1123540291b534))
+
 ## [0.21.0](https://github.com/maidsafe/qp2p/compare/v0.20.0...v0.21.0) (2021-09-24)
 
 
