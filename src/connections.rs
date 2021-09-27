@@ -497,7 +497,7 @@ async fn handle_endpoint_verification_req<I: ConnId>(
 #[cfg(test)]
 mod tests {
     use crate::{tests::new_endpoint, wire_msg::WireMsg};
-    use color_eyre::eyre::{eyre, Result};
+    use color_eyre::eyre::{bail, Result};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn echo_service() -> Result<()> {
@@ -524,7 +524,7 @@ mod tests {
         if let Some(WireMsg::EndpointEchoResp(addr)) = message {
             assert_eq!(addr, peer1_addr);
         } else {
-            eyre!("Unexpected response to EchoService request");
+            bail!("Unexpected response to EchoService request");
         }
         Ok(())
     }

@@ -28,7 +28,7 @@ async fn successful_connection() -> Result<()> {
     if let Some(connection) = peer1_incoming_connections.next().await {
         assert_eq!(connection.remote_address(), peer2_addr);
     } else {
-        eyre!("No incoming connection");
+        bail!("No incoming connection");
     }
 
     Ok(())
@@ -52,7 +52,7 @@ async fn single_message() -> Result<()> {
     if let Some(connection) = peer1_incoming_connections.next().await {
         assert_eq!(connection.remote_address(), peer2_addr);
     } else {
-        eyre!("No incoming connection");
+        bail!("No incoming connection");
     }
 
     // Peer 2 gets an incoming message
@@ -60,7 +60,7 @@ async fn single_message() -> Result<()> {
         assert_eq!(connection.remote_address(), peer2_addr);
         assert_eq!(message, msg_from_peer2);
     } else {
-        eyre!("No incoming message");
+        bail!("No incoming message");
     }
     Ok(())
 }
@@ -83,14 +83,14 @@ async fn reuse_outgoing_connection() -> Result<()> {
     if let Some(connection) = bob_incoming_connections.next().await {
         assert_eq!(connection.remote_address(), alice_addr);
     } else {
-        eyre!("No incoming connection");
+        bail!("No incoming connection");
     }
 
     if let Some((connection, message)) = bob_incoming_messages.next().await {
         assert_eq!(connection.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
-        eyre!("No incoming message");
+        bail!("No incoming message");
     }
 
     // Try connecting again and send a message
@@ -102,7 +102,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
     if let Ok(Some(connection)) =
         timeout(Duration::from_secs(2), bob_incoming_connections.next()).await
     {
-        eyre!(
+        bail!(
             "Unexpected incoming connection from {}",
             connection.remote_address()
         );
@@ -112,7 +112,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
         assert_eq!(connection.remote_address(), alice_addr);
         assert_eq!(message, msg1);
     } else {
-        eyre!("No incoming message");
+        bail!("No incoming message");
     }
     Ok(())
 }
@@ -136,14 +136,14 @@ async fn reuse_incoming_connection() -> Result<()> {
     if let Some(connection) = bob_incoming_connections.next().await {
         assert_eq!(connection.remote_address(), alice_addr);
     } else {
-        eyre!("No incoming connection");
+        bail!("No incoming connection");
     }
 
     if let Some((connection, message)) = bob_incoming_messages.next().await {
         assert_eq!(connection.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
-        eyre!("No incoming message");
+        bail!("No incoming message");
     }
 
     // Bob tries to connect to alice and sends a message
@@ -156,7 +156,7 @@ async fn reuse_incoming_connection() -> Result<()> {
     if let Ok(Some(connection)) =
         timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
     {
-        eyre!(
+        bail!(
             "Unexpected incoming connection from {}",
             connection.remote_address()
         );
@@ -166,7 +166,7 @@ async fn reuse_incoming_connection() -> Result<()> {
         assert_eq!(connection.remote_address(), bob_addr);
         assert_eq!(message, msg1);
     } else {
-        eyre!("No incoming message");
+        bail!("No incoming message");
     }
     Ok(())
 }
@@ -186,7 +186,7 @@ async fn disconnection() -> Result<()> {
     if let Some(connection) = bob_incoming_connections.next().await {
         assert_eq!(connection.remote_address(), alice_addr);
     } else {
-        eyre!("No incoming connection");
+        bail!("No incoming connection");
     }
 
     // After Alice disconnects from Bob both peers should receive the disconnected event.
@@ -195,13 +195,13 @@ async fn disconnection() -> Result<()> {
     if let Some(disconnected_peer) = alice_disconnections.next().await {
         assert_eq!(disconnected_peer, bob_addr);
     } else {
-        eyre!("Missing disconnection event");
+        bail!("Missing disconnection event");
     }
 
     if let Some(disconnected_peer) = bob_disconnections.next().await {
         assert_eq!(disconnected_peer, alice_addr);
     } else {
-        eyre!("Missing disconnection event");
+        bail!("Missing disconnection event");
     }
 
     // This time bob connects to Alice. Since this is a *new connection*, Alice should get the connection event
@@ -210,7 +210,7 @@ async fn disconnection() -> Result<()> {
     if let Some(connection) = alice_incoming_connections.next().await {
         assert_eq!(connection.remote_address(), bob_addr);
     } else {
-        eyre!("Missing incoming connection");
+        bail!("Missing incoming connection");
     }
 
     Ok(())
@@ -241,13 +241,13 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     if let Some(connection) = alice_incoming_connections.next().await {
         assert_eq!(connection.remote_address(), bob_addr);
     } else {
-        eyre!("No incoming connection from Bob");
+        bail!("No incoming connection from Bob");
     }
 
     if let Some(connection) = bob_incoming_connections.next().await {
         assert_eq!(connection.remote_address(), alice_addr);
     } else {
-        eyre!("No incoming connectino from Alice");
+        bail!("No incoming connectino from Alice");
     }
 
     let msg0 = random_msg(1024);
@@ -260,37 +260,35 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
         assert_eq!(connection.remote_address(), bob_addr);
         assert_eq!(message, msg1);
     } else {
-        eyre!("Missing incoming message");
+        bail!("Missing incoming message");
     }
 
     if let Some((connection, message)) = bob_incoming_messages.next().await {
         assert_eq!(connection.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
-        eyre!("Missing incoming message");
+        bail!("Missing incoming message");
     }
 
-    // Drop the connection initiated by Bob.
+    // Drop all connections between Bob and Alice.
     bob.disconnect_from(&alice_addr).await;
 
     // It should be closed on Alice's side too.
     if let Some(disconnected_peer) = alice_disconnections.next().await {
         assert_eq!(disconnected_peer, bob_addr);
     } else {
-        eyre!("Missing disconnection event");
+        bail!("Missing disconnection event");
     }
 
-    // Bob connects to Alice again. This does not open a new connection but returns the connection
-    // previously initiated by Alice from the pool.
+    // Bob connects to Alice again. This opens a new connection.
     let b_to_a = bob.connect_to(&alice_addr).await?;
 
     if let Ok(Some(connection)) =
         timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
     {
-        eyre!(
-            "Unexpected incoming connection from {}",
-            connection.remote_address()
-        );
+        assert_eq!(connection.remote_address(), bob_addr);
+    } else {
+        bail!("Missing incoming connection");
     }
 
     let msg2 = random_msg(1024);
@@ -322,13 +320,13 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     if let Some(connection) = alice_incoming_connections.next().await {
         assert_eq!(connection.remote_address(), bob_addr);
     } else {
-        eyre!("Missing incoming connection");
+        bail!("Missing incoming connection");
     }
 
     if let Ok(Some(connection)) =
         timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
     {
-        eyre!(
+        bail!(
             "Unexpected incoming connection from {}",
             connection.remote_address()
         );
@@ -347,7 +345,7 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
 
     // Bob did not get a new incoming connection
     if let Ok(Some(_)) = timeout(Duration::from_secs(2), bob_incoming_connections.next()).await {
-        eyre!("Unexpected incoming connection from alice to bob");
+        bail!("Unexpected incoming connection from alice to bob");
     }
 
     // Both messages are received  at the other end
@@ -355,14 +353,14 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
         assert_eq!(connection.remote_address(), bob_addr);
         assert_eq!(message, msg1);
     } else {
-        eyre!("No message received from Bob");
+        bail!("No message received from Bob");
     }
 
     if let Some((connection, message)) = bob_incoming_messages.next().await {
         assert_eq!(connection.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
-        eyre!("No message from alice");
+        bail!("No message from alice");
     }
 
     Ok(())
@@ -680,7 +678,7 @@ async fn reachability() -> Result<()> {
     let (ep2, _, _, _, _) = new_endpoint().await?;
 
     if let Ok(()) = ep1.is_reachable(&"127.0.0.1:12345".parse()?).await {
-        eyre!("Unexpected success");
+        bail!("Unexpected success");
     };
     let reachable_addr = ep2.public_addr();
     ep1.is_reachable(&reachable_addr).await?;
