@@ -24,7 +24,13 @@ use super::{
     },
 };
 use bytes::Bytes;
-use std::net::SocketAddr;
+use std::{
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender};
 use tokio::time::{timeout, Duration};
@@ -80,6 +86,9 @@ pub struct Endpoint<I: ConnId> {
     termination_tx: Sender<()>,
     connection_pool: ConnectionPool<I>,
     connection_deduplicator: ConnectionDeduplicator,
+
+    // counts fully opened connections, excluding incoming and connections dropped by connect_to_any
+    opened_connection_count: Arc<AtomicUsize>,
 }
 
 impl<I: ConnId> std::fmt::Debug for Endpoint<I> {
@@ -232,6 +241,7 @@ impl<I: ConnId> Endpoint<I> {
             termination_tx: channels.termination.0.clone(),
             connection_pool: ConnectionPool::new(),
             connection_deduplicator: ConnectionDeduplicator::new(),
+            opened_connection_count: Arc::new(AtomicUsize::new(0)),
         };
 
         Ok((endpoint, quic_incoming, channels))
@@ -245,6 +255,16 @@ impl<I: ConnId> Endpoint<I> {
     /// Get the public address of the endpoint.
     pub fn public_addr(&self) -> SocketAddr {
         self.public_addr.unwrap_or(self.local_addr)
+    }
+
+    /// Get the count of opened connections.
+    ///
+    /// `Endpoint`s keep a count of connections they have fully opened and returned to callers.
+    /// Notably this excludes any incoming connections, and connections that were dropped by
+    /// [`connect_to_any`](Self::connect_to_any).
+    #[stability::unstable(feature = "opened-connection-count")]
+    pub fn opened_connection_count(&self) -> usize {
+        self.opened_connection_count.load(Ordering::Relaxed)
     }
 
     /// Removes all existing connections to a given peer
@@ -450,6 +470,9 @@ impl<I: ConnId> Endpoint<I> {
                 );
 
                 let _ = completion.complete(Ok(()));
+
+                let _ = self.opened_connection_count.fetch_add(1, Ordering::Relaxed);
+
                 Ok(connection)
             }
             Err(error) => {

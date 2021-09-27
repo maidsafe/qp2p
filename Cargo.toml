@@ -11,8 +11,15 @@ authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 keywords = [ "quic" ]
 edition = "2018"
 
+[[example]]
+name = "p2p_node"
+required-features = ["unstable-opened-connection-count"]
+
 [features]
 default = [ "igd" ]
+
+# `unstable-` features may be removed at any time without a breaking change release
+unstable-opened-connection-count = []
 
 [dependencies]
 backoff = { version = "0.3.0", features = ["tokio"] }
@@ -25,6 +32,7 @@ quinn-proto = "0.7.3"
 rcgen = "~0.8.4"
 rustls = { version = "0.19.0", features = ["dangerous_configuration"] }
 serde = { version = "1.0.117", features = ["derive"] }
+stability = "0.1.0"
 thiserror = "1.0.23"
 tiny-keccak = "2.0.2"
 tokio = { version = "1.2.0", features = ["sync"] }

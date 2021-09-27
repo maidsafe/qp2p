@@ -31,6 +31,9 @@ async fn successful_connection() -> Result<()> {
         bail!("No incoming connection");
     }
 
+    assert_eq!(peer1.opened_connection_count(), 0);
+    assert_eq!(peer2.opened_connection_count(), 1);
+
     Ok(())
 }
 
@@ -62,6 +65,10 @@ async fn single_message() -> Result<()> {
     } else {
         bail!("No incoming message");
     }
+
+    assert_eq!(peer1.opened_connection_count(), 0);
+    assert_eq!(peer2.opened_connection_count(), 1);
+
     Ok(())
 }
 
@@ -114,6 +121,10 @@ async fn reuse_outgoing_connection() -> Result<()> {
     } else {
         bail!("No incoming message");
     }
+
+    assert_eq!(alice.opened_connection_count(), 1);
+    assert_eq!(bob.opened_connection_count(), 0);
+
     Ok(())
 }
 
@@ -168,6 +179,10 @@ async fn reuse_incoming_connection() -> Result<()> {
     } else {
         bail!("No incoming message");
     }
+
+    assert_eq!(alice.opened_connection_count(), 1);
+    assert_eq!(bob.opened_connection_count(), 0);
+
     Ok(())
 }
 
@@ -212,6 +227,9 @@ async fn disconnection() -> Result<()> {
     } else {
         bail!("Missing incoming connection");
     }
+
+    assert_eq!(alice.opened_connection_count(), 1);
+    assert_eq!(bob.opened_connection_count(), 1);
 
     Ok(())
 }
@@ -284,7 +302,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     let b_to_a = bob.connect_to(&alice_addr).await?;
 
     if let Ok(Some(connection)) =
-        timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
+        timeout(Duration::from_secs(60), alice_incoming_connections.next()).await
     {
         assert_eq!(connection.remote_address(), bob_addr);
     } else {
@@ -298,6 +316,9 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
         assert_eq!(connection.remote_address(), bob_addr);
         assert_eq!(message, msg2);
     }
+
+    assert_eq!(alice.opened_connection_count(), 1);
+    assert_eq!(bob.opened_connection_count(), 2);
 
     Ok(())
 }
@@ -362,6 +383,9 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     } else {
         bail!("No message from alice");
     }
+
+    assert_eq!(alice.opened_connection_count(), 0);
+    assert_eq!(bob.opened_connection_count(), 1);
 
     Ok(())
 }
@@ -459,12 +483,17 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                     }
                 }
 
+                assert_eq!(send_endpoint.opened_connection_count(), 1);
+
                 Ok::<_, Report>(())
             }
         }));
     }
 
     let _ = future::try_join_all(tasks).await?;
+
+    assert_eq!(server_endpoint.opened_connection_count(), 0);
+
     Ok(())
 }
 
@@ -567,6 +596,8 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                     }
                 }
 
+                assert_eq!(send_endpoint.opened_connection_count(), 1);
+
                 Ok::<_, Report>(())
             }
         }));
@@ -578,6 +609,9 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
             other => bail!("Error from test threads: {:?}", other??),
         }
     }
+
+    assert_eq!(server_endpoint.opened_connection_count(), 0);
+
     Ok(())
 }
 
@@ -635,6 +669,10 @@ async fn many_messages() -> Result<()> {
     }));
 
     let _ = future::try_join_all(tasks).await?;
+
+    assert_eq!(send_endpoint.opened_connection_count(), 1);
+    assert_eq!(recv_endpoint.opened_connection_count(), 0);
+
     Ok(())
 }
 
@@ -669,6 +707,12 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
             ep.connect_to(&peer).await.map(drop)?;
         }
     }
+
+    assert_eq!(ep1.opened_connection_count(), 0);
+    assert_eq!(ep2.opened_connection_count(), 0);
+    assert_eq!(ep3.opened_connection_count(), 0);
+    assert_eq!(ep.opened_connection_count(), 3);
+
     Ok(())
 }
 
@@ -682,6 +726,10 @@ async fn reachability() -> Result<()> {
     };
     let reachable_addr = ep2.public_addr();
     ep1.is_reachable(&reachable_addr).await?;
+
+    assert_eq!(ep1.opened_connection_count(), 0);
+    assert_eq!(ep2.opened_connection_count(), 0);
+
     Ok(())
 }
 
@@ -730,6 +778,9 @@ async fn client() -> Result<()> {
         .await
         .ok_or_else(|| eyre!("Did not receive expected disconnection"))?;
     assert_eq!(disconnector, server.public_addr());
+
+    assert_eq!(server.opened_connection_count(), 0);
+    assert_eq!(client.opened_connection_count(), 1);
 
     Ok(())
 }
