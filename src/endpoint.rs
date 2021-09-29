@@ -11,7 +11,7 @@
 use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
-    config::{Config, InternalConfig},
+    config::{Config, InternalConfig, SERVER_NAME},
     connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
     connections::{
@@ -35,10 +35,6 @@ use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender};
 use tokio::time::{timeout, Duration};
 use tracing::{debug, error, info, trace, warn};
-
-/// Host name of the Quic communication certificate used by peers
-// FIXME: make it configurable
-const CERT_SERVER_NAME: &str = "MaidSAFE.net";
 
 // Number of seconds before timing out the IGD request to forward a port.
 #[cfg(feature = "igd")]
@@ -497,7 +493,7 @@ impl<I: ConnId> Endpoint<I> {
                 let connecting = match self.quic_endpoint.connect_with(
                     self.config.client.clone(),
                     node_addr,
-                    CERT_SERVER_NAME,
+                    SERVER_NAME,
                 ) {
                     Ok(conn) => Ok(conn),
                     Err(error) => {
