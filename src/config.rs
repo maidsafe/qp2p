@@ -48,7 +48,8 @@ pub const DEFAULT_RETRY_DELAY_RAND_FACTOR: f64 = 0.3;
 /// Default for [`RetryConfig::retrying_max_elapsed_time`] (30 s).
 pub const DEFAULT_RETRYING_MAX_ELAPSED_TIME: Duration = Duration::from_secs(30);
 
-const MAIDSAFE_DOMAIN: &str = "maidsafe.net";
+// We use a hard-coded server name for self-signed certificates.
+pub(crate) const SERVER_NAME: &str = "maidsafe.net";
 
 // Convenience alias – not for export.
 type Result<T, E = ConfigError> = std::result::Result<T, E>;
@@ -287,7 +288,7 @@ impl InternalConfig {
     }
 
     fn generate_cert() -> Result<(quinn::Certificate, quinn::PrivateKey)> {
-        let cert = rcgen::generate_simple_self_signed(vec![MAIDSAFE_DOMAIN.to_string()])?;
+        let cert = rcgen::generate_simple_self_signed(vec![SERVER_NAME.to_string()])?;
 
         let cert_der = cert.serialize_der()?;
         let key_der = cert.serialize_private_key_der();
