@@ -12,10 +12,11 @@ use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig, RetryConfig, SERVER_NAME},
+    connection::{Connection, RecvStream, SendStream},
     connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
     connection_handle::{
         listen_for_incoming_connections, listen_for_incoming_messages, ConnectionHandle,
-        DisconnectionEvents, RecvStream, SendStream,
+        DisconnectionEvents,
     },
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
     error::{
@@ -176,6 +177,7 @@ impl<I: ConnId> Endpoint<I> {
             channels.connection.0,
             channels.disconnection.0.clone(),
             endpoint.clone(),
+            endpoint.quic_endpoint.clone(),
         );
 
         if let Some(contact) = contact.as_ref() {
@@ -283,7 +285,7 @@ impl<I: ConnId> Endpoint<I> {
             .await
             .iter()
             .for_each(|conn| {
-                conn.close(0u8.into(), b"");
+                conn.close();
             });
     }
 
@@ -364,12 +366,13 @@ impl<I: ConnId> Endpoint<I> {
         trace!("Checking is reachable");
 
         // avoid the connection pool
-        let quinn::NewConnection { connection, .. } = self.new_connection(peer_addr).await?;
-        let (send_stream, recv_stream) = connection.open_bi().await?;
-        let mut send_stream = SendStream::new(send_stream);
-        let mut recv_stream = RecvStream::new(recv_stream);
+        let (connection, _) = Connection::new(
+            self.quic_endpoint.clone(),
+            self.new_connection(peer_addr).await?,
+        );
+        let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
 
-        send_stream.send(WireMsg::EndpointEchoReq).await?;
+        send_stream.send_wire_msg(WireMsg::EndpointEchoReq).await?;
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv_stream.next_wire_msg()).await?? {
             Some(WireMsg::EndpointEchoResp(_)) => Ok(()),
@@ -461,7 +464,8 @@ impl<I: ConnId> Endpoint<I> {
             Ok(new_connection) => {
                 trace!("Successfully connected to peer: {}", addr);
 
-                let connection = new_connection.connection;
+                let (connection, connection_incoming) =
+                    Connection::new(self.quic_endpoint.clone(), new_connection);
                 let id = ConnId::generate(&connection.remote_address());
                 let remover = self
                     .connection_pool
@@ -471,11 +475,9 @@ impl<I: ConnId> Endpoint<I> {
 
                 listen_for_incoming_messages(
                     connection.clone(),
-                    new_connection.uni_streams,
-                    new_connection.bi_streams,
+                    connection_incoming,
                     self.message_tx.clone(),
                     self.disconnection_tx.clone(),
-                    self.clone(),
                 );
 
                 let _ = completion.complete(Ok(()));
@@ -607,7 +609,7 @@ impl<I: ConnId> Endpoint<I> {
     async fn endpoint_echo(&self, contact: &ConnectionHandle<I>) -> Result<SocketAddr, RpcError> {
         let (mut send, mut recv) = contact.open_bi(0).await?;
 
-        send.send(WireMsg::EndpointEchoReq).await?;
+        send.send_wire_msg(WireMsg::EndpointEchoReq).await?;
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
             Some(WireMsg::EndpointEchoResp(addr)) => Ok(addr),
@@ -623,7 +625,7 @@ impl<I: ConnId> Endpoint<I> {
     ) -> Result<bool, RpcError> {
         let (mut send, mut recv) = contact.open_bi(0).await?;
 
-        send.send(WireMsg::EndpointVerificationReq(public_addr))
+        send.send_wire_msg(WireMsg::EndpointVerificationReq(public_addr))
             .await?;
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
@@ -635,7 +637,7 @@ impl<I: ConnId> Endpoint<I> {
     /// Wrap a quinn connection, setting the default retry config and pool remover.
     pub(crate) fn wrap_connection(
         &self,
-        connection: quinn::Connection,
+        connection: Connection,
         remover: ConnectionRemover<I>,
     ) -> ConnectionHandle<I> {
         ConnectionHandle::new(connection, self.retry_config.clone(), remover)

@@ -13,6 +13,7 @@ use std::{
     sync::Arc,
 };
 
+use crate::connection::Connection;
 use tiny_keccak::{Hasher, Sha3};
 use tokio::sync::RwLock;
 use xor_name::XorName;
@@ -35,7 +36,7 @@ impl<I: ConnId> ConnectionPool<I> {
         &self,
         id: I,
         addr: SocketAddr,
-        conn: quinn::Connection,
+        conn: Connection,
     ) -> ConnectionRemover<I> {
         let mut store = self.store.write().await;
 
@@ -60,7 +61,7 @@ impl<I: ConnId> ConnectionPool<I> {
         store.id_map.contains_key(id)
     }
 
-    pub(crate) async fn remove(&self, addr: &SocketAddr) -> Vec<quinn::Connection> {
+    pub(crate) async fn remove(&self, addr: &SocketAddr) -> Vec<Connection> {
         let mut store = self.store.write().await;
 
         let keys_to_remove = store
@@ -76,10 +77,7 @@ impl<I: ConnId> ConnectionPool<I> {
             .collect::<Vec<_>>()
     }
 
-    pub(crate) async fn get_by_id(
-        &self,
-        addr: &I,
-    ) -> Option<(quinn::Connection, ConnectionRemover<I>)> {
+    pub(crate) async fn get_by_id(&self, addr: &I) -> Option<(Connection, ConnectionRemover<I>)> {
         let store = self.store.read().await;
 
         let (conn, key) = store.id_map.get(addr)?;
@@ -96,7 +94,7 @@ impl<I: ConnId> ConnectionPool<I> {
     pub(crate) async fn get_by_addr(
         &self,
         addr: &SocketAddr,
-    ) -> Option<(quinn::Connection, ConnectionRemover<I>)> {
+    ) -> Option<(Connection, ConnectionRemover<I>)> {
         let store = self.store.read().await;
 
         // Efficiently fetch the first entry whose key is equal to `key`.
@@ -139,8 +137,8 @@ impl<I: ConnId> ConnectionRemover<I> {
 
 #[derive(Default)]
 struct Store<I: ConnId> {
-    id_map: BTreeMap<I, (quinn::Connection, Key)>,
-    key_map: BTreeMap<Key, (quinn::Connection, I)>,
+    id_map: BTreeMap<I, (Connection, Key)>,
+    key_map: BTreeMap<Key, (Connection, I)>,
     id_gen: IdGen,
 }
 
