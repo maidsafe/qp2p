@@ -13,11 +13,11 @@ use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig, RetryConfig, SERVER_NAME},
     connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
-    connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
-    connections::{
-        listen_for_incoming_connections, listen_for_incoming_messages, Connection,
+    connection_handle::{
+        listen_for_incoming_connections, listen_for_incoming_messages, ConnectionHandle,
         DisconnectionEvents, RecvStream, SendStream,
     },
+    connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
     error::{
         ClientEndpointError, ConnectionError, EndpointError, RecvError, RpcError,
         SerializationError,
@@ -48,24 +48,24 @@ const STANDARD_CHANNEL_SIZE: usize = 10000;
 
 /// Channel on which incoming messages can be listened to
 #[derive(Debug)]
-pub struct IncomingMessages<I: ConnId>(pub(crate) MpscReceiver<(Connection<I>, Bytes)>);
+pub struct IncomingMessages<I: ConnId>(pub(crate) MpscReceiver<(ConnectionHandle<I>, Bytes)>);
 
 impl<I: ConnId> IncomingMessages<I> {
     /// Blocks and returns the next incoming message and the connection it arrived on.
     ///
     /// **Note:** holding on to `Connection`
-    pub async fn next(&mut self) -> Option<(Connection<I>, Bytes)> {
+    pub async fn next(&mut self) -> Option<(ConnectionHandle<I>, Bytes)> {
         self.0.recv().await
     }
 }
 
 /// Channel on which incoming connections are notified on
-pub struct IncomingConnections<I: ConnId>(pub(crate) MpscReceiver<Connection<I>>);
+pub struct IncomingConnections<I: ConnId>(pub(crate) MpscReceiver<ConnectionHandle<I>>);
 
 impl<I: ConnId> IncomingConnections<I> {
     /// Blocks until there is an incoming connection and returns the address of the
     /// connecting peer
-    pub async fn next(&mut self) -> Option<Connection<I>> {
+    pub async fn next(&mut self) -> Option<ConnectionHandle<I>> {
         self.0.recv().await
     }
 }
@@ -78,7 +78,7 @@ pub struct Endpoint<I: ConnId> {
     quic_endpoint: quinn::Endpoint,
     retry_config: Arc<RetryConfig>,
 
-    message_tx: MpscSender<(Connection<I>, Bytes)>,
+    message_tx: MpscSender<(ConnectionHandle<I>, Bytes)>,
     disconnection_tx: MpscSender<SocketAddr>,
     termination_tx: Sender<()>,
     connection_pool: ConnectionPool<I>,
@@ -133,7 +133,7 @@ impl<I: ConnId> Endpoint<I> {
             IncomingConnections<I>,
             IncomingMessages<I>,
             DisconnectionEvents,
-            Option<Connection<I>>,
+            Option<ConnectionHandle<I>>,
         ),
         EndpointError,
     > {
@@ -311,7 +311,7 @@ impl<I: ConnId> Endpoint<I> {
     pub async fn connect_to(
         &self,
         node_addr: &SocketAddr,
-    ) -> Result<Connection<I>, ConnectionError> {
+    ) -> Result<ConnectionHandle<I>, ConnectionError> {
         self.get_or_connect_to(node_addr).await
     }
 
@@ -330,7 +330,7 @@ impl<I: ConnId> Endpoint<I> {
     /// method will check the pool before opening each connection. If a new connection is opened, it
     /// will be added to the pool. Note that already pooled connections will have a higher chance of
     /// 'winning' the race, and being the selected peer.
-    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Option<Connection<I>> {
+    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Option<ConnectionHandle<I>> {
         trace!("Connecting to any of {:?}", peer_addrs);
         if peer_addrs.is_empty() {
             return None;
@@ -391,7 +391,7 @@ impl<I: ConnId> Endpoint<I> {
     }
 
     /// Get the existing `Connection` for a `SocketAddr`.
-    pub async fn get_connection_by_addr(&self, addr: &SocketAddr) -> Option<Connection<I>> {
+    pub async fn get_connection_by_addr(&self, addr: &SocketAddr) -> Option<ConnectionHandle<I>> {
         self.connection_pool
             .get_by_addr(addr)
             .await
@@ -399,7 +399,7 @@ impl<I: ConnId> Endpoint<I> {
     }
 
     /// Get the existing `Connection` for the given ID.
-    pub async fn get_connection_by_id(&self, id: &I) -> Option<Connection<I>> {
+    pub async fn get_connection_by_id(&self, id: &I) -> Option<ConnectionHandle<I>> {
         self.connection_pool
             .get_by_id(id)
             .await
@@ -442,7 +442,7 @@ impl<I: ConnId> Endpoint<I> {
     pub(crate) async fn get_or_connect_to(
         &self,
         addr: &SocketAddr,
-    ) -> Result<Connection<I>, ConnectionError> {
+    ) -> Result<ConnectionHandle<I>, ConnectionError> {
         let completion = loop {
             if let Some((conn, remover)) = self.connection_pool.get_by_addr(addr).await {
                 trace!("We are already connected to this peer: {}", addr);
@@ -531,7 +531,7 @@ impl<I: ConnId> Endpoint<I> {
         &mut self,
         config_external_ip: Option<IpAddr>,
         config_external_port: Option<u16>,
-        contact: Option<&Connection<I>>,
+        contact: Option<&ConnectionHandle<I>>,
     ) -> Result<SocketAddr, EndpointError> {
         let mut public_addr = self.local_addr;
 
@@ -604,7 +604,7 @@ impl<I: ConnId> Endpoint<I> {
     }
 
     /// Perform the endpoint echo RPC with the given contact.
-    async fn endpoint_echo(&self, contact: &Connection<I>) -> Result<SocketAddr, RpcError> {
+    async fn endpoint_echo(&self, contact: &ConnectionHandle<I>) -> Result<SocketAddr, RpcError> {
         let (mut send, mut recv) = contact.open_bi(0).await?;
 
         send.send(WireMsg::EndpointEchoReq).await?;
@@ -618,7 +618,7 @@ impl<I: ConnId> Endpoint<I> {
     /// Perform the endpoint verification RPC with the given peer.
     async fn endpoint_verification(
         &self,
-        contact: &Connection<I>,
+        contact: &ConnectionHandle<I>,
         public_addr: SocketAddr,
     ) -> Result<bool, RpcError> {
         let (mut send, mut recv) = contact.open_bi(0).await?;
@@ -637,15 +637,18 @@ impl<I: ConnId> Endpoint<I> {
         &self,
         connection: quinn::Connection,
         remover: ConnectionRemover<I>,
-    ) -> Connection<I> {
-        Connection::new(connection, self.retry_config.clone(), remover)
+    ) -> ConnectionHandle<I> {
+        ConnectionHandle::new(connection, self.retry_config.clone(), remover)
     }
 }
 
 // a private helper struct for passing a bunch of channel-related things
-type Msg<I> = (Connection<I>, Bytes);
+type Msg<I> = (ConnectionHandle<I>, Bytes);
 struct Channels<I: ConnId> {
-    connection: (MpscSender<Connection<I>>, MpscReceiver<Connection<I>>),
+    connection: (
+        MpscSender<ConnectionHandle<I>>,
+        MpscReceiver<ConnectionHandle<I>>,
+    ),
     message: (MpscSender<Msg<I>>, MpscReceiver<Msg<I>>),
     disconnection: (MpscSender<SocketAddr>, MpscReceiver<SocketAddr>),
     termination: (Sender<()>, broadcast::Receiver<()>),
