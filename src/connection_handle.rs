@@ -31,7 +31,7 @@ use tracing::{trace, warn};
 /// [`Endpoint`]: crate::Endpoint
 /// [`Endpoint::connect_to`]: crate::Endpoint::connect_to
 #[derive(Clone)]
-pub struct Connection<I: ConnId> {
+pub struct ConnectionHandle<I: ConnId> {
     quic_conn: quinn::Connection,
     default_retry_config: Arc<RetryConfig>,
     remover: ConnectionRemover<I>,
@@ -49,7 +49,7 @@ impl DisconnectionEvents {
     }
 }
 
-impl<I: ConnId> Connection<I> {
+impl<I: ConnId> ConnectionHandle<I> {
     pub(crate) fn new(
         quic_conn: quinn::Connection,
         default_retry_config: Arc<RetryConfig>,
@@ -239,8 +239,8 @@ async fn send_msg(mut send_stream: &mut quinn::SendStream, msg: Bytes) -> Result
 pub(super) fn listen_for_incoming_connections<I: ConnId>(
     mut quinn_incoming: quinn::Incoming,
     connection_pool: ConnectionPool<I>,
-    message_tx: Sender<(Connection<I>, Bytes)>,
-    connection_tx: Sender<Connection<I>>,
+    message_tx: Sender<(ConnectionHandle<I>, Bytes)>,
+    connection_tx: Sender<ConnectionHandle<I>>,
     disconnection_tx: Sender<SocketAddr>,
     endpoint: Endpoint<I>,
 ) {
@@ -284,10 +284,10 @@ pub(super) fn listen_for_incoming_connections<I: ConnId>(
 }
 
 pub(super) fn listen_for_incoming_messages<I: ConnId>(
-    connection: Connection<I>,
+    connection: ConnectionHandle<I>,
     mut uni_streams: quinn::IncomingUniStreams,
     mut bi_streams: quinn::IncomingBiStreams,
-    message_tx: Sender<(Connection<I>, Bytes)>,
+    message_tx: Sender<(ConnectionHandle<I>, Bytes)>,
     disconnection_tx: Sender<SocketAddr>,
     endpoint: Endpoint<I>,
 ) {
@@ -324,9 +324,9 @@ enum StreamError {
 
 // Read messages sent by peer in an unidirectional stream.
 async fn read_on_uni_streams<I: ConnId>(
-    connection: &Connection<I>,
+    connection: &ConnectionHandle<I>,
     uni_streams: &mut quinn::IncomingUniStreams,
-    message_tx: Sender<(Connection<I>, Bytes)>,
+    message_tx: Sender<(ConnectionHandle<I>, Bytes)>,
 ) -> Result<(), StreamError> {
     let peer_addr = connection.remote_address();
     while let Some(result) = uni_streams.next().await {
@@ -371,9 +371,9 @@ async fn read_on_uni_streams<I: ConnId>(
 
 // Read messages sent by peer in a bidirectional stream.
 async fn read_on_bi_streams<I: ConnId>(
-    connection: &Connection<I>,
+    connection: &ConnectionHandle<I>,
     bi_streams: &mut quinn::IncomingBiStreams,
-    message_tx: Sender<(Connection<I>, Bytes)>,
+    message_tx: Sender<(ConnectionHandle<I>, Bytes)>,
     endpoint: &Endpoint<I>,
 ) -> Result<(), StreamError> {
     let peer_addr = connection.remote_address();
