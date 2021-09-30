@@ -47,6 +47,7 @@
 )]
 
 pub mod config;
+mod connection;
 mod connection_deduplicator;
 mod connection_handle;
 mod connection_pool;
@@ -58,9 +59,8 @@ mod utils;
 mod wire_msg;
 
 pub use config::{Config, ConfigError, RetryConfig};
-pub use connection_handle::{
-    ConnectionHandle as Connection, DisconnectionEvents, RecvStream, SendStream,
-};
+pub use connection::{RecvStream, SendStream};
+pub use connection_handle::{ConnectionHandle as Connection, DisconnectionEvents};
 pub use connection_pool::ConnId;
 pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
 #[cfg(feature = "igd")]
