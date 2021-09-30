@@ -11,7 +11,7 @@
 use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
-    config::{Config, InternalConfig, SERVER_NAME},
+    config::{Config, InternalConfig, RetryConfig, SERVER_NAME},
     connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
     connections::{
@@ -25,7 +25,7 @@ use super::{
 };
 use bytes::Bytes;
 use std::{
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -76,9 +76,10 @@ pub struct Endpoint<I: ConnId> {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
+    retry_config: Arc<RetryConfig>,
+
     message_tx: MpscSender<(Connection<I>, Bytes)>,
     disconnection_tx: MpscSender<SocketAddr>,
-    config: InternalConfig,
     termination_tx: Sender<()>,
     connection_pool: ConnectionPool<I>,
     connection_deduplicator: ConnectionDeduplicator,
@@ -92,7 +93,7 @@ impl<I: ConnId> std::fmt::Debug for Endpoint<I> {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
             .field("quic_endpoint", &"<endpoint omitted>")
-            .field("config", &self.config)
+            .field("retry_config", &self.retry_config)
             .finish()
     }
 }
@@ -141,20 +142,26 @@ impl<I: ConnId> Endpoint<I> {
         let mut builder = quinn::Endpoint::builder();
         let _ = builder.listen(config.server.clone());
 
-        let (mut endpoint, quic_incoming, channels) =
-            Self::build_endpoint(local_addr.into(), config, builder)?;
+        let (mut endpoint, quic_incoming, channels) = Self::build_endpoint(
+            local_addr.into(),
+            config.client,
+            config.retry_config,
+            builder,
+        )?;
 
         let contact = endpoint.connect_to_any(contacts).await;
-        let public_addr = endpoint.resolve_public_addr(contact.as_ref()).await?;
+        let public_addr = endpoint
+            .resolve_public_addr(config.external_ip, config.external_port, contact.as_ref())
+            .await?;
 
         #[cfg(feature = "igd")]
-        if endpoint.config.forward_port {
+        if config.forward_port {
             timeout(
                 PORT_FORWARD_TIMEOUT,
                 forward_port(
                     public_addr.port(),
                     endpoint.local_addr(),
-                    endpoint.config.upnp_lease_duration,
+                    config.upnp_lease_duration,
                     channels.termination.1,
                 ),
             )
@@ -204,8 +211,12 @@ impl<I: ConnId> Endpoint<I> {
     ) -> Result<(Self, IncomingMessages<I>, DisconnectionEvents), ClientEndpointError> {
         let config = InternalConfig::try_from_config(config)?;
 
-        let (endpoint, _, channels) =
-            Self::build_endpoint(local_addr.into(), config, quinn::Endpoint::builder())?;
+        let (endpoint, _, channels) = Self::build_endpoint(
+            local_addr.into(),
+            config.client,
+            config.retry_config,
+            quinn::Endpoint::builder(),
+        )?;
 
         Ok((
             endpoint,
@@ -217,9 +228,11 @@ impl<I: ConnId> Endpoint<I> {
     // A private helper for initialising an endpoint.
     fn build_endpoint(
         local_addr: SocketAddr,
-        config: InternalConfig,
-        builder: quinn::EndpointBuilder,
+        client_config: quinn::ClientConfig,
+        retry_config: Arc<RetryConfig>,
+        mut builder: quinn::EndpointBuilder,
     ) -> Result<(Self, quinn::Incoming, Channels<I>), quinn::EndpointError> {
+        let _ = builder.default_client_config(client_config);
         let (quic_endpoint, quic_incoming) = builder.bind(&local_addr)?;
         let local_addr = quic_endpoint
             .local_addr()
@@ -231,9 +244,9 @@ impl<I: ConnId> Endpoint<I> {
             local_addr,
             public_addr: None,
             quic_endpoint,
+            retry_config,
             message_tx: channels.message.0.clone(),
             disconnection_tx: channels.disconnection.0.clone(),
-            config,
             termination_tx: channels.termination.0.clone(),
             connection_pool: ConnectionPool::new(),
             connection_deduplicator: ConnectionDeduplicator::new(),
@@ -486,15 +499,10 @@ impl<I: ConnId> Endpoint<I> {
         &self,
         node_addr: &SocketAddr,
     ) -> Result<quinn::NewConnection, ConnectionError> {
-        self.config
-            .retry_config
+        self.retry_config
             .retry(|| async {
                 trace!("Attempting to connect to {:?}", node_addr);
-                let connecting = match self.quic_endpoint.connect_with(
-                    self.config.client.clone(),
-                    node_addr,
-                    SERVER_NAME,
-                ) {
+                let connecting = match self.quic_endpoint.connect(node_addr, SERVER_NAME) {
                     Ok(conn) => Ok(conn),
                     Err(error) => {
                         warn!("Connection attempt failed due to {:?}", error);
@@ -521,6 +529,8 @@ impl<I: ConnId> Endpoint<I> {
     // set an appropriate public address based on `config` and a reachability check.
     async fn resolve_public_addr(
         &mut self,
+        config_external_ip: Option<IpAddr>,
+        config_external_port: Option<u16>,
         contact: Option<&Connection<I>>,
     ) -> Result<SocketAddr, EndpointError> {
         let mut public_addr = self.local_addr;
@@ -537,7 +547,7 @@ impl<I: ConnId> Endpoint<I> {
             None
         };
 
-        if let Some(external_ip) = self.config.external_ip {
+        if let Some(external_ip) = config_external_ip {
             // set the public IP based on config
             public_addr.set_ip(external_ip);
 
@@ -562,7 +572,7 @@ impl<I: ConnId> Endpoint<I> {
             );
         }
 
-        if let Some(external_port) = self.config.external_port {
+        if let Some(external_port) = config_external_port {
             // set the public port based on config
             public_addr.set_port(external_port);
 
@@ -628,7 +638,7 @@ impl<I: ConnId> Endpoint<I> {
         connection: quinn::Connection,
         remover: ConnectionRemover<I>,
     ) -> Connection<I> {
-        Connection::new(connection, self.config.retry_config.clone(), remover)
+        Connection::new(connection, self.retry_config.clone(), remover)
     }
 }
 
