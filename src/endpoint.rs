@@ -178,6 +178,7 @@ impl<I: ConnId> Endpoint<I> {
             channels.disconnection.0.clone(),
             endpoint.clone(),
             endpoint.quic_endpoint.clone(),
+            endpoint.retry_config.clone(),
         );
 
         if let Some(contact) = contact.as_ref() {
@@ -368,6 +369,7 @@ impl<I: ConnId> Endpoint<I> {
         // avoid the connection pool
         let (connection, _) = Connection::new(
             self.quic_endpoint.clone(),
+            Some(self.retry_config.clone()),
             self.new_connection(peer_addr).await?,
         );
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
@@ -464,8 +466,11 @@ impl<I: ConnId> Endpoint<I> {
             Ok(new_connection) => {
                 trace!("Successfully connected to peer: {}", addr);
 
-                let (connection, connection_incoming) =
-                    Connection::new(self.quic_endpoint.clone(), new_connection);
+                let (connection, connection_incoming) = Connection::new(
+                    self.quic_endpoint.clone(),
+                    Some(self.retry_config.clone()),
+                    new_connection,
+                );
                 let id = ConnId::generate(&connection.remote_address());
                 let remover = self
                     .connection_pool
