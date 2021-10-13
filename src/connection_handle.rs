@@ -9,7 +9,7 @@
 
 use super::{
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
-    error::{ConnectionError, SendError, StreamError},
+    error::{ConnectionError, SendError},
 };
 use crate::{
     connection::{Connection, ConnectionIncoming, RecvStream, SendStream},
@@ -83,7 +83,7 @@ impl<I: ConnId> ConnectionHandle<I> {
     /// belongs to. See [`send_message_with`](Self::send_message_with) if you want to send a message
     /// with specific configuration.
     pub async fn send(&self, msg: Bytes) -> Result<(), SendError> {
-        self.send_with(msg, 0, None).await
+        self.handle_error(self.inner.send(msg).await).await
     }
 
     /// Send a message to the peer using the given configuration.
@@ -95,12 +95,8 @@ impl<I: ConnId> ConnectionHandle<I> {
         priority: i32,
         retry_config: Option<&RetryConfig>,
     ) -> Result<(), SendError> {
-        retry_config
-            .unwrap_or_else(|| self.default_retry_config.as_ref())
-            .retry(|| async { Ok(self.send_uni(msg.clone(), priority).await?) })
-            .await?;
-
-        Ok(())
+        self.handle_error(self.inner.send_with(msg, priority, retry_config).await)
+            .await
     }
 
     /// Priority default is 0. Both lower and higher can be passed in.
@@ -113,31 +109,6 @@ impl<I: ConnId> ConnectionHandle<I> {
         Ok((send_stream, recv_stream))
     }
 
-    /// Send message to peer using a uni-directional stream.
-    /// Priority default is 0. Both lower and higher can be passed in.
-    pub(crate) async fn send_uni(&self, msg: Bytes, priority: i32) -> Result<(), SendError> {
-        let mut send_stream = self.handle_error(self.inner.open_uni().await).await?;
-
-        // quinn returns `UnknownStream` error if the stream does not exist. We ignore it, on the
-        // basis that operations on the stream will fail instead (and the effect of setting priority
-        // or not is only observable if the stream exists).
-        let _ = send_stream.set_priority(priority);
-
-        self.handle_error(send_stream.send_user_msg(msg).await)
-            .await?;
-
-        // We try to make sure the stream is gracefully closed and the bytes get sent,
-        // but if it was already closed (perhaps by the peer) then we
-        // don't remove the connection from the pool.
-        match send_stream.finish().await {
-            Ok(()) | Err(SendError::StreamLost(StreamError::Stopped(_))) => Ok(()),
-            Err(err) => {
-                self.handle_error(Err(err)).await?;
-                Ok(())
-            }
-        }
-    }
-
     async fn handle_error<T, E>(&self, result: Result<T, E>) -> Result<T, E> {
         if result.is_err() {
             self.remover.remove().await
@@ -147,6 +118,7 @@ impl<I: ConnId> ConnectionHandle<I> {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // this will be removed soon, so let is pass for now
 pub(super) fn listen_for_incoming_connections<I: ConnId>(
     mut quinn_incoming: quinn::Incoming,
     connection_pool: ConnectionPool<I>,
@@ -155,14 +127,18 @@ pub(super) fn listen_for_incoming_connections<I: ConnId>(
     disconnection_tx: Sender<SocketAddr>,
     endpoint: Endpoint<I>,
     quic_endpoint: quinn::Endpoint,
+    retry_config: Arc<RetryConfig>,
 ) {
     let _ = tokio::spawn(async move {
         loop {
             match quinn_incoming.next().await {
                 Some(quinn_conn) => match quinn_conn.await {
                     Ok(connection) => {
-                        let (connection, connection_incoming) =
-                            Connection::new(quic_endpoint.clone(), connection);
+                        let (connection, connection_incoming) = Connection::new(
+                            quic_endpoint.clone(),
+                            Some(retry_config.clone()),
+                            connection,
+                        );
 
                         let peer_address = connection.remote_address();
                         let id = ConnId::generate(&peer_address);
