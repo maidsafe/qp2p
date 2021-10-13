@@ -27,7 +27,7 @@ const ENDPOINT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The sending API for a connection.
 #[derive(Clone)]
-pub(crate) struct Connection {
+pub struct Connection {
     inner: quinn::Connection,
     default_retry_config: Option<Arc<RetryConfig>>,
 
@@ -67,7 +67,7 @@ impl Connection {
     }
 
     /// The address of the remote peer.
-    pub(crate) fn remote_address(&self) -> SocketAddr {
+    pub fn remote_address(&self) -> SocketAddr {
         self.inner.remote_address()
     }
 
@@ -80,14 +80,14 @@ impl Connection {
     /// [`Config`](crate::Config) that was used to construct the [`Endpoint`] this connection
     /// belongs to. See [`send_with`](Self::send_with) if you want to send a message with specific
     /// configuration.
-    pub(crate) async fn send(&self, msg: Bytes) -> Result<(), SendError> {
+    pub async fn send(&self, msg: Bytes) -> Result<(), SendError> {
         self.send_with(msg, 0, None).await
     }
 
     /// Send a message to the peer using the given configuration.
     ///
     /// See [`send`](Self::send) if you want to send with the default configuration.
-    pub(crate) async fn send_with(
+    pub async fn send_with(
         &self,
         msg: Bytes,
         priority: i32,
@@ -109,7 +109,7 @@ impl Connection {
     /// Open a unidirection stream to the peer.
     ///
     /// Messages sent over the stream will arrive at the peer in the order they were sent.
-    pub(crate) async fn open_uni(&self) -> Result<SendStream, ConnectionError> {
+    pub async fn open_uni(&self) -> Result<SendStream, ConnectionError> {
         let send_stream = self.inner.open_uni().await?;
         Ok(SendStream::new(send_stream))
     }
@@ -120,7 +120,7 @@ impl Connection {
     /// automatically correlate response messages, for example.
     ///
     /// Messages sent over the stream will arrive at the peer in the order they were sent.
-    pub(crate) async fn open_bi(&self) -> Result<(SendStream, RecvStream), ConnectionError> {
+    pub async fn open_bi(&self) -> Result<(SendStream, RecvStream), ConnectionError> {
         let (send_stream, recv_stream) = self.inner.open_bi().await?;
         Ok((SendStream::new(send_stream), RecvStream::new(recv_stream)))
     }
@@ -130,7 +130,7 @@ impl Connection {
     /// This is not a graceful close - pending operations will fail immediately with
     /// [`ConnectionError::Closed`]`(`[`Close::Local`]`)`, and data on unfinished streams is not
     /// guaranteed to be delivered.
-    pub(crate) fn close(&self) {
+    pub fn close(&self) {
         self.inner.close(0u8.into(), b"");
     }
 
@@ -232,7 +232,7 @@ impl fmt::Debug for RecvStream {
 }
 
 /// The receiving API for a connection.
-pub(crate) struct ConnectionIncoming {
+pub struct ConnectionIncoming {
     message_rx: mpsc::Receiver<Result<Bytes, RecvError>>,
     _alive_tx: Arc<watch::Sender<()>>,
 }
@@ -266,7 +266,7 @@ impl ConnectionIncoming {
     }
 
     /// Get the next message sent by the peer, over any stream.
-    pub(crate) async fn next(&mut self) -> Result<Option<Bytes>, RecvError> {
+    pub async fn next(&mut self) -> Result<Option<Bytes>, RecvError> {
         self.message_rx.recv().await.transpose()
     }
 }

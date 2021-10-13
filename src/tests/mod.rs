@@ -7,10 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{
-    Config, ConnId, Connection, DisconnectionEvents, Endpoint, IncomingConnections,
-    IncomingMessages, RetryConfig,
-};
+use crate::{Config, Connection, ConnectionIncoming, Endpoint, IncomingConnections, RetryConfig};
 use bytes::Bytes;
 use color_eyre::eyre::Result;
 use std::{
@@ -30,19 +27,11 @@ fn setup() {
     color_eyre::install().expect("color_eyre::install() should only be called once");
 }
 
-impl ConnId for [u8; 32] {
-    fn generate(_socket_addr: &SocketAddr) -> Self {
-        rand::random()
-    }
-}
-
 /// Construct an `Endpoint` with sane defaults for testing.
 pub(crate) async fn new_endpoint() -> Result<(
-    Endpoint<[u8; 32]>,
-    IncomingConnections<[u8; 32]>,
-    IncomingMessages<[u8; 32]>,
-    DisconnectionEvents,
-    Option<Connection<[u8; 32]>>,
+    Endpoint,
+    IncomingConnections,
+    Option<(Connection, ConnectionIncoming)>,
 )> {
     Ok(Endpoint::new(
         local_addr(),

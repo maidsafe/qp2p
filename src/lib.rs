@@ -48,9 +48,6 @@
 
 pub mod config;
 mod connection;
-mod connection_deduplicator;
-mod connection_handle;
-mod connection_pool;
 mod endpoint;
 mod error;
 #[cfg(feature = "igd")]
@@ -59,10 +56,8 @@ mod utils;
 mod wire_msg;
 
 pub use config::{Config, ConfigError, RetryConfig};
-pub use connection::{RecvStream, SendStream};
-pub use connection_handle::{ConnectionHandle as Connection, DisconnectionEvents};
-pub use connection_pool::ConnId;
-pub use endpoint::{Endpoint, IncomingConnections, IncomingMessages};
+pub use connection::{Connection, ConnectionIncoming, RecvStream, SendStream};
+pub use endpoint::{Endpoint, IncomingConnections};
 #[cfg(feature = "igd")]
 pub use error::UpnpError;
 pub use error::{
