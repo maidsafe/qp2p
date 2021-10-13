@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.22.2](https://github.com/maidsafe/qp2p/compare/v0.22.1...v0.22.2) (2021-10-13)
+
+
+### Features
+
+* add a counter for opened connections to `Endpoint` ([c6a9a42](https://github.com/maidsafe/qp2p/commit/c6a9a42b4efeb0af2ec1fb68367b996b09697eaa))
+
 ### [0.22.1](https://github.com/maidsafe/qp2p/compare/v0.22.0...v0.22.1) (2021-09-27)
 
 ## [0.22.0](https://github.com/maidsafe/qp2p/compare/v0.21.0...v0.22.0) (2021-09-27)
