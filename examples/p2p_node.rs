@@ -14,7 +14,7 @@
 
 use bytes::Bytes;
 use color_eyre::eyre::Result;
-use qp2p::{Config, ConnId, Endpoint};
+use qp2p::{Config, Endpoint};
 use std::{
     env,
     net::{Ipv4Addr, SocketAddr},
@@ -23,12 +23,6 @@ use std::{
 
 #[derive(Default, Ord, PartialEq, PartialOrd, Eq, Clone, Copy)]
 struct XId(pub [u8; 32]);
-
-impl ConnId for XId {
-    fn generate(_socket_addr: &SocketAddr) -> Self {
-        XId(rand::random())
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,7 +35,7 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     // create an endpoint for us to listen on and send from.
-    let (node, mut incoming_conns, _contact) = Endpoint::<XId>::new(
+    let (node, mut incoming_conns, _contact) = Endpoint::new(
         SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         &[],
         Config {
