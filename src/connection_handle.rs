@@ -17,8 +17,8 @@ use crate::{
 };
 use bytes::Bytes;
 use futures::stream::StreamExt;
-use std::{fmt::Debug, net::SocketAddr, sync::Arc};
-use tokio::sync::mpsc::{Receiver, Sender};
+use std::{net::SocketAddr, sync::Arc};
+use tokio::sync::mpsc::Sender;
 use tracing::{trace, warn};
 
 /// A connection between two [`Endpoint`]s.
@@ -36,18 +36,6 @@ pub struct ConnectionHandle<I: ConnId> {
     inner: Connection,
     default_retry_config: Arc<RetryConfig>,
     remover: ConnectionRemover<I>,
-}
-
-/// Disconnection events, and the result that led to disconnection.
-#[derive(Debug)]
-pub struct DisconnectionEvents(pub Receiver<SocketAddr>);
-
-/// Disconnection
-impl DisconnectionEvents {
-    /// Blocks until there is a disconnection event and returns the address of the disconnected peer
-    pub async fn next(&mut self) -> Option<SocketAddr> {
-        self.0.recv().await
-    }
 }
 
 impl<I: ConnId> ConnectionHandle<I> {
@@ -118,13 +106,11 @@ impl<I: ConnId> ConnectionHandle<I> {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // this will be removed soon, so let is pass for now
 pub(super) fn listen_for_incoming_connections<I: ConnId>(
     mut quinn_incoming: quinn::Incoming,
     connection_pool: ConnectionPool<I>,
     message_tx: Sender<(ConnectionHandle<I>, Bytes)>,
     connection_tx: Sender<ConnectionHandle<I>>,
-    disconnection_tx: Sender<SocketAddr>,
     endpoint: Endpoint<I>,
     quic_endpoint: quinn::Endpoint,
     retry_config: Arc<RetryConfig>,
@@ -151,7 +137,6 @@ pub(super) fn listen_for_incoming_connections<I: ConnId>(
                             connection,
                             connection_incoming,
                             message_tx.clone(),
-                            disconnection_tx.clone(),
                         );
                     }
                     Err(err) => {
@@ -171,7 +156,6 @@ pub(super) fn listen_for_incoming_messages<I: ConnId>(
     connection: ConnectionHandle<I>,
     mut connection_incoming: ConnectionIncoming,
     message_tx: Sender<(ConnectionHandle<I>, Bytes)>,
-    disconnection_tx: Sender<SocketAddr>,
 ) {
     let _ = tokio::spawn(async move {
         let src = connection.remote_address();
@@ -191,7 +175,6 @@ pub(super) fn listen_for_incoming_messages<I: ConnId>(
         }
 
         connection.remover.remove().await;
-        let _ = disconnection_tx.send(src).await;
 
         trace!("The connection to {} has terminated", src);
     });

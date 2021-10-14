@@ -16,7 +16,6 @@ use super::{
     connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
     connection_handle::{
         listen_for_incoming_connections, listen_for_incoming_messages, ConnectionHandle,
-        DisconnectionEvents,
     },
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
     error::{
@@ -80,7 +79,6 @@ pub struct Endpoint<I: ConnId> {
     retry_config: Arc<RetryConfig>,
 
     message_tx: MpscSender<(ConnectionHandle<I>, Bytes)>,
-    disconnection_tx: MpscSender<SocketAddr>,
     termination_tx: Sender<()>,
     connection_pool: ConnectionPool<I>,
     connection_deduplicator: ConnectionDeduplicator,
@@ -133,7 +131,6 @@ impl<I: ConnId> Endpoint<I> {
             Self,
             IncomingConnections<I>,
             IncomingMessages<I>,
-            DisconnectionEvents,
             Option<ConnectionHandle<I>>,
         ),
         EndpointError,
@@ -175,7 +172,6 @@ impl<I: ConnId> Endpoint<I> {
             endpoint.connection_pool.clone(),
             channels.message.0.clone(),
             channels.connection.0,
-            channels.disconnection.0.clone(),
             endpoint.clone(),
             endpoint.quic_endpoint.clone(),
             endpoint.retry_config.clone(),
@@ -198,7 +194,6 @@ impl<I: ConnId> Endpoint<I> {
             endpoint,
             IncomingConnections(channels.connection.1),
             IncomingMessages(channels.message.1),
-            DisconnectionEvents(channels.disconnection.1),
             contact,
         ))
     }
@@ -211,7 +206,7 @@ impl<I: ConnId> Endpoint<I> {
     pub fn new_client(
         local_addr: impl Into<SocketAddr>,
         config: Config,
-    ) -> Result<(Self, IncomingMessages<I>, DisconnectionEvents), ClientEndpointError> {
+    ) -> Result<(Self, IncomingMessages<I>), ClientEndpointError> {
         let config = InternalConfig::try_from_config(config)?;
 
         let (endpoint, _, channels) = Self::build_endpoint(
@@ -221,11 +216,7 @@ impl<I: ConnId> Endpoint<I> {
             quinn::Endpoint::builder(),
         )?;
 
-        Ok((
-            endpoint,
-            IncomingMessages(channels.message.1),
-            DisconnectionEvents(channels.disconnection.1),
-        ))
+        Ok((endpoint, IncomingMessages(channels.message.1)))
     }
 
     // A private helper for initialising an endpoint.
@@ -249,7 +240,6 @@ impl<I: ConnId> Endpoint<I> {
             quic_endpoint,
             retry_config,
             message_tx: channels.message.0.clone(),
-            disconnection_tx: channels.disconnection.0.clone(),
             termination_tx: channels.termination.0.clone(),
             connection_pool: ConnectionPool::new(),
             connection_deduplicator: ConnectionDeduplicator::new(),
@@ -482,7 +472,6 @@ impl<I: ConnId> Endpoint<I> {
                     connection.clone(),
                     connection_incoming,
                     self.message_tx.clone(),
-                    self.disconnection_tx.clone(),
                 );
 
                 let _ = completion.complete(Ok(()));
@@ -657,7 +646,6 @@ struct Channels<I: ConnId> {
         MpscReceiver<ConnectionHandle<I>>,
     ),
     message: (MpscSender<Msg<I>>, MpscReceiver<Msg<I>>),
-    disconnection: (MpscSender<SocketAddr>, MpscReceiver<SocketAddr>),
     termination: (Sender<()>, broadcast::Receiver<()>),
 }
 
@@ -666,7 +654,6 @@ impl<I: ConnId> Channels<I> {
         Self {
             connection: mpsc::channel(STANDARD_CHANNEL_SIZE),
             message: mpsc::channel(STANDARD_CHANNEL_SIZE),
-            disconnection: mpsc::channel(STANDARD_CHANNEL_SIZE),
             termination: broadcast::channel(1),
         }
     }
@@ -681,7 +668,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_without_external_addr() -> Result<()> {
-        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _, _) = Endpoint::<[u8; 32]>::new(
             local_addr(),
             &[],
             Config {
@@ -698,7 +685,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_ip() -> Result<()> {
-        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _, _) = Endpoint::<[u8; 32]>::new(
             local_addr(),
             &[],
             Config {
@@ -718,7 +705,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_port() -> Result<()> {
-        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _, _) = Endpoint::<[u8; 32]>::new(
             local_addr(),
             &[],
             Config {
@@ -738,7 +725,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_addr() -> Result<()> {
-        let (endpoint, _, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _, _) = Endpoint::<[u8; 32]>::new(
             local_addr(),
             &[],
             Config {
