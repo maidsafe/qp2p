@@ -8,8 +8,7 @@
 // Software.
 
 use crate::{
-    Config, ConnId, Connection, DisconnectionEvents, Endpoint, IncomingConnections,
-    IncomingMessages, RetryConfig,
+    Config, ConnId, Connection, Endpoint, IncomingConnections, IncomingMessages, RetryConfig,
 };
 use bytes::Bytes;
 use color_eyre::eyre::Result;
@@ -41,7 +40,6 @@ pub(crate) async fn new_endpoint() -> Result<(
     Endpoint<[u8; 32]>,
     IncomingConnections<[u8; 32]>,
     IncomingMessages<[u8; 32]>,
-    DisconnectionEvents,
     Option<Connection<[u8; 32]>>,
 )> {
     Ok(Endpoint::new(
