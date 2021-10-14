@@ -12,7 +12,6 @@ use crate::{Config, Endpoint, RetryConfig};
 use color_eyre::eyre::{bail, eyre, Report, Result};
 use futures::{future, stream::FuturesUnordered, StreamExt};
 use std::{collections::BTreeSet, time::Duration};
-use tokio::time::timeout;
 use tracing::info;
 use tracing_test::traced_test;
 
@@ -105,9 +104,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
     a_to_b.send(msg1.clone()).await?;
 
     // Bob *should not* get an incoming connection since there is already a connection established
-    if let Ok(Some(connection)) =
-        timeout(Duration::from_secs(2), bob_incoming_connections.next()).await
-    {
+    if let Ok(Some(connection)) = bob_incoming_connections.next().timeout().await {
         bail!(
             "Unexpected incoming connection from {}",
             connection.remote_address()
@@ -162,9 +159,7 @@ async fn reuse_incoming_connection() -> Result<()> {
 
     // Alice *will not* get an incoming connection since there is already a connection established
     // However, Alice will still get the incoming message
-    if let Ok(Some(connection)) =
-        timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
-    {
+    if let Ok(Some(connection)) = alice_incoming_connections.next().timeout().await {
         bail!(
             "Unexpected incoming connection from {}",
             connection.remote_address()
@@ -238,9 +233,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     // Bob connects to Alice again. This opens a new connection.
     let b_to_a = bob.connect_to(&alice_addr).await?;
 
-    if let Ok(Some(connection)) =
-        timeout(Duration::from_secs(60), alice_incoming_connections.next()).await
-    {
+    if let Ok(Some(connection)) = alice_incoming_connections.next().timeout().await {
         assert_eq!(connection.remote_address(), bob_addr);
     } else {
         bail!("Missing incoming connection");
@@ -280,9 +273,7 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
         bail!("Missing incoming connection");
     }
 
-    if let Ok(Some(connection)) =
-        timeout(Duration::from_secs(2), alice_incoming_connections.next()).await
-    {
+    if let Ok(Some(connection)) = alice_incoming_connections.next().timeout().await {
         bail!(
             "Unexpected incoming connection from {}",
             connection.remote_address()
@@ -301,7 +292,7 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     b_to_a.send(msg1.clone()).await?;
 
     // Bob did not get a new incoming connection
-    if let Ok(Some(_)) = timeout(Duration::from_secs(2), bob_incoming_connections.next()).await {
+    if let Ok(Some(_)) = bob_incoming_connections.next().timeout().await {
         bail!("Unexpected incoming connection from alice to bob");
     }
 
@@ -725,4 +716,14 @@ async fn client() -> Result<()> {
     assert_eq!(client.opened_connection_count(), 2);
 
     Ok(())
+}
+
+trait Timeout: Sized {
+    fn timeout(self) -> tokio::time::Timeout<Self>;
+}
+
+impl<F: std::future::Future> Timeout for F {
+    fn timeout(self) -> tokio::time::Timeout<Self> {
+        tokio::time::timeout(Duration::from_secs(2), self)
+    }
 }
