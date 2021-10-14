@@ -9,7 +9,7 @@
 
 use super::{
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
-    error::{ConnectionError, SendError},
+    error::{ConnectionError, RecvError, SendError},
 };
 use crate::{
     connection::{Connection, ConnectionIncoming, RecvStream, SendStream},
@@ -106,11 +106,33 @@ impl<I: ConnId> ConnectionHandle<I> {
     }
 }
 
+/// The receiving API for a connection.
+pub struct ConnectionIncomingHandle<I: ConnId> {
+    inner: ConnectionIncoming,
+    remover: ConnectionRemover<I>,
+}
+
+impl<I: ConnId> ConnectionIncomingHandle<I> {
+    pub(crate) fn new(inner: ConnectionIncoming, remover: ConnectionRemover<I>) -> Self {
+        Self { inner, remover }
+    }
+
+    /// Get the next message sent by the peer, over any stream.
+    pub async fn next(&mut self) -> Result<Option<Bytes>, RecvError> {
+        let result = self.inner.next().await;
+
+        if let Err(RecvError::ConnectionLost(_)) = &result {
+            self.remover.remove().await;
+        }
+
+        result
+    }
+}
+
 pub(super) fn listen_for_incoming_connections<I: ConnId>(
     mut quinn_incoming: quinn::Incoming,
     connection_pool: ConnectionPool<I>,
-    message_tx: Sender<(ConnectionHandle<I>, Bytes)>,
-    connection_tx: Sender<ConnectionHandle<I>>,
+    connection_tx: Sender<(ConnectionHandle<I>, ConnectionIncomingHandle<I>)>,
     endpoint: Endpoint<I>,
     quic_endpoint: quinn::Endpoint,
     retry_config: Arc<RetryConfig>,
@@ -131,13 +153,10 @@ pub(super) fn listen_for_incoming_connections<I: ConnId>(
                         let pool_handle = connection_pool
                             .insert(id, peer_address, connection.clone())
                             .await;
-                        let connection = endpoint.wrap_connection(connection, pool_handle);
-                        let _ = connection_tx.send(connection.clone()).await;
-                        listen_for_incoming_messages(
-                            connection,
-                            connection_incoming,
-                            message_tx.clone(),
-                        );
+                        let connection = endpoint.wrap_connection(connection, pool_handle.clone());
+                        let connection_incoming =
+                            ConnectionIncomingHandle::new(connection_incoming, pool_handle);
+                        let _ = connection_tx.send((connection, connection_incoming)).await;
                     }
                     Err(err) => {
                         warn!("An incoming connection failed because of: {:?}", err);
@@ -149,33 +168,5 @@ pub(super) fn listen_for_incoming_connections<I: ConnId>(
                 }
             }
         }
-    });
-}
-
-pub(super) fn listen_for_incoming_messages<I: ConnId>(
-    connection: ConnectionHandle<I>,
-    mut connection_incoming: ConnectionIncoming,
-    message_tx: Sender<(ConnectionHandle<I>, Bytes)>,
-) {
-    let _ = tokio::spawn(async move {
-        let src = connection.remote_address();
-        loop {
-            match connection_incoming.next().await {
-                Ok(Some(msg)) => {
-                    let _ = message_tx.send((connection.clone(), msg)).await;
-                }
-                Ok(None) => {
-                    break;
-                }
-                Err(error) => {
-                    trace!("Issue on stream reading from {}: {:?}", src, error);
-                    break;
-                }
-            }
-        }
-
-        connection.remover.remove().await;
-
-        trace!("The connection to {} has terminated", src);
     });
 }
