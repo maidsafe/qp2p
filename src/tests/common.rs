@@ -24,7 +24,7 @@ async fn successful_connection() -> Result<()> {
     peer2.connect_to(&peer1_addr).await.map(drop)?;
     let peer2_addr = peer2.public_addr();
 
-    if let Some(connection) = peer1_incoming_connections.next().await {
+    if let Ok(Some(connection)) = peer1_incoming_connections.next().timeout().await {
         assert_eq!(connection.remote_address(), peer2_addr);
     } else {
         bail!("No incoming connection");
@@ -51,14 +51,14 @@ async fn single_message() -> Result<()> {
     connection.send(msg_from_peer2.clone()).await?;
 
     // Peer 1 gets an incoming connection
-    if let Some(connection) = peer1_incoming_connections.next().await {
+    if let Ok(Some(connection)) = peer1_incoming_connections.next().timeout().await {
         assert_eq!(connection.remote_address(), peer2_addr);
     } else {
         bail!("No incoming connection");
     }
 
     // Peer 2 gets an incoming message
-    if let Some((connection, message)) = peer1_incoming_messages.next().await {
+    if let Ok(Some((connection, message))) = peer1_incoming_messages.next().timeout().await {
         assert_eq!(connection.remote_address(), peer2_addr);
         assert_eq!(message, msg_from_peer2);
     } else {
@@ -85,13 +85,13 @@ async fn reuse_outgoing_connection() -> Result<()> {
     a_to_b.send(msg0.clone()).await?;
 
     // Bob should recieve an incoming connection and message
-    if let Some(connection) = bob_incoming_connections.next().await {
+    if let Ok(Some(connection)) = bob_incoming_connections.next().timeout().await {
         assert_eq!(connection.remote_address(), alice_addr);
     } else {
         bail!("No incoming connection");
     }
 
-    if let Some((connection, message)) = bob_incoming_messages.next().await {
+    if let Ok(Some((connection, message))) = bob_incoming_messages.next().timeout().await {
         assert_eq!(connection.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
@@ -111,7 +111,7 @@ async fn reuse_outgoing_connection() -> Result<()> {
         );
     }
 
-    if let Some((connection, message)) = bob_incoming_messages.next().await {
+    if let Ok(Some((connection, message))) = bob_incoming_messages.next().timeout().await {
         assert_eq!(connection.remote_address(), alice_addr);
         assert_eq!(message, msg1);
     } else {
@@ -139,13 +139,13 @@ async fn reuse_incoming_connection() -> Result<()> {
     a_to_b.send(msg0.clone()).await?;
 
     // Bob should recieve an incoming connection and message
-    if let Some(connection) = bob_incoming_connections.next().await {
+    if let Ok(Some(connection)) = bob_incoming_connections.next().timeout().await {
         assert_eq!(connection.remote_address(), alice_addr);
     } else {
         bail!("No incoming connection");
     }
 
-    if let Some((connection, message)) = bob_incoming_messages.next().await {
+    if let Ok(Some((connection, message))) = bob_incoming_messages.next().timeout().await {
         assert_eq!(connection.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
@@ -166,7 +166,7 @@ async fn reuse_incoming_connection() -> Result<()> {
         );
     }
 
-    if let Some((connection, message)) = alice_incoming_messages.next().await {
+    if let Ok(Some((connection, message))) = alice_incoming_messages.next().timeout().await {
         assert_eq!(connection.remote_address(), bob_addr);
         assert_eq!(message, msg1);
     } else {
@@ -195,13 +195,13 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     let (a_to_b, b_to_a) =
         future::try_join(alice.connect_to(&bob_addr), bob.connect_to(&alice_addr)).await?;
 
-    if let Some(connection) = alice_incoming_connections.next().await {
+    if let Ok(Some(connection)) = alice_incoming_connections.next().timeout().await {
         assert_eq!(connection.remote_address(), bob_addr);
     } else {
         bail!("No incoming connection from Bob");
     }
 
-    if let Some(connection) = bob_incoming_connections.next().await {
+    if let Ok(Some(connection)) = bob_incoming_connections.next().timeout().await {
         assert_eq!(connection.remote_address(), alice_addr);
     } else {
         bail!("No incoming connectino from Alice");
@@ -213,14 +213,14 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     let msg1 = random_msg(1024);
     b_to_a.send(msg1.clone()).await?;
 
-    if let Some((connection, message)) = alice_incoming_messages.next().await {
+    if let Ok(Some((connection, message))) = alice_incoming_messages.next().timeout().await {
         assert_eq!(connection.remote_address(), bob_addr);
         assert_eq!(message, msg1);
     } else {
         bail!("Missing incoming message");
     }
 
-    if let Some((connection, message)) = bob_incoming_messages.next().await {
+    if let Ok(Some((connection, message))) = bob_incoming_messages.next().timeout().await {
         assert_eq!(connection.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
@@ -242,7 +242,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     let msg2 = random_msg(1024);
     b_to_a.send(msg2.clone()).await?;
 
-    if let Some((connection, message)) = alice_incoming_messages.next().await {
+    if let Ok(Some((connection, message))) = alice_incoming_messages.next().timeout().await {
         assert_eq!(connection.remote_address(), bob_addr);
         assert_eq!(message, msg2);
     }
@@ -267,7 +267,7 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
         future::try_join(bob.connect_to(&alice_addr), bob.connect_to(&alice_addr)).await?;
 
     // Alice get only one incoming connection
-    if let Some(connection) = alice_incoming_connections.next().await {
+    if let Ok(Some(connection)) = alice_incoming_connections.next().timeout().await {
         assert_eq!(connection.remote_address(), bob_addr);
     } else {
         bail!("Missing incoming connection");
@@ -297,14 +297,14 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     }
 
     // Both messages are received  at the other end
-    if let Some((connection, message)) = alice_incoming_messages.next().await {
+    if let Ok(Some((connection, message))) = alice_incoming_messages.next().timeout().await {
         assert_eq!(connection.remote_address(), bob_addr);
         assert_eq!(message, msg1);
     } else {
         bail!("No message received from Bob");
     }
 
-    if let Some((connection, message)) = bob_incoming_messages.next().await {
+    if let Ok(Some((connection, message))) = bob_incoming_messages.next().timeout().await {
         assert_eq!(connection.remote_address(), alice_addr);
         assert_eq!(message, msg0);
     } else {
@@ -685,7 +685,10 @@ async fn client() -> Result<()> {
 
     let (client_to_server, message) = server_messages
         .next()
+        .timeout()
         .await
+        .ok()
+        .flatten()
         .ok_or_else(|| eyre!("Did not receive expected message"))?;
     assert_eq!(client_to_server.remote_address(), client.public_addr());
     assert_eq!(&message[..], b"hello");
@@ -693,7 +696,10 @@ async fn client() -> Result<()> {
     client_to_server.send(b"world"[..].into()).await?;
     let (server_to_client, message) = client_messages
         .next()
+        .timeout()
         .await
+        .ok()
+        .flatten()
         .ok_or_else(|| eyre!("Did not receive expected message"))?;
     assert_eq!(server_to_client.remote_address(), server.public_addr());
     assert_eq!(&message[..], b"world");
