@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     // create an endpoint for us to listen on and send from.
-    let (node, _incoming_conns, mut incoming_messages, _contact) = Endpoint::<XId>::new(
+    let (node, mut incoming_conns, _contact) = Endpoint::<XId>::new(
         SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         &[],
         Config {
@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
                 .expect("Invalid SocketAddr.  Use the form 127.0.0.1:1234");
             let msg = Bytes::from(MSG_MARCO);
             println!("Sending to {:?} --> {:?}\n", peer, msg);
-            node.connect_to(&peer).await?.send(msg.clone()).await?;
+            node.connect_to(&peer).await?.0.send(msg.clone()).await?;
         }
 
         println!(
@@ -72,16 +72,20 @@ async fn main() -> Result<()> {
     println!("Listening on: {:?}", node.public_addr());
     println!("---\n");
 
-    // loop over incoming messages
-    while let Some((connection, bytes)) = incoming_messages.next().await {
+    // loop over incoming connections
+    while let Some((connection, mut incoming_messages)) = incoming_conns.next().await {
         let src = connection.remote_address();
-        println!("Received from {:?} --> {:?}", src, bytes);
-        if bytes == *MSG_MARCO {
-            let reply = Bytes::from(MSG_POLO);
-            connection.send(reply.clone()).await?;
-            println!("Replied to {:?} --> {:?}", src, reply);
+
+        // loop over incoming messages
+        while let Some(bytes) = incoming_messages.next().await? {
+            println!("Received from {:?} --> {:?}", src, bytes);
+            if bytes == *MSG_MARCO {
+                let reply = Bytes::from(MSG_POLO);
+                connection.send(reply.clone()).await?;
+                println!("Replied to {:?} --> {:?}", src, reply);
+            }
+            println!();
         }
-        println!();
     }
 
     Ok(())

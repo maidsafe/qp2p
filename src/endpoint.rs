@@ -12,10 +12,10 @@ use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig, RetryConfig, SERVER_NAME},
-    connection::{Connection, RecvStream, SendStream},
+    connection::Connection,
     connection_deduplicator::{ConnectionDeduplicator, DedupHandle},
     connection_handle::{
-        listen_for_incoming_connections, listen_for_incoming_messages, ConnectionHandle,
+        listen_for_incoming_connections, ConnectionHandle, ConnectionIncomingHandle,
     },
     connection_pool::{ConnId, ConnectionPool, ConnectionRemover},
     error::{
@@ -23,7 +23,6 @@ use super::{
         SerializationError,
     },
 };
-use bytes::Bytes;
 use std::{
     net::{IpAddr, SocketAddr},
     sync::{
@@ -32,7 +31,7 @@ use std::{
     },
 };
 use tokio::sync::broadcast::{self, Sender};
-use tokio::sync::mpsc::{self, Receiver as MpscReceiver, Sender as MpscSender};
+use tokio::sync::mpsc::{self, Receiver as MpscReceiver};
 use tokio::time::{timeout, Duration};
 use tracing::{debug, error, info, trace, warn};
 
@@ -46,26 +45,15 @@ const ECHO_SERVICE_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 /// Standard size of our channel bounds
 const STANDARD_CHANNEL_SIZE: usize = 10000;
 
-/// Channel on which incoming messages can be listened to
-#[derive(Debug)]
-pub struct IncomingMessages<I: ConnId>(pub(crate) MpscReceiver<(ConnectionHandle<I>, Bytes)>);
-
-impl<I: ConnId> IncomingMessages<I> {
-    /// Blocks and returns the next incoming message and the connection it arrived on.
-    ///
-    /// **Note:** holding on to `Connection`
-    pub async fn next(&mut self) -> Option<(ConnectionHandle<I>, Bytes)> {
-        self.0.recv().await
-    }
-}
-
 /// Channel on which incoming connections are notified on
-pub struct IncomingConnections<I: ConnId>(pub(crate) MpscReceiver<ConnectionHandle<I>>);
+pub struct IncomingConnections<I: ConnId>(
+    pub(crate) MpscReceiver<(ConnectionHandle<I>, ConnectionIncomingHandle<I>)>,
+);
 
 impl<I: ConnId> IncomingConnections<I> {
     /// Blocks until there is an incoming connection and returns the address of the
     /// connecting peer
-    pub async fn next(&mut self) -> Option<ConnectionHandle<I>> {
+    pub async fn next(&mut self) -> Option<(ConnectionHandle<I>, ConnectionIncomingHandle<I>)> {
         self.0.recv().await
     }
 }
@@ -78,7 +66,6 @@ pub struct Endpoint<I: ConnId> {
     quic_endpoint: quinn::Endpoint,
     retry_config: Arc<RetryConfig>,
 
-    message_tx: MpscSender<(ConnectionHandle<I>, Bytes)>,
     termination_tx: Sender<()>,
     connection_pool: ConnectionPool<I>,
     connection_deduplicator: ConnectionDeduplicator,
@@ -130,8 +117,7 @@ impl<I: ConnId> Endpoint<I> {
         (
             Self,
             IncomingConnections<I>,
-            IncomingMessages<I>,
-            Option<ConnectionHandle<I>>,
+            Option<(ConnectionHandle<I>, Option<ConnectionIncomingHandle<I>>)>,
         ),
         EndpointError,
     > {
@@ -140,7 +126,7 @@ impl<I: ConnId> Endpoint<I> {
         let mut builder = quinn::Endpoint::builder();
         let _ = builder.listen(config.server.clone());
 
-        let (mut endpoint, quic_incoming, channels) = Self::build_endpoint(
+        let (mut endpoint, quic_incoming, termination_rx) = Self::build_endpoint(
             local_addr.into(),
             config.client,
             config.retry_config,
@@ -149,7 +135,11 @@ impl<I: ConnId> Endpoint<I> {
 
         let contact = endpoint.connect_to_any(contacts).await;
         let public_addr = endpoint
-            .resolve_public_addr(config.external_ip, config.external_port, contact.as_ref())
+            .resolve_public_addr(
+                config.external_ip,
+                config.external_port,
+                contact.as_ref().map(|c| &c.0),
+            )
             .await?;
 
         #[cfg(feature = "igd")]
@@ -160,24 +150,27 @@ impl<I: ConnId> Endpoint<I> {
                     public_addr.port(),
                     endpoint.local_addr(),
                     config.upnp_lease_duration,
-                    channels.termination.1,
+                    termination_rx,
                 ),
             )
             .await
             .map_err(|_| IgdError::TimedOut)??;
         }
 
+        #[cfg(not(feature = "igd"))]
+        drop(termination_rx); // not needed if igd is disabled
+
+        let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
         listen_for_incoming_connections(
             quic_incoming,
             endpoint.connection_pool.clone(),
-            channels.message.0.clone(),
-            channels.connection.0,
+            connection_tx,
             endpoint.clone(),
             endpoint.quic_endpoint.clone(),
             endpoint.retry_config.clone(),
         );
 
-        if let Some(contact) = contact.as_ref() {
+        if let Some((contact, _)) = contact.as_ref() {
             let valid = endpoint
                 .endpoint_verification(contact, public_addr)
                 .await
@@ -190,12 +183,7 @@ impl<I: ConnId> Endpoint<I> {
             }
         }
 
-        Ok((
-            endpoint,
-            IncomingConnections(channels.connection.1),
-            IncomingMessages(channels.message.1),
-            contact,
-        ))
+        Ok((endpoint, IncomingConnections(connection_rx), contact))
     }
 
     /// Create a client endpoint at the given address.
@@ -206,17 +194,17 @@ impl<I: ConnId> Endpoint<I> {
     pub fn new_client(
         local_addr: impl Into<SocketAddr>,
         config: Config,
-    ) -> Result<(Self, IncomingMessages<I>), ClientEndpointError> {
+    ) -> Result<Self, ClientEndpointError> {
         let config = InternalConfig::try_from_config(config)?;
 
-        let (endpoint, _, channels) = Self::build_endpoint(
+        let (endpoint, _, _) = Self::build_endpoint(
             local_addr.into(),
             config.client,
             config.retry_config,
             quinn::Endpoint::builder(),
         )?;
 
-        Ok((endpoint, IncomingMessages(channels.message.1)))
+        Ok(endpoint)
     }
 
     // A private helper for initialising an endpoint.
@@ -225,28 +213,27 @@ impl<I: ConnId> Endpoint<I> {
         client_config: quinn::ClientConfig,
         retry_config: Arc<RetryConfig>,
         mut builder: quinn::EndpointBuilder,
-    ) -> Result<(Self, quinn::Incoming, Channels<I>), quinn::EndpointError> {
+    ) -> Result<(Self, quinn::Incoming, broadcast::Receiver<()>), quinn::EndpointError> {
         let _ = builder.default_client_config(client_config);
         let (quic_endpoint, quic_incoming) = builder.bind(&local_addr)?;
         let local_addr = quic_endpoint
             .local_addr()
             .map_err(quinn::EndpointError::Socket)?;
 
-        let channels = Channels::new();
+        let (termination_tx, termination_rx) = broadcast::channel(1);
 
         let endpoint = Self {
             local_addr,
             public_addr: None,
             quic_endpoint,
             retry_config,
-            message_tx: channels.message.0.clone(),
-            termination_tx: channels.termination.0.clone(),
+            termination_tx,
             connection_pool: ConnectionPool::new(),
             connection_deduplicator: ConnectionDeduplicator::new(),
             opened_connection_count: Arc::new(AtomicUsize::new(0)),
         };
 
-        Ok((endpoint, quic_incoming, channels))
+        Ok((endpoint, quic_incoming, termination_rx))
     }
 
     /// Endpoint local address
@@ -304,7 +291,7 @@ impl<I: ConnId> Endpoint<I> {
     pub async fn connect_to(
         &self,
         node_addr: &SocketAddr,
-    ) -> Result<ConnectionHandle<I>, ConnectionError> {
+    ) -> Result<(ConnectionHandle<I>, Option<ConnectionIncomingHandle<I>>), ConnectionError> {
         self.get_or_connect_to(node_addr).await
     }
 
@@ -323,7 +310,10 @@ impl<I: ConnId> Endpoint<I> {
     /// method will check the pool before opening each connection. If a new connection is opened, it
     /// will be added to the pool. Note that already pooled connections will have a higher chance of
     /// 'winning' the race, and being the selected peer.
-    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Option<ConnectionHandle<I>> {
+    pub async fn connect_to_any(
+        &self,
+        peer_addrs: &[SocketAddr],
+    ) -> Option<(ConnectionHandle<I>, Option<ConnectionIncomingHandle<I>>)> {
         trace!("Connecting to any of {:?}", peer_addrs);
         if peer_addrs.is_empty() {
             return None;
@@ -401,32 +391,6 @@ impl<I: ConnId> Endpoint<I> {
             .map(|(connection, remover)| self.wrap_connection(connection, remover))
     }
 
-    /// Open a bi-directional stream with a given peer.
-    ///
-    /// # Priority
-    ///
-    /// Locally buffered data from streams with higher priority will be transmitted before data from
-    /// streams with lower priority. Changing the priority of a stream with pending data may only
-    /// take effect after that data has been transmitted. Using many different priority levels per
-    /// connection may have a negative impact on performance.
-    ///
-    /// `0` is a sensible default for 'normal' priority.
-    ///
-    /// # Connection pooling
-    ///
-    /// Connections are stored in an internal pool and reused if possible. A connection remains in
-    /// the pool until either side closes the connection (including due to timeouts or errors). This
-    /// method will check the pool before opening a new connection. If a new connection is opened,
-    /// it will be added to the pool.
-    pub async fn open_bidirectional_stream(
-        &self,
-        peer_addr: &SocketAddr,
-        priority: i32,
-    ) -> Result<(SendStream, RecvStream), ConnectionError> {
-        let connection = self.get_or_connect_to(peer_addr).await?;
-        connection.open_bi(priority).await
-    }
-
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
     pub fn close(&self) {
         let _ = self.termination_tx.send(());
@@ -437,11 +401,11 @@ impl<I: ConnId> Endpoint<I> {
     pub(crate) async fn get_or_connect_to(
         &self,
         addr: &SocketAddr,
-    ) -> Result<ConnectionHandle<I>, ConnectionError> {
+    ) -> Result<(ConnectionHandle<I>, Option<ConnectionIncomingHandle<I>>), ConnectionError> {
         let completion = loop {
             if let Some((conn, remover)) = self.connection_pool.get_by_addr(addr).await {
                 trace!("We are already connected to this peer: {}", addr);
-                return Ok(self.wrap_connection(conn, remover));
+                return Ok((self.wrap_connection(conn, remover), None));
             }
 
             // Check if a connect attempt to this address is already in progress.
@@ -466,19 +430,15 @@ impl<I: ConnId> Endpoint<I> {
                     .connection_pool
                     .insert(id, connection.remote_address(), connection.clone())
                     .await;
-                let connection = self.wrap_connection(connection, remover);
-
-                listen_for_incoming_messages(
-                    connection.clone(),
-                    connection_incoming,
-                    self.message_tx.clone(),
-                );
+                let connection = self.wrap_connection(connection, remover.clone());
+                let connection_incoming =
+                    ConnectionIncomingHandle::new(connection_incoming, remover);
 
                 let _ = completion.complete(Ok(()));
 
                 let _ = self.opened_connection_count.fetch_add(1, Ordering::Relaxed);
 
-                Ok(connection)
+                Ok((connection, Some(connection_incoming)))
             }
             Err(error) => {
                 let _ = completion.complete(Err(error.clone()));
@@ -638,27 +598,6 @@ impl<I: ConnId> Endpoint<I> {
     }
 }
 
-// a private helper struct for passing a bunch of channel-related things
-type Msg<I> = (ConnectionHandle<I>, Bytes);
-struct Channels<I: ConnId> {
-    connection: (
-        MpscSender<ConnectionHandle<I>>,
-        MpscReceiver<ConnectionHandle<I>>,
-    ),
-    message: (MpscSender<Msg<I>>, MpscReceiver<Msg<I>>),
-    termination: (Sender<()>, broadcast::Receiver<()>),
-}
-
-impl<I: ConnId> Channels<I> {
-    fn new() -> Self {
-        Self {
-            connection: mpsc::channel(STANDARD_CHANNEL_SIZE),
-            message: mpsc::channel(STANDARD_CHANNEL_SIZE),
-            termination: broadcast::channel(1),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::Endpoint;
@@ -668,7 +607,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_without_external_addr() -> Result<()> {
-        let (endpoint, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _) = Endpoint::<[u8; 32]>::new(
             local_addr(),
             &[],
             Config {
@@ -685,7 +624,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_ip() -> Result<()> {
-        let (endpoint, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _) = Endpoint::<[u8; 32]>::new(
             local_addr(),
             &[],
             Config {
@@ -705,7 +644,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_port() -> Result<()> {
-        let (endpoint, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _) = Endpoint::<[u8; 32]>::new(
             local_addr(),
             &[],
             Config {
@@ -725,7 +664,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_addr() -> Result<()> {
-        let (endpoint, _, _, _) = Endpoint::<[u8; 32]>::new(
+        let (endpoint, _, _) = Endpoint::<[u8; 32]>::new(
             local_addr(),
             &[],
             Config {
