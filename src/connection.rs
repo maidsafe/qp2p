@@ -27,7 +27,11 @@ const ENDPOINT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Clone)]
 pub(crate) struct Connection {
     inner: quinn::Connection,
-    alive_tx: Arc<watch::Sender<()>>,
+
+    // A reference to the 'alive' marker for the connection. This isn't read by `Connection`, but
+    // must be held to keep background listeners alive until both halves of the connection are
+    // dropped.
+    _alive_tx: Arc<watch::Sender<()>>,
 }
 
 impl Connection {
@@ -44,7 +48,7 @@ impl Connection {
         (
             Self {
                 inner: connection.connection,
-                alive_tx: Arc::clone(&alive_tx),
+                _alive_tx: Arc::clone(&alive_tx),
             },
             ConnectionIncoming::new(
                 endpoint,
