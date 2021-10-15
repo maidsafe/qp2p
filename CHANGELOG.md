@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.23.0](https://github.com/maidsafe/qp2p/compare/v0.22.2...v0.23.0) (2021-10-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* `DisconnectionEvents` has been removed, and is no
+longer returned from `Endpoint::new` or `Endpoint::new_client`.
+
+### Bug Fixes
+
+* fix an unread field lint on nightly ([6ebab02](https://github.com/maidsafe/qp2p/commit/6ebab0233bb494bffbc0cc3438aef246c25e7aa0))
+
+
+* remove `DisconnectionEvents` ([93e70a7](https://github.com/maidsafe/qp2p/commit/93e70a7309fdef676b2be6b024e5faa15fe9e280))
+
 ### [0.22.2](https://github.com/maidsafe/qp2p/compare/v0.22.1...v0.22.2) (2021-10-13)
 
 
