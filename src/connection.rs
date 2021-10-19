@@ -96,7 +96,15 @@ impl Connection {
         match retry_config.or_else(|| self.default_retry_config.as_deref()) {
             Some(retry_config) => {
                 retry_config
-                    .retry(|| async { Ok(self.send_uni(msg.clone(), priority).await?) })
+                    .retry(|| async {
+                        self.send_uni(msg.clone(), priority)
+                            .await
+                            .map_err(|error| match &error {
+                                // don't retry on connection loss, since we can't recover that from here
+                                SendError::ConnectionLost(_) => backoff::Error::Permanent(error),
+                                _ => backoff::Error::Transient(error),
+                            })
+                    })
                     .await?;
             }
             None => {
@@ -347,8 +355,19 @@ async fn listen_on_uni_streams(
             }
         }
     } {
+        let mut break_ = false;
+
+        if let Err(RecvError::ConnectionLost(_)) = &result {
+            // if the connection is lost, we should stop processing (after sending the error)
+            break_ = true;
+        }
+
         if message_tx.send(result).await.is_err() {
-            // if we can't send the result, the receiving end is closed so we should stop
+            // if we can't send the result, the receiving end is closed so we should stop processing
+            break_ = true;
+        }
+
+        if break_ {
             break;
         }
     }
@@ -380,9 +399,19 @@ async fn listen_on_bi_streams(
                 loop {
                     match WireMsg::read_from_stream(&mut recv_stream).await {
                         Err(error) => {
+                            let mut break_ = false;
+
+                            if let RecvError::ConnectionLost(_) = &error {
+                                break_ = true;
+                            }
+
                             if let Err(error) = message_tx.send(Err(error)).await {
                                 // if we can't send the result, the receiving end is closed so we should stop
                                 trace!("Receiver gone, dropping error: {:?}", error);
+                                break_ = true;
+                            }
+
+                            if break_ {
                                 break;
                             }
                         }
