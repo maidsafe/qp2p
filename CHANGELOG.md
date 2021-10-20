@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.24.0](https://github.com/maidsafe/qp2p/compare/v0.23.0...v0.24.0) (2021-10-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* `IncomingMessages` has been removed, and is no longer
+returned by `Endpoint::new` or `Endpoint::new_client`.
+
+### Bug Fixes
+
+* don't retry sending on connection loss ([578936d](https://github.com/maidsafe/qp2p/commit/578936dc0bba0e53e6230e916038f90cde49cd33))
+
+
+* remove `IncomingMessages` ([c0a6a20](https://github.com/maidsafe/qp2p/commit/c0a6a2042d0990b4ea7d550a1da7d5dcdf3bb559))
+
 ## [0.23.0](https://github.com/maidsafe/qp2p/compare/v0.22.2...v0.23.0) (2021-10-15)
 
 
