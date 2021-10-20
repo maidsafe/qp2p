@@ -394,7 +394,7 @@ async fn listen_on_bi_streams(
             let endpoint = &endpoint;
             let message_tx = &message_tx;
             async move {
-                trace!("Handling incoming uni-stream from {}", peer_addr);
+                trace!("Handling incoming bi-stream from {}", peer_addr);
 
                 loop {
                     match WireMsg::read_from_stream(&mut recv_stream).await {
