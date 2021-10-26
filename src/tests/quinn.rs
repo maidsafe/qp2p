@@ -55,7 +55,6 @@ impl<T> ChannelReceiver<T> {
 struct Peer {
     endpoint: quinn::Endpoint,
     client_cfg: quinn::ClientConfig,
-    message_tx: ChannelSender<(SocketAddr, Bytes)>,
     connections: Arc<RwLock<Vec<quinn::Connection>>>,
 }
 
@@ -84,7 +83,6 @@ impl Peer {
         };
         let connections = Arc::new(RwLock::new(Vec::new()));
         let conns = connections.clone();
-        let message_sender = message_tx.clone();
         let _ = tokio::spawn(async move {
             loop {
                 match incoming.next().await {
@@ -97,7 +95,7 @@ impl Peer {
                             } = conn;
                             let peer_address = connection.remote_address();
                             let _x = conns.write().await.push(connection);
-                            listen_for_messages(uni_streams, peer_address, message_sender.clone());
+                            listen_for_messages(uni_streams, peer_address, message_tx.clone());
                         }
                         Err(err) => {
                             error!(
@@ -118,7 +116,6 @@ impl Peer {
             Peer {
                 endpoint,
                 client_cfg: config.client,
-                message_tx,
                 connections,
             },
             message_rx,
