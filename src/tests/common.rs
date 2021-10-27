@@ -10,8 +10,17 @@
 use super::{hash, local_addr, new_endpoint, random_msg};
 use crate::{Config, Endpoint, RetryConfig};
 use color_eyre::eyre::{bail, eyre, Report, Result};
-use futures::{future, stream::FuturesUnordered, StreamExt};
-use std::{collections::BTreeSet, time::Duration};
+use futures::{
+    future,
+    stream::{self, FuturesUnordered},
+    StreamExt, TryStreamExt,
+};
+use std::{
+    collections::BTreeSet,
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
+use tokio::sync::Notify;
 use tracing::info;
 use tracing_test::traced_test;
 
@@ -461,58 +470,89 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
     let num_messages_each: usize = 100;
     let num_messages_total: usize = num_senders * num_messages_each;
 
-    let (server_endpoint, mut recv_incoming_connections, _) = new_endpoint().await?;
+    let (server_endpoint, recv_incoming_connections, _) = new_endpoint().await?;
     let server_addr = server_endpoint.public_addr();
 
+    let msg_len = 1024 * 1024;
     let test_msgs: Vec<_> = (0..num_messages_each)
-        .map(|_| random_msg(1024 * 1024))
+        .map(|_| random_msg(msg_len))
         .collect();
     let sending_msgs = test_msgs.clone();
 
     let mut tasks = FuturesUnordered::new();
 
     // Receiver + Hasher
-    tasks.push(tokio::spawn({
-        async move {
-            let mut num_received = 0;
-            assert!(!logs_contain("error"));
+    tasks.push(tokio::spawn(async move {
+        let num_received = AtomicUsize::new(0);
+        assert!(!logs_contain("error"));
 
-            while let Some((connection, mut recv_incoming_messages)) =
-                recv_incoming_connections.next().await
-            {
-                while let Ok(Ok(Some(msg))) = recv_incoming_messages.next().timeout().await {
-                    info!(
-                        "received from {:?} with message size {}",
-                        connection.remote_address(),
-                        msg.len()
-                    );
-                    assert!(!logs_contain("error"));
+        let finished = Notify::new();
 
-                    assert_eq!(msg.len(), test_msgs[0].len());
-
-                    let hash_result = hash(&msg);
-                    for _ in 0..5 {
-                        let _ = hash(&msg);
+        let recv_incoming_connections = stream::unfold(
+            recv_incoming_connections,
+            |mut recv_incoming_connections| {
+                let finished = &finished;
+                async move {
+                    tokio::select! {
+                        Some(connection) = recv_incoming_connections.next() => Some((connection, recv_incoming_connections)),
+                        _ = finished.notified() => {
+                            info!("finished");
+                            None
+                        },
+                        else => None,
                     }
-
-                    // Send the hash result back.
-                    connection.send(hash_result.to_vec().into()).await?;
-
-                    assert!(!logs_contain("error"));
-
-                    num_received += 1;
-                    // println!("Server received count: {}", num_received);
                 }
+            },
+        );
 
-                if num_received >= num_messages_total {
-                    break;
-                }
-            }
+        recv_incoming_connections
+            .map(Result::<_, Report>::Ok)
+            .try_for_each_concurrent(
+                None,
+                |(connection, mut recv_incoming_messages)| {
+                    let num_received = &num_received;
+                    let finished = &finished;
+                    async move {
+                        let mut last_count = 0;
 
-            assert!(!logs_contain("error"));
+                        while let Some(msg) = recv_incoming_messages.next().timeout().await?? {
+                            info!(
+                                "received from {:?} with message size {}",
+                                connection.remote_address(),
+                                msg.len()
+                            );
+                            assert!(!logs_contain("error"));
 
-            Ok(())
-        }
+                            assert_eq!(msg.len(), msg_len);
+
+                            let hash_result = hash(&msg);
+                            for _ in 0..5 {
+                                let _ = hash(&msg);
+                            }
+
+                            // Send the hash result back.
+                            connection.send(hash_result.to_vec().into()).await?;
+
+                            assert!(!logs_contain("error"));
+
+                            last_count = num_received.fetch_add(1, Ordering::SeqCst) + 1;
+                            info!("counted {}/{} messages so far", last_count, num_messages_total);
+                        }
+
+                        if last_count >= num_messages_total {
+                            info!("counted all {} messages, finishing", num_messages_total);
+                            finished.notify_one();
+                        }
+
+                        Ok(())
+                    }
+                },
+            )
+            .await?;
+
+        assert!(!logs_contain("error"));
+
+        Ok(())
     }));
 
     // Sender + Verifier
@@ -559,6 +599,10 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                     }
                 }
 
+                assert!(
+                    hash_results.is_empty(),
+                    "verifier terminated before all results were verified"
+                );
                 assert_eq!(send_endpoint.opened_connection_count(), 1);
 
                 Ok::<_, Report>(())
@@ -569,7 +613,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
     while let Some(result) = tasks.next().await {
         match result {
             Ok(Ok(())) => (),
-            other => bail!("Error from test threads: {:?}", other??),
+            other => bail!("Error from test threads: {:?}", other),
         }
     }
 
