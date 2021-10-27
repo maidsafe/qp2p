@@ -21,6 +21,11 @@ pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 /// Default for [`Config::keep_alive_interval`] (20 seconds).
 pub const DEFAULT_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(20);
 
+// serde needs a function when specifying a path for `default`
+fn default_keep_alive_interval() -> Option<Duration> {
+    Some(DEFAULT_KEEP_ALIVE_INTERVAL)
+}
+
 /// Default for [`Config::upnp_lease_duration`] (2 minutes).
 pub const DEFAULT_UPNP_LEASE_DURATION: Duration = Duration::from_secs(120);
 
@@ -92,7 +97,7 @@ pub struct CertificateGenerationError(
 );
 
 /// QuicP2p configurations
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     /// Specify if port forwarding via UPnP should be done or not. This can be set to false if the network
     /// is run locally on the network loopback or on a local area network.
@@ -123,7 +128,7 @@ pub struct Config {
     /// Keep-alives prevent otherwise idle connections from timing out.
     ///
     /// If unspecified, this will default to [`DEFAULT_KEEP_ALIVE_INTERVAL`].
-    #[serde(default)]
+    #[serde(default = "default_keep_alive_interval")]
     pub keep_alive_interval: Option<Duration>,
 
     /// How long UPnP port mappings will last.
@@ -139,6 +144,21 @@ pub struct Config {
     /// Determines the retry behaviour of requests, by setting the back off strategy used.
     #[serde(default)]
     pub retry_config: RetryConfig,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            #[cfg(feature = "igd")]
+            forward_port: Default::default(),
+            external_port: Default::default(),
+            external_ip: Default::default(),
+            idle_timeout: Default::default(),
+            keep_alive_interval: default_keep_alive_interval(),
+            upnp_lease_duration: Default::default(),
+            retry_config: Default::default(),
+        }
+    }
 }
 
 /// Retry configurations for establishing connections and sending messages.
@@ -226,14 +246,11 @@ pub(crate) struct InternalConfig {
 impl InternalConfig {
     pub(crate) fn try_from_config(config: Config) -> Result<Self> {
         let idle_timeout = config.idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
-        let keep_alive_interval = config
-            .keep_alive_interval
-            .unwrap_or(DEFAULT_KEEP_ALIVE_INTERVAL);
         let upnp_lease_duration = config
             .upnp_lease_duration
             .unwrap_or(DEFAULT_UPNP_LEASE_DURATION);
 
-        let transport = Self::new_transport_config(idle_timeout, keep_alive_interval);
+        let transport = Self::new_transport_config(idle_timeout, config.keep_alive_interval);
         let client = Self::new_client_config(transport.clone());
         let server = Self::new_server_config(transport)?;
 
@@ -251,7 +268,7 @@ impl InternalConfig {
 
     fn new_transport_config(
         idle_timeout: Duration,
-        keep_alive_interval: Duration,
+        keep_alive_interval: Option<Duration>,
     ) -> Arc<quinn::TransportConfig> {
         let mut config = quinn::TransportConfig::default();
 
@@ -259,7 +276,7 @@ impl InternalConfig {
         // represented by Duration. For now, just ignore too large idle timeouts.
         // FIXME: don't ignore (e.g. clamp/error/panic)?
         let _ = config.max_idle_timeout(Some(idle_timeout)).ok();
-        let _ = config.keep_alive_interval(Some(keep_alive_interval));
+        let _ = config.keep_alive_interval(keep_alive_interval);
 
         Arc::new(config)
     }
