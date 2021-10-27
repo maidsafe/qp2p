@@ -2,17 +2,15 @@
 
 use crate::{
     config::{RetryConfig, SERVER_NAME},
-    error::{
-        Close, ConnectionError, RecvError, RpcError, SendError, SerializationError, StreamError,
-    },
+    error::{ConnectionError, RecvError, RpcError, SendError, SerializationError, StreamError},
     wire_msg::WireMsg,
 };
 use bytes::Bytes;
 use futures::{
     future,
-    stream::{self, StreamExt, TryStreamExt},
+    stream::{self, Stream, StreamExt, TryStream, TryStreamExt},
 };
-use std::{fmt, net::SocketAddr, sync::Arc, time::Duration};
+use std::{fmt, net::SocketAddr, pin::Pin, sync::Arc, task, time::Duration};
 use tokio::{
     sync::{mpsc, watch},
     time::timeout,
@@ -294,19 +292,23 @@ fn start_message_listeners(
 ) {
     let _ = tokio::spawn(listen_on_uni_streams(
         peer_addr,
-        uni_streams,
+        FilterBenignClose(uni_streams),
         alive_rx.clone(),
         message_tx.clone(),
     ));
 
     let _ = tokio::spawn(listen_on_bi_streams(
-        endpoint, peer_addr, bi_streams, alive_rx, message_tx,
+        endpoint,
+        peer_addr,
+        FilterBenignClose(bi_streams),
+        alive_rx,
+        message_tx,
     ));
 }
 
 async fn listen_on_uni_streams(
     peer_addr: SocketAddr,
-    uni_streams: quinn::IncomingUniStreams,
+    uni_streams: FilterBenignClose<quinn::IncomingUniStreams>,
     mut alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<Bytes, RecvError>>,
 ) {
@@ -380,7 +382,7 @@ async fn listen_on_uni_streams(
 async fn listen_on_bi_streams(
     endpoint: quinn::Endpoint,
     peer_addr: SocketAddr,
-    bi_streams: quinn::IncomingBiStreams,
+    bi_streams: FilterBenignClose<quinn::IncomingBiStreams>,
     mut alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<Bytes, RecvError>>,
 ) {
@@ -467,31 +469,12 @@ async fn listen_on_bi_streams(
             );
         }
         future::Either::Left((Err(error), _)) => {
-            match error.into() {
-                ConnectionError::Closed(Close::Local) => {
-                    trace!(
-                        "Stopped listener for incoming bi-streams from {}: connection closed locally",
-                        peer_addr
-                    );
-                }
-                ConnectionError::Closed(Close::Application {
-                    error_code: 0,
-                    reason,
-                }) => {
-                    trace!(
-                        "Stopped listener for incoming bi-streams from {}: closed by peer (error code: 0, reason: {:?})",
-                        peer_addr,
-                        String::from_utf8_lossy(&reason)
-                    );
-                }
-                error => {
-                    // TODO: consider more carefully how to handle this
-                    warn!(
-                        "Stopped listener for incoming bi-streams from {} due to error: {:?}",
-                        peer_addr, error
-                    );
-                }
-            }
+            // A connection error occurred on bi_streams, we don't propagate anything here as we
+            // expect propagation to be handled in listen_on_uni_streams.
+            warn!(
+                "Stopped listener for incoming bi-streams from {} due to error: {:?}",
+                peer_addr, error
+            );
         }
         future::Either::Right((_, _)) => {
             // the connection was closed
@@ -550,17 +533,47 @@ async fn handle_endpoint_verification(
     Ok(())
 }
 
+struct FilterBenignClose<S>(S);
+
+impl<S> Stream for FilterBenignClose<S>
+where
+    S: Stream<Item = Result<S::Ok, S::Error>> + TryStream + Unpin,
+    S::Error: Into<ConnectionError>,
+{
+    type Item = Result<S::Ok, ConnectionError>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        ctx: &mut task::Context,
+    ) -> task::Poll<Option<Self::Item>> {
+        let next = futures::ready!(self.0.poll_next_unpin(ctx));
+        task::Poll::Ready(match next.transpose() {
+            Ok(next) => next.map(Ok),
+            Err(error) => {
+                let error = error.into();
+                if error.is_benign() {
+                    None
+                } else {
+                    Some(Err(error))
+                }
+            }
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Connection;
     use crate::{
-        config::{InternalConfig, SERVER_NAME},
+        config::{Config, InternalConfig, SERVER_NAME},
+        error::{ConnectionError, SendError},
         tests::local_addr,
         wire_msg::WireMsg,
     };
     use bytes::Bytes;
     use color_eyre::eyre::{bail, Result};
     use futures::{StreamExt, TryStreamExt};
+    use std::time::Duration;
 
     #[tokio::test]
     #[tracing_test::traced_test]
@@ -621,6 +634,58 @@ mod tests {
         // check the connections were shutdown on drop
         timeout(peer1.wait_idle()).await?;
         timeout(peer2.wait_idle()).await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn benign_connection_loss() -> Result<()> {
+        let config = InternalConfig::try_from_config(Config {
+            // set a very low idle timeout
+            idle_timeout: Some(Duration::from_secs(1)),
+            ..Default::default()
+        })?;
+
+        let mut builder = quinn::Endpoint::builder();
+        let _ = builder
+            .listen(config.server.clone())
+            .default_client_config(config.client.clone());
+        let (peer1, _) = builder.bind(&local_addr())?;
+
+        let mut builder = quinn::Endpoint::builder();
+        let _ = builder
+            .listen(config.server.clone())
+            .default_client_config(config.client.clone());
+        let (peer2, peer2_incoming) = builder.bind(&local_addr())?;
+
+        // open a connection between the two peers
+        let (p1_tx, _) = Connection::new(
+            peer1.clone(),
+            None,
+            peer1.connect(&peer2.local_addr()?, SERVER_NAME)?.await?,
+        );
+
+        let (_, mut p2_rx) =
+            if let Some(connection) = timeout(peer2_incoming.then(|c| c).try_next()).await?? {
+                Connection::new(peer2.clone(), None, connection)
+            } else {
+                bail!("did not receive incoming connection when one was expected");
+            };
+
+        // let 2 * idle timeout pass
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        // trying to send a message should fail with an error
+        match p1_tx.send(b"hello"[..].into()).await {
+            Err(SendError::ConnectionLost(ConnectionError::TimedOut)) => {}
+            res => bail!("unexpected send result: {:?}", res),
+        }
+
+        // trying to receive should NOT return an error
+        match p2_rx.next().await {
+            Ok(None) => {}
+            res => bail!("unexpected recv result: {:?}", res),
+        }
 
         Ok(())
     }
@@ -764,6 +829,6 @@ mod tests {
     async fn timeout<F: std::future::Future>(
         f: F,
     ) -> Result<F::Output, tokio::time::error::Elapsed> {
-        tokio::time::timeout(std::time::Duration::from_millis(500), f).await
+        tokio::time::timeout(Duration::from_millis(500), f).await
     }
 }
