@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.26.0](https://github.com/maidsafe/qp2p/compare/v0.25.0...v0.26.0) (2021-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* Setting `qp2p::Config::keep_alive_interval = None` will
+now disable keep-alives, rather than falling back to the default
+interval.
+
+### Features
+
+* support disabling keep-alives ([dca54b3](https://github.com/maidsafe/qp2p/commit/dca54b3e281f3d788bccee26ce6d61733ca8cca3))
+
 ## [0.25.0](https://github.com/maidsafe/qp2p/compare/v0.24.0...v0.25.0) (2021-10-27)
 
 
