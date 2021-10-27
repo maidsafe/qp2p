@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.25.0](https://github.com/maidsafe/qp2p/compare/v0.24.0...v0.25.0) (2021-10-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* - The `ConnId` trait has been removed.
+- `Endpoint`, `IncomingConnections`, `Connection`, and
+  `ConnectionIncoming` no longer have a generic type parameter.
+- `Endpoint::disconnect_from`, `Endpoint::get_connection_by_addr`, and
+  `Endpoint::get_connection_by_id` have been removed.
+- `Connection::id` has been removed.
+- `Endpoint::new`, `Endpoint::connect_to`, and
+  `Endpoint::connect_to_any` now return
+  `(Connection, ConnectionIncoming)`, rather than `(Connection,
+  Option<ConnectionIncoming>)`.
+- `Connection::open_bi` no longer takes a `priority` argument. This can
+  be set with `SendStream::set_priority` instead.
+- Semantically, all calls to `Endpoint::connect_to` and
+  `Endpoint::connect_to_any` will establish and return new connections.
+  There is no connection reuse.
+
+### Bug Fixes
+
+* drop an unused field from `tests::quinn::Peer` ([7b0fa53](https://github.com/maidsafe/qp2p/commit/7b0fa532d6aa3f1a048b05e0b2cb0498505efaf6))
+* fix incorrect log message ([1a9261b](https://github.com/maidsafe/qp2p/commit/1a9261bf7b5280551086b4076a82e1023b7efe65))
+
+
+* remove connection pooling ([fd19094](https://github.com/maidsafe/qp2p/commit/fd19094d5b5ea7ab13c71eda09eb01986ad738b8))
+
 ## [0.24.0](https://github.com/maidsafe/qp2p/compare/v0.23.0...v0.24.0) (2021-10-20)
 
 
