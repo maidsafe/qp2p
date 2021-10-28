@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.27.0](https://github.com/maidsafe/qp2p/compare/v0.26.1...v0.27.0) (2021-10-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* The `qp2p::config::DEFAULT_KEEP_ALIVE_INTERVAL`
+constant has been removed, and the default value for
+`keep_alive_interval` set for `Config::default()` is now `None`, meaning
+keep-alives are disabled by default.
+
+### Features
+
+* add `Connection::id` to get a stable ID for a connection ([a86e558](https://github.com/maidsafe/qp2p/commit/a86e5587ae0f5f52f5941e51b759a860e997dba8))
+
+
+### Bug Fixes
+
+* more carefully handle 'benign' connection loss ([9e2be50](https://github.com/maidsafe/qp2p/commit/9e2be50c03e3e49bda7e12df7a2e13112ee89c90))
+
+
+* disable keep-alives by default ([7788fda](https://github.com/maidsafe/qp2p/commit/7788fdafacaa0c96da7aa692d3ecb22fd1ad6c64))
+
 ### [0.26.1](https://github.com/maidsafe/qp2p/compare/v0.26.0...v0.26.1) (2021-10-28)
 
 ## [0.26.0](https://github.com/maidsafe/qp2p/compare/v0.25.0...v0.26.0) (2021-10-27)
