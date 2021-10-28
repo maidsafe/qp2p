@@ -822,6 +822,6 @@ trait Timeout: Sized {
 
 impl<F: std::future::Future> Timeout for F {
     fn timeout(self) -> tokio::time::Timeout<Self> {
-        tokio::time::timeout(Duration::from_secs(2), self)
+        tokio::time::timeout(Duration::from_secs(10), self)
     }
 }
