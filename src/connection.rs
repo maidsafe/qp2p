@@ -500,6 +500,7 @@ async fn handle_endpoint_echo(
     send_stream: &mut quinn::SendStream,
     peer_addr: SocketAddr,
 ) -> Result<(), SendError> {
+    trace!("Replying to EndpointEchoReq from {}", peer_addr);
     WireMsg::EndpointEchoResp(peer_addr)
         .write_to_stream(send_stream)
         .await
@@ -510,19 +511,36 @@ async fn handle_endpoint_verification(
     send_stream: &mut quinn::SendStream,
     addr: SocketAddr,
 ) -> Result<(), SendError> {
+    trace!("Performing endpoint verification for {}", addr);
+
     let verify = async {
+        trace!(
+            "EndpointVerificationReq: opening new connection to {}",
+            addr
+        );
         let connection = endpoint
             .connect(&addr, SERVER_NAME)
             .map_err(ConnectionError::from)?
             .await?;
 
         let (mut send_stream, mut recv_stream) = connection.connection.open_bi().await?;
+        trace!(
+            "EndpointVerificationReq: sending EndpointEchoReq to {} over connection {}",
+            addr,
+            connection.connection.stable_id()
+        );
         WireMsg::EndpointEchoReq
             .write_to_stream(&mut send_stream)
             .await?;
 
         match WireMsg::read_from_stream(&mut recv_stream).await? {
-            Some(WireMsg::EndpointEchoResp(_)) => Ok(()),
+            Some(WireMsg::EndpointEchoResp(_)) => {
+                trace!(
+                    "EndpointVerificationReq: Received EndpointEchoResp from {}",
+                    addr
+                );
+                Ok(())
+            }
             msg => Err(RecvError::from(SerializationError::unexpected(msg)).into()),
         }
     };
