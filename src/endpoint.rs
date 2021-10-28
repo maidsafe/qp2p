@@ -386,10 +386,7 @@ impl Endpoint {
 
                         Ok((connection, connection_incoming))
                     }
-                    Err(error) => {
-                        error!("some error: {:?}", error);
-                        Err(ConnectionError::from(error))
-                    }
+                    Err(error) => Err(ConnectionError::from(error)),
                 }?;
 
                 Ok(new_conn)
