@@ -56,10 +56,7 @@ async fn main() -> Result<()> {
             node.connect_to(&peer).await?.0.send(msg.clone()).await?;
         }
 
-        println!(
-            "Done sending, opened {} connections",
-            node.opened_connection_count()
-        );
+        println!("Done sending");
     }
 
     println!("\n---");

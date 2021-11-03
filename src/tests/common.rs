@@ -39,9 +39,6 @@ async fn successful_connection() -> Result<()> {
         bail!("No incoming connection");
     }
 
-    assert_eq!(peer1.opened_connection_count(), 0);
-    assert_eq!(peer2.opened_connection_count(), 1);
-
     Ok(())
 }
 
@@ -74,9 +71,6 @@ async fn single_message() -> Result<()> {
     } else {
         bail!("No incoming message");
     }
-
-    assert_eq!(peer1.opened_connection_count(), 0);
-    assert_eq!(peer2.opened_connection_count(), 1);
 
     Ok(())
 }
@@ -134,9 +128,6 @@ async fn no_reuse_outgoing_connection() -> Result<()> {
         bail!("No incoming message");
     }
 
-    assert_eq!(alice.opened_connection_count(), 2);
-    assert_eq!(bob.opened_connection_count(), 0);
-
     Ok(())
 }
 
@@ -193,9 +184,6 @@ async fn no_reuse_incoming_connection() -> Result<()> {
     } else {
         bail!("No incoming message");
     }
-
-    assert_eq!(alice.opened_connection_count(), 1);
-    assert_eq!(bob.opened_connection_count(), 1);
 
     Ok(())
 }
@@ -273,9 +261,6 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
         assert_eq!(message?, Some(msg2));
     }
 
-    assert_eq!(alice.opened_connection_count(), 1);
-    assert_eq!(bob.opened_connection_count(), 2);
-
     Ok(())
 }
 
@@ -337,9 +322,6 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     } else {
         bail!("No message from alice");
     }
-
-    assert_eq!(alice.opened_connection_count(), 0);
-    assert_eq!(bob.opened_connection_count(), 2);
 
     Ok(())
 }
@@ -446,8 +428,6 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                     }
                 }
 
-                assert_eq!(send_endpoint.opened_connection_count(), 1);
-
                 Ok::<_, Report>(())
             }
         }));
@@ -457,8 +437,6 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
         .await?
         .into_iter()
         .collect::<Result<_>>()?;
-
-    assert_eq!(server_endpoint.opened_connection_count(), 0);
 
     Ok(())
 }
@@ -603,7 +581,6 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                     hash_results.is_empty(),
                     "verifier terminated before all results were verified"
                 );
-                assert_eq!(send_endpoint.opened_connection_count(), 1);
 
                 Ok::<_, Report>(())
             }
@@ -616,8 +593,6 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
             other => bail!("Error from test threads: {:?}", other),
         }
     }
-
-    assert_eq!(server_endpoint.opened_connection_count(), 0);
 
     Ok(())
 }
@@ -683,9 +658,6 @@ async fn many_messages() -> Result<()> {
 
     let _ = future::try_join_all(tasks).await?;
 
-    assert_eq!(send_endpoint.opened_connection_count(), 1);
-    assert_eq!(recv_endpoint.opened_connection_count(), 0);
-
     Ok(())
 }
 
@@ -722,11 +694,6 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
         }
     }
 
-    assert_eq!(ep1.opened_connection_count(), 0);
-    assert_eq!(ep2.opened_connection_count(), 0);
-    assert_eq!(ep3.opened_connection_count(), 0);
-    assert_eq!(ep.opened_connection_count(), 3);
-
     Ok(())
 }
 
@@ -740,9 +707,6 @@ async fn reachability() -> Result<()> {
     };
     let reachable_addr = ep2.public_addr();
     ep1.is_reachable(&reachable_addr).await?;
-
-    assert_eq!(ep1.opened_connection_count(), 1);
-    assert_eq!(ep2.opened_connection_count(), 0);
 
     Ok(())
 }
@@ -809,9 +773,6 @@ async fn client() -> Result<()> {
 
     // reconnecting should increment client's opened connection count
     let _ = client.connect_to(&server.public_addr()).await?;
-
-    assert_eq!(server.opened_connection_count(), 0);
-    assert_eq!(client.opened_connection_count(), 2);
 
     Ok(())
 }
