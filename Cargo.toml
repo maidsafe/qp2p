@@ -9,7 +9,7 @@ repository = "https://github.com/maidsafe/qp2p"
 version = "0.27.0"
 authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 keywords = [ "quic" ]
-edition = "2018"
+edition = "2021"
 
 [[example]]
 name = "p2p_node"
@@ -34,7 +34,6 @@ rustls = { version = "0.19.0", features = ["dangerous_configuration"] }
 serde = { version = "1.0.117", features = ["derive"] }
 stability = "0.1.0"
 thiserror = "1.0.23"
-tiny-keccak = "2.0.2"
 tokio = { version = "1.2.0", features = ["sync"] }
 tracing = "~0.1.26"
 webpki = "~0.21.3"
