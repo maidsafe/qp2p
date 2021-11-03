@@ -21,10 +21,7 @@ use super::{
 use futures::StreamExt;
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::Arc,
 };
 use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::mpsc::{self, Receiver as MpscReceiver};
@@ -61,9 +58,6 @@ pub struct Endpoint {
     retry_config: Arc<RetryConfig>,
 
     termination_tx: Sender<()>,
-
-    // counts fully opened connections, excluding incoming and connections dropped by connect_to_any
-    opened_connection_count: Arc<AtomicUsize>,
 }
 
 impl std::fmt::Debug for Endpoint {
@@ -218,7 +212,6 @@ impl Endpoint {
             quic_endpoint,
             retry_config,
             termination_tx,
-            opened_connection_count: Arc::new(AtomicUsize::new(0)),
         };
 
         Ok((endpoint, quic_incoming, termination_rx))
@@ -232,16 +225,6 @@ impl Endpoint {
     /// Get the public address of the endpoint.
     pub fn public_addr(&self) -> SocketAddr {
         self.public_addr.unwrap_or(self.local_addr)
-    }
-
-    /// Get the count of opened connections.
-    ///
-    /// `Endpoint`s keep a count of connections they have fully opened and returned to callers.
-    /// Notably this excludes any incoming connections, and connections that were dropped by
-    /// [`connect_to_any`](Self::connect_to_any).
-    #[stability::unstable(feature = "opened-connection-count")]
-    pub fn opened_connection_count(&self) -> usize {
-        self.opened_connection_count.load(Ordering::Relaxed)
     }
 
     /// Connect to a peer.
@@ -381,8 +364,6 @@ impl Endpoint {
                             Some(self.retry_config.clone()),
                             new_conn,
                         );
-
-                        let _ = self.opened_connection_count.fetch_add(1, Ordering::Relaxed);
 
                         Ok((connection, connection_incoming))
                     }
