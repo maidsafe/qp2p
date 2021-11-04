@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.27.2](https://github.com/maidsafe/qp2p/compare/v0.27.1...v0.27.2) (2021-11-04)
+
+
+### Features
+
+* implement `Debug` for `Connection` ([966567e](https://github.com/maidsafe/qp2p/commit/966567e4849ba6d8c8fca901a58de76724674059))
+
 ### [0.27.1](https://github.com/maidsafe/qp2p/compare/v0.27.0...v0.27.1) (2021-11-03)
 
 ## [0.27.0](https://github.com/maidsafe/qp2p/compare/v0.26.1...v0.27.0) (2021-10-28)
