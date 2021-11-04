@@ -167,6 +167,15 @@ impl Connection {
     }
 }
 
+impl fmt::Debug for Connection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Connection")
+            .field("id", &self.id())
+            .field("remote_address", &self.remote_address())
+            .finish_non_exhaustive()
+    }
+}
+
 /// The sending API for a QUIC stream.
 pub struct SendStream {
     inner: quinn::SendStream,
