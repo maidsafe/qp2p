@@ -228,6 +228,11 @@ impl Endpoint {
         self.public_addr.unwrap_or(self.local_addr)
     }
 
+    /// Get the default [`RetryConfig`] set for this endpoint.
+    pub fn default_retry_config(&self) -> &RetryConfig {
+        self.default_retry_config.as_ref()
+    }
+
     /// Connect to a peer.
     ///
     /// Atttempts to connect to a peer at the given address. Connection attempts are retried based

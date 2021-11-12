@@ -82,6 +82,11 @@ impl Connection {
         self.inner.remote_address()
     }
 
+    /// The default [`RetryConfig`] set for this connection.
+    pub fn default_retry_config(&self) -> Option<&RetryConfig> {
+        self.default_retry_config.as_deref()
+    }
+
     /// Send a message to the peer with default retry configuration.
     ///
     /// The message will be sent on a unidirectional QUIC stream, meaning the application is
