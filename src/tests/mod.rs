@@ -37,7 +37,7 @@ pub(crate) async fn new_endpoint() -> Result<(
         local_addr(),
         &[],
         Config {
-            retry_config: RetryConfig {
+            default_retry_config: RetryConfig {
                 retrying_max_elapsed_time: Duration::from_millis(500),
                 ..RetryConfig::default()
             },

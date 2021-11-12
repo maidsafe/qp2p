@@ -55,7 +55,7 @@ pub struct Endpoint {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
     quic_endpoint: quinn::Endpoint,
-    retry_config: Arc<RetryConfig>,
+    default_retry_config: Arc<RetryConfig>,
 
     termination_tx: Sender<()>,
 }
@@ -65,7 +65,7 @@ impl std::fmt::Debug for Endpoint {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
             .field("quic_endpoint", &"<endpoint omitted>")
-            .field("retry_config", &self.retry_config)
+            .field("default_retry_config", &self.default_retry_config)
             .finish()
     }
 }
@@ -115,7 +115,7 @@ impl Endpoint {
         let (mut endpoint, quic_incoming, termination_rx) = Self::build_endpoint(
             local_addr.into(),
             config.client,
-            config.retry_config,
+            config.default_retry_config,
             builder,
         )?;
 
@@ -151,7 +151,7 @@ impl Endpoint {
             quic_incoming,
             connection_tx,
             endpoint.quic_endpoint.clone(),
-            endpoint.retry_config.clone(),
+            endpoint.default_retry_config.clone(),
         );
 
         if let Some((contact, _)) = contact.as_ref() {
@@ -184,7 +184,7 @@ impl Endpoint {
         let (endpoint, _, _) = Self::build_endpoint(
             local_addr.into(),
             config.client,
-            config.retry_config,
+            config.default_retry_config,
             quinn::Endpoint::builder(),
         )?;
 
@@ -195,7 +195,7 @@ impl Endpoint {
     fn build_endpoint(
         local_addr: SocketAddr,
         client_config: quinn::ClientConfig,
-        retry_config: Arc<RetryConfig>,
+        default_retry_config: Arc<RetryConfig>,
         mut builder: quinn::EndpointBuilder,
     ) -> Result<(Self, quinn::Incoming, broadcast::Receiver<()>), quinn::EndpointError> {
         let _ = builder.default_client_config(client_config);
@@ -210,7 +210,7 @@ impl Endpoint {
             local_addr,
             public_addr: None,
             quic_endpoint,
-            retry_config,
+            default_retry_config,
             termination_tx,
         };
 
@@ -344,7 +344,7 @@ impl Endpoint {
         &self,
         node_addr: &SocketAddr,
     ) -> Result<(Connection, ConnectionIncoming), ConnectionError> {
-        self.retry_config
+        self.default_retry_config
             .retry(|| async {
                 trace!("Attempting to connect to {:?}", node_addr);
                 let connecting = match self.quic_endpoint.connect(node_addr, SERVER_NAME) {
@@ -361,7 +361,7 @@ impl Endpoint {
 
                         let (connection, connection_incoming) = Connection::new(
                             self.quic_endpoint.clone(),
-                            Some(self.retry_config.clone()),
+                            Some(self.default_retry_config.clone()),
                             new_conn,
                         );
 

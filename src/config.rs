@@ -132,10 +132,11 @@ pub struct Config {
     #[serde(default)]
     pub upnp_lease_duration: Option<Duration>,
 
-    /// Retry configurations for establishing connections and sending messages.
+    /// Default retry configuration for establishing connections and sending messages.
+    ///
     /// Determines the retry behaviour of requests, by setting the back off strategy used.
     #[serde(default)]
-    pub retry_config: RetryConfig,
+    pub default_retry_config: RetryConfig,
 }
 
 /// Retry configurations for establishing connections and sending messages.
@@ -217,7 +218,7 @@ pub(crate) struct InternalConfig {
     pub(crate) external_port: Option<u16>,
     pub(crate) external_ip: Option<IpAddr>,
     pub(crate) upnp_lease_duration: Duration,
-    pub(crate) retry_config: Arc<RetryConfig>,
+    pub(crate) default_retry_config: Arc<RetryConfig>,
 }
 
 impl InternalConfig {
@@ -239,7 +240,7 @@ impl InternalConfig {
             external_port: config.external_port,
             external_ip: config.external_ip,
             upnp_lease_duration,
-            retry_config: Arc::new(config.retry_config),
+            default_retry_config: Arc::new(config.default_retry_config),
         })
     }
 

@@ -677,7 +677,7 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
         local_addr(),
         &contacts,
         Config {
-            retry_config: RetryConfig {
+            default_retry_config: RetryConfig {
                 retrying_max_elapsed_time: Duration::from_millis(500),
                 ..RetryConfig::default()
             },
@@ -720,7 +720,7 @@ async fn client() -> Result<()> {
     let client = Endpoint::new_client(
         local_addr(),
         Config {
-            retry_config: RetryConfig {
+            default_retry_config: RetryConfig {
                 retrying_max_elapsed_time: Duration::from_millis(500),
                 ..RetryConfig::default()
             },
