@@ -46,6 +46,7 @@
     unused_results
 )]
 
+pub mod backoff;
 pub mod config;
 mod connection;
 mod endpoint;

@@ -5,6 +5,10 @@ use crate::{
     error::{ConnectionError, RecvError, RpcError, SendError, SerializationError, StreamError},
     wire_msg::WireMsg,
 };
+use backoff::{
+    backoff::{Backoff, Stop},
+    future::retry,
+};
 use bytes::Bytes;
 use futures::{
     future,
@@ -88,7 +92,11 @@ impl Connection {
     /// belongs to. See [`send_with`](Self::send_with) if you want to send a message with specific
     /// configuration.
     pub async fn send(&self, msg: Bytes) -> Result<(), SendError> {
-        self.send_with(msg, 0, None).await
+        if let Some(retry_config) = self.default_retry_config.as_deref() {
+            self.send_with(msg, 0, retry_config.backoff()).await
+        } else {
+            self.send_with(msg, 0, Stop {}).await
+        }
     }
 
     /// Send a message to the peer using the given configuration.
@@ -98,27 +106,19 @@ impl Connection {
         &self,
         msg: Bytes,
         priority: i32,
-        retry_config: Option<&RetryConfig>,
+        backoff: impl Backoff,
     ) -> Result<(), SendError> {
-        match retry_config.or_else(|| self.default_retry_config.as_deref()) {
-            Some(retry_config) => {
-                retry_config
-                    .retry(|| async {
-                        self.send_uni(msg.clone(), priority)
-                            .await
-                            .map_err(|error| match &error {
-                                // don't retry on connection loss, since we can't recover that from here
-                                SendError::ConnectionLost(_) => backoff::Error::Permanent(error),
-                                _ => backoff::Error::Transient(error),
-                            })
-                    })
-                    .await?;
-            }
-            None => {
-                self.send_uni(msg, priority).await?;
-            }
-        }
-        Ok(())
+        let operation = || async {
+            self.send_uni(msg.clone(), priority)
+                .await
+                .map_err(|error| match &error {
+                    // don't retry on connection loss, since we can't recover that from here
+                    SendError::ConnectionLost(_) => backoff::Error::Permanent(error),
+                    _ => backoff::Error::Transient(error),
+                })
+        };
+
+        retry(backoff, operation).await
     }
 
     /// Open a unidirection stream to the peer.

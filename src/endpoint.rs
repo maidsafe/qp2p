@@ -18,6 +18,7 @@ use super::{
         SerializationError,
     },
 };
+use backoff::backoff::Backoff;
 use futures::StreamExt;
 use std::{
     net::{IpAddr, SocketAddr},
@@ -252,7 +253,24 @@ impl Endpoint {
         &self,
         node_addr: &SocketAddr,
     ) -> Result<(Connection, ConnectionIncoming), ConnectionError> {
-        self.new_connection(node_addr).await
+        self.new_connection(node_addr, self.default_retry_config.backoff())
+            .await
+    }
+
+    /// Connect to a peer with a given retry context.
+    ///
+    /// [`Endpoint::connect_to`] will retry connection attempts based on the configured
+    /// `default_retry_config`. This method allows the caller to specify a [`Backoff`]
+    /// implementation to use instead. In particular, this would allow a single retry 'context' to
+    /// be maintained through multiple calls.
+    ///
+    /// See [`Endpoint::connect_to`] for more information.
+    pub async fn connect_with_retries(
+        &self,
+        node_addr: &SocketAddr,
+        backoff: impl Backoff,
+    ) -> Result<(Connection, ConnectionIncoming), ConnectionError> {
+        self.new_connection(node_addr, backoff).await
     }
 
     /// Connect to any of the given peers.
@@ -282,7 +300,7 @@ impl Endpoint {
         // Attempt to create a new connection to all nodes and return the first one to succeed
         let tasks = peer_addrs
             .iter()
-            .map(|addr| Box::pin(self.new_connection(addr)));
+            .map(|addr| Box::pin(self.new_connection(addr, self.default_retry_config.backoff())));
 
         match futures::future::select_ok(tasks).await {
             Ok((connection, _)) => Some(connection),
@@ -306,7 +324,9 @@ impl Endpoint {
     pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<(), RpcError> {
         trace!("Checking is reachable");
 
-        let (connection, _) = self.new_connection(peer_addr).await?;
+        let (connection, _) = self
+            .new_connection(peer_addr, self.default_retry_config.backoff())
+            .await?;
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
 
         send_stream.send_wire_msg(WireMsg::EndpointEchoReq).await?;
@@ -343,36 +363,37 @@ impl Endpoint {
     async fn new_connection(
         &self,
         node_addr: &SocketAddr,
+        backoff: impl Backoff,
     ) -> Result<(Connection, ConnectionIncoming), ConnectionError> {
-        self.default_retry_config
-            .retry(|| async {
-                trace!("Attempting to connect to {:?}", node_addr);
-                let connecting = match self.quic_endpoint.connect(node_addr, SERVER_NAME) {
-                    Ok(conn) => Ok(conn),
-                    Err(error) => {
-                        warn!("Connection attempt failed due to {:?}", error);
-                        Err(ConnectionError::from(error))
-                    }
-                }?;
+        let operation = || async {
+            trace!("Attempting to connect to {:?}", node_addr);
+            let connecting = match self.quic_endpoint.connect(node_addr, SERVER_NAME) {
+                Ok(conn) => Ok(conn),
+                Err(error) => {
+                    warn!("Connection attempt failed due to {:?}", error);
+                    Err(ConnectionError::from(error))
+                }
+            }?;
 
-                let new_conn = match connecting.await {
-                    Ok(new_conn) => {
-                        trace!("Successfully connected to peer: {}", node_addr);
+            let new_conn = match connecting.await {
+                Ok(new_conn) => {
+                    trace!("Successfully connected to peer: {}", node_addr);
 
-                        let (connection, connection_incoming) = Connection::new(
-                            self.quic_endpoint.clone(),
-                            Some(self.default_retry_config.clone()),
-                            new_conn,
-                        );
+                    let (connection, connection_incoming) = Connection::new(
+                        self.quic_endpoint.clone(),
+                        Some(self.default_retry_config.clone()),
+                        new_conn,
+                    );
 
-                        Ok((connection, connection_incoming))
-                    }
-                    Err(error) => Err(ConnectionError::from(error)),
-                }?;
+                    Ok((connection, connection_incoming))
+                }
+                Err(error) => Err(ConnectionError::from(error)),
+            }?;
 
-                Ok(new_conn)
-            })
-            .await
+            Ok(new_conn)
+        };
+
+        backoff::future::retry(backoff, operation).await
     }
 
     // set an appropriate public address based on `config` and a reachability check.
