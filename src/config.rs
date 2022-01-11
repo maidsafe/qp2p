@@ -216,6 +216,7 @@ pub(crate) struct InternalConfig {
     pub(crate) forward_port: bool,
     pub(crate) external_port: Option<u16>,
     pub(crate) external_ip: Option<IpAddr>,
+    #[allow(dead_code)]
     pub(crate) upnp_lease_duration: Duration,
     pub(crate) retry_config: Arc<RetryConfig>,
 }
