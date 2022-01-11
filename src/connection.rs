@@ -145,8 +145,10 @@ impl Connection {
     /// This is not a graceful close - pending operations will fail immediately with
     /// [`ConnectionError::Closed`]`(`[`Close::Local`]`)`, and data on unfinished streams is not
     /// guaranteed to be delivered.
-    pub fn close(&self) {
-        self.inner.close(0u8.into(), b"");
+    pub fn close(&self, reason: Option<String>) {
+        let reason = reason
+            .unwrap_or_else(|| "The connection was closed intentionally by qp2p.".to_string());
+        self.inner.close(0u8.into(), &reason.into_bytes());
     }
 
     async fn send_uni(&self, msg: Bytes, priority: i32) -> Result<(), SendError> {
