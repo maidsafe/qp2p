@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.27.3](https://github.com/maidsafe/qp2p/compare/v0.27.2...v0.27.3) (2022-01-11)
+
+
+### Features
+
+* add optional reason for closing a connection ([8ba42b5](https://github.com/maidsafe/qp2p/commit/8ba42b555bfca47e8835a9ee9707ef5b937d75b5))
+
 ### [0.27.2](https://github.com/maidsafe/qp2p/compare/v0.27.1...v0.27.2) (2021-11-04)
 
 
