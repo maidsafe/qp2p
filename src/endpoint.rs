@@ -19,6 +19,7 @@ use super::{
     },
 };
 use futures::StreamExt;
+use quinn::Endpoint as QuinnEndpoint;
 use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
@@ -55,7 +56,7 @@ impl IncomingConnections {
 pub struct Endpoint {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
-    quic_endpoint: quinn::Endpoint,
+    quinn_endpoint: QuinnEndpoint,
     retry_config: Arc<RetryConfig>,
 
     termination_tx: Sender<()>,
@@ -65,7 +66,7 @@ impl std::fmt::Debug for Endpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
-            .field("quic_endpoint", &"<endpoint omitted>")
+            .field("quinn_endpoint", &"<endpoint omitted>")
             .field("retry_config", &self.retry_config)
             .finish()
     }
@@ -96,7 +97,7 @@ impl Endpoint {
     /// the IGD UPnP protocol). The established external port will be reflected in
     /// [`public_addr`](Self::public_addr), and the lease will be renewed automatically every
     /// `config.upnp_lease_duration`.
-    pub async fn new(
+    pub async fn new_peer(
         local_addr: impl Into<SocketAddr>,
         contacts: &[SocketAddr],
         config: Config,
@@ -109,18 +110,28 @@ impl Endpoint {
         EndpointError,
     > {
         let config = InternalConfig::try_from_config(config)?;
+        let local_addr = local_addr.into();
 
-        let mut builder = quinn::Endpoint::builder();
-        let _ = builder.listen(config.server.clone());
+        let (termination_tx, termination_rx) = broadcast::channel(1);
 
-        let (mut endpoint, quic_incoming, termination_rx) = Self::build_endpoint(
-            local_addr.into(),
-            config.client,
-            config.retry_config,
-            builder,
-        )?;
+        let (mut quinn_endpoint, quinn_incoming) =
+            QuinnEndpoint::server(config.server.clone(), local_addr)?;
+
+        let quinn_endpoint_socket_addr = quinn_endpoint.local_addr()?;
+
+        // set client config used for any outgoing connections
+        quinn_endpoint.set_default_client_config(config.client);
+
+        let mut endpoint = Self {
+            local_addr: quinn_endpoint_socket_addr,
+            public_addr: None, // we'll set this below
+            quinn_endpoint,
+            retry_config: config.retry_config,
+            termination_tx,
+        };
 
         let contact = endpoint.connect_to_any(contacts).await;
+
         let public_addr = endpoint
             .resolve_public_addr(
                 config.external_ip,
@@ -128,6 +139,8 @@ impl Endpoint {
                 contact.as_ref().map(|c| &c.0),
             )
             .await?;
+
+        endpoint.public_addr = Some(public_addr);
 
         #[cfg(feature = "igd")]
         if config.forward_port {
@@ -148,10 +161,11 @@ impl Endpoint {
         drop(termination_rx); // not needed if igd is disabled
 
         let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
+
         listen_for_incoming_connections(
-            quic_incoming,
+            quinn_incoming,
             connection_tx,
-            endpoint.quic_endpoint.clone(),
+            endpoint.quinn_endpoint.clone(),
             endpoint.retry_config.clone(),
         );
 
@@ -182,40 +196,26 @@ impl Endpoint {
     ) -> Result<Self, ClientEndpointError> {
         let config = InternalConfig::try_from_config(config)?;
 
-        let (endpoint, _, _) = Self::build_endpoint(
-            local_addr.into(),
-            config.client,
-            config.retry_config,
-            quinn::Endpoint::builder(),
-        )?;
+        let (termination_tx, _termination_rx) = broadcast::channel(1);
 
-        Ok(endpoint)
-    }
+        let local_addr = local_addr.into();
 
-    // A private helper for initialising an endpoint.
-    fn build_endpoint(
-        local_addr: SocketAddr,
-        client_config: quinn::ClientConfig,
-        retry_config: Arc<RetryConfig>,
-        mut builder: quinn::EndpointBuilder,
-    ) -> Result<(Self, quinn::Incoming, broadcast::Receiver<()>), quinn::EndpointError> {
-        let _ = builder.default_client_config(client_config);
-        let (quic_endpoint, quic_incoming) = builder.bind(&local_addr)?;
-        let local_addr = quic_endpoint
-            .local_addr()
-            .map_err(quinn::EndpointError::Socket)?;
+        let mut quinn_endpoint = QuinnEndpoint::client(local_addr)?;
 
-        let (termination_tx, termination_rx) = broadcast::channel(1);
+        // retrieve the actual used socket addr
+        let local_quinn_socket_addr = quinn_endpoint.local_addr()?;
+
+        quinn_endpoint.set_default_client_config(config.client);
 
         let endpoint = Self {
-            local_addr,
-            public_addr: None,
-            quic_endpoint,
-            retry_config,
+            local_addr: local_quinn_socket_addr,
+            public_addr: None, // we're a client
+            quinn_endpoint,
+            retry_config: config.retry_config,
             termination_tx,
         };
 
-        Ok((endpoint, quic_incoming, termination_rx))
+        Ok(endpoint)
     }
 
     /// Endpoint local address
@@ -334,7 +334,7 @@ impl Endpoint {
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
     pub fn close(&self) {
         let _ = self.termination_tx.send(());
-        self.quic_endpoint.close(0_u32.into(), b"")
+        self.quinn_endpoint.close(0_u32.into(), b"")
     }
 
     /// Attempt a connection to a node_addr.
@@ -348,7 +348,7 @@ impl Endpoint {
         self.retry_config
             .retry(|| async {
                 trace!("Attempting to connect to {:?}", node_addr);
-                let connecting = match self.quic_endpoint.connect(node_addr, SERVER_NAME) {
+                let connecting = match self.quinn_endpoint.connect(*node_addr, SERVER_NAME) {
                     Ok(conn) => Ok(conn),
                     Err(error) => {
                         warn!("Connection attempt failed due to {:?}", error);
@@ -361,7 +361,7 @@ impl Endpoint {
                         trace!("Successfully connected to peer: {}", node_addr);
 
                         let (connection, connection_incoming) = Connection::new(
-                            self.quic_endpoint.clone(),
+                            self.quinn_endpoint.clone(),
                             Some(self.retry_config.clone()),
                             new_conn,
                         );
@@ -486,7 +486,7 @@ impl Endpoint {
 pub(super) fn listen_for_incoming_connections(
     mut quinn_incoming: quinn::Incoming,
     connection_tx: mpsc::Sender<(Connection, ConnectionIncoming)>,
-    quic_endpoint: quinn::Endpoint,
+    quinn_endpoint: quinn::Endpoint,
     retry_config: Arc<RetryConfig>,
 ) {
     let _ = tokio::spawn(async move {
@@ -495,7 +495,7 @@ pub(super) fn listen_for_incoming_connections(
                 Some(quinn_conn) => match quinn_conn.await {
                     Ok(connection) => {
                         let (connection, connection_incoming) = Connection::new(
-                            quic_endpoint.clone(),
+                            quinn_endpoint.clone(),
                             Some(retry_config.clone()),
                             connection,
                         );
@@ -530,7 +530,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_without_external_addr() -> Result<()> {
-        let (endpoint, _, _) = Endpoint::new(
+        let (endpoint, _, _) = Endpoint::new_peer(
             local_addr(),
             &[],
             Config {
@@ -547,7 +547,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_ip() -> Result<()> {
-        let (endpoint, _, _) = Endpoint::new(
+        let (endpoint, _, _) = Endpoint::new_peer(
             local_addr(),
             &[],
             Config {
@@ -567,7 +567,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_port() -> Result<()> {
-        let (endpoint, _, _) = Endpoint::new(
+        let (endpoint, _, _) = Endpoint::new_peer(
             local_addr(),
             &[],
             Config {
@@ -587,7 +587,7 @@ mod tests {
 
     #[tokio::test]
     async fn new_with_external_addr() -> Result<()> {
-        let (endpoint, _, _) = Endpoint::new(
+        let (endpoint, _, _) = Endpoint::new_peer(
             local_addr(),
             &[],
             Config {

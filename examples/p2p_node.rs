@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     // create an endpoint for us to listen on and send from.
-    let (node, mut incoming_conns, _contact) = Endpoint::new(
+    let (node, mut incoming_conns, _contact) = Endpoint::new_peer(
         SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
         &[],
         Config {

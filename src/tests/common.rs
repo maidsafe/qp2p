@@ -673,7 +673,7 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
 
     let contacts = vec![ep1.public_addr(), ep2.public_addr(), ep3.public_addr()];
 
-    let (ep, _, bootstrapped_peer) = Endpoint::new(
+    let (ep, _, bootstrapped_peer) = Endpoint::new_peer(
         local_addr(),
         &contacts,
         Config {
@@ -735,6 +735,7 @@ async fn client() -> Result<()> {
         .next()
         .await
         .ok_or_else(|| eyre!("did not receive expected connection"))?;
+
     assert_eq!(server_to_client.remote_address(), client.public_addr());
 
     let message = server_messages

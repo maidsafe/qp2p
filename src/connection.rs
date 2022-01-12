@@ -531,7 +531,7 @@ async fn handle_endpoint_verification(
             addr
         );
         let connection = endpoint
-            .connect(&addr, SERVER_NAME)
+            .connect(addr, SERVER_NAME)
             .map_err(ConnectionError::from)?
             .await?;
 
@@ -612,6 +612,7 @@ mod tests {
     use bytes::Bytes;
     use color_eyre::eyre::{bail, Result};
     use futures::{StreamExt, TryStreamExt};
+    use quinn::Endpoint as QuinnEndpoint;
     use std::time::Duration;
 
     #[tokio::test]
@@ -619,23 +620,17 @@ mod tests {
     async fn basic_usage() -> Result<()> {
         let config = InternalConfig::try_from_config(Default::default())?;
 
-        let mut builder = quinn::Endpoint::builder();
-        let _ = builder
-            .listen(config.server.clone())
-            .default_client_config(config.client.clone());
-        let (peer1, _) = builder.bind(&local_addr())?;
+        let (mut peer1, _peer1_incoming) =
+            QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        peer1.set_default_client_config(config.client);
 
-        let mut builder = quinn::Endpoint::builder();
-        let _ = builder
-            .listen(config.server.clone())
-            .default_client_config(config.client.clone());
-        let (peer2, peer2_incoming) = builder.bind(&local_addr())?;
+        let (peer2, peer2_incoming) = QuinnEndpoint::server(config.server.clone(), local_addr())?;
 
         {
             let (p1_tx, mut p1_rx) = Connection::new(
                 peer1.clone(),
                 None,
-                peer1.connect(&peer2.local_addr()?, SERVER_NAME)?.await?,
+                peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
             );
 
             let (p2_tx, mut p2_rx) =
@@ -685,23 +680,17 @@ mod tests {
             ..Default::default()
         })?;
 
-        let mut builder = quinn::Endpoint::builder();
-        let _ = builder
-            .listen(config.server.clone())
-            .default_client_config(config.client.clone());
-        let (peer1, _) = builder.bind(&local_addr())?;
+        let (mut peer1, _peer1_incoming) =
+            QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        peer1.set_default_client_config(config.client);
 
-        let mut builder = quinn::Endpoint::builder();
-        let _ = builder
-            .listen(config.server.clone())
-            .default_client_config(config.client.clone());
-        let (peer2, peer2_incoming) = builder.bind(&local_addr())?;
+        let (peer2, peer2_incoming) = QuinnEndpoint::server(config.server.clone(), local_addr())?;
 
         // open a connection between the two peers
         let (p1_tx, _) = Connection::new(
             peer1.clone(),
             None,
-            peer1.connect(&peer2.local_addr()?, SERVER_NAME)?.await?,
+            peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
         );
 
         let (_, mut p2_rx) =
@@ -730,26 +719,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn endpoint_echo() -> Result<()> {
-        let config = InternalConfig::try_from_config(Default::default())?;
+    async fn test_endpoint_echo() -> Result<()> {
+        let config = InternalConfig::try_from_config(Config::default())?;
 
-        let mut builder = quinn::Endpoint::builder();
-        let _ = builder
-            .listen(config.server.clone())
-            .default_client_config(config.client.clone());
-        let (peer1, _) = builder.bind(&local_addr())?;
+        let (mut peer1, _peer1_incoming) =
+            QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        peer1.set_default_client_config(config.client);
 
-        let mut builder = quinn::Endpoint::builder();
-        let _ = builder
-            .listen(config.server.clone())
-            .default_client_config(config.client.clone());
-        let (peer2, peer2_incoming) = builder.bind(&local_addr())?;
+        let (peer2, peer2_incoming) = QuinnEndpoint::server(config.server.clone(), local_addr())?;
 
         {
             let (p1_tx, _) = Connection::new(
                 peer1.clone(),
                 None,
-                peer1.connect(&peer2.local_addr()?, SERVER_NAME)?.await?,
+                peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
             );
 
             // we need to accept the connection on p2, or the message won't be processed
@@ -789,23 +772,19 @@ mod tests {
     async fn endpoint_verification() -> Result<()> {
         let config = InternalConfig::try_from_config(Default::default())?;
 
-        let mut builder = quinn::Endpoint::builder();
-        let _ = builder
-            .listen(config.server.clone())
-            .default_client_config(config.client.clone());
-        let (peer1, peer1_incoming) = builder.bind(&local_addr())?;
+        let (mut peer1, peer1_incoming) =
+            QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        peer1.set_default_client_config(config.client.clone());
 
-        let mut builder = quinn::Endpoint::builder();
-        let _ = builder
-            .listen(config.server.clone())
-            .default_client_config(config.client.clone());
-        let (peer2, peer2_incoming) = builder.bind(&local_addr())?;
+        let (mut peer2, peer2_incoming) =
+            QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        peer2.set_default_client_config(config.client);
 
         {
             let (p1_tx, _) = Connection::new(
                 peer1.clone(),
                 None,
-                peer1.connect(&peer2.local_addr()?, SERVER_NAME)?.await?,
+                peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
             );
 
             // we need to accept the connection on p2, or the message won't be processed
