@@ -23,6 +23,9 @@ const INCOMING_MESSAGE_BUFFER_LEN: usize = 10_000;
 // TODO: this seems arbitrary - it may need tuned or made configurable.
 const ENDPOINT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(30);
 
+// Error reason for closing a connection when triggered manually by qp2p apis
+const QP2P_CLOSED_CONNECTION: &str = "The connection was closed intentionally by qp2p.";
+
 /// The sending API for a connection.
 #[derive(Clone)]
 pub struct Connection {
@@ -146,11 +149,11 @@ impl Connection {
     /// [`ConnectionError::Closed`]`(`[`Close::Local`]`)`, and data on unfinished streams is not
     /// guaranteed to be delivered.
     pub fn close(&self, reason: Option<String>) {
-        let reason = reason
-            .unwrap_or_else(|| "The connection was closed intentionally by qp2p.".to_string());
+        let reason = reason.unwrap_or_else(|| QP2P_CLOSED_CONNECTION.to_string());
         self.inner.close(0u8.into(), &reason.into_bytes());
     }
 
+    /// Opens a uni directional stream and sends message on this stream
     async fn send_uni(&self, msg: Bytes, priority: i32) -> Result<(), SendError> {
         let mut send_stream = self.open_uni().await.map_err(SendError::ConnectionLost)?;
         send_stream.set_priority(priority);
