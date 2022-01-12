@@ -59,14 +59,10 @@ pub enum EndpointError {
         /// The public address we thought we should have.
         public_addr: SocketAddr,
     },
-}
 
-impl From<quinn::EndpointError> for EndpointError {
-    fn from(error: quinn::EndpointError) -> Self {
-        match error {
-            quinn::EndpointError::Socket(error) => Self::Socket(error),
-        }
-    }
+    /// Io error.
+    #[error(transparent)]
+    IoError(#[from] io::Error),
 }
 
 #[cfg(feature = "igd")]
@@ -86,14 +82,10 @@ pub enum ClientEndpointError {
     /// Failed to bind UDP socket.
     #[error("Failed to bind UDP socket")]
     Socket(#[source] io::Error),
-}
 
-impl From<quinn::EndpointError> for ClientEndpointError {
-    fn from(error: quinn::EndpointError) -> Self {
-        match error {
-            quinn::EndpointError::Socket(error) => Self::Socket(error),
-        }
-    }
+    /// Io error.
+    #[error(transparent)]
+    Io(#[from] io::Error),
 }
 
 /// Errors that can cause connection loss.
@@ -155,23 +147,16 @@ impl ConnectionError {
     // closes during a message receive loop, we could quietly end the stream instead). This method
     // helps to centralise that discrimination.
     pub(crate) fn is_benign(&self) -> bool {
-        match self {
+        matches!(
+            self,
             // We expect that timeouts will be used to naturally close connections once they are
             // idle, so we treat it as benign.
-            Self::TimedOut => true,
-
+            Self::TimedOut |
             // A graceful close from our end.
-            Self::Closed(Close::Local) => true,
-
-            // A graceful close from the peer, with the default code and empty reason.
-            Self::Closed(Close::Application {
-                error_code: 0,
-                reason,
-            }) if reason.is_empty() => true,
-
-            // Any other error is classified as not benign, so should always be propagated.
-            _ => false,
-        }
+            Self::Closed(Close::Local) |
+            // A graceful close from the peer, with the default code 0
+            Self::Closed(Close::Application { error_code: 0, .. })
+        )
     }
 }
 
@@ -187,7 +172,7 @@ impl From<quinn::ConnectError> for ConnectionError {
                 // error.
                 Self::InternalConfigError(InternalConfigError(error))
             }
-            quinn::ConnectError::Config(_) => {
+            _ => {
                 // This is logically impossible, but has not been removed from the quinn API
                 // (PR: https://github.com/quinn-rs/quinn/pull/1181). As above, we don't want to
                 // allow any panics, so we propagate it as an opaque internal error.
@@ -381,7 +366,7 @@ impl From<quinn::WriteError> for SendError {
     fn from(error: quinn::WriteError) -> Self {
         match error {
             quinn::WriteError::Stopped(code) => Self::StreamLost(StreamError::Stopped(code.into())),
-            quinn::WriteError::ConnectionClosed(error) => Self::ConnectionLost(error.into()),
+            quinn::WriteError::ConnectionLost(error) => Self::ConnectionLost(error.into()),
             quinn::WriteError::UnknownStream => Self::StreamLost(StreamError::Gone),
             quinn::WriteError::ZeroRttRejected => Self::StreamLost(StreamError::Unsupported(
                 UnsupportedStreamOperation(error.into()),
@@ -424,7 +409,7 @@ impl From<quinn::ReadError> for RecvError {
 
         match error {
             ReadError::Reset(code) => Self::StreamLost(StreamError::Stopped(code.into())),
-            ReadError::ConnectionClosed(error) => Self::ConnectionLost(error.into()),
+            ReadError::ConnectionLost(error) => Self::ConnectionLost(error.into()),
             ReadError::UnknownStream => Self::StreamLost(StreamError::Gone),
             ReadError::IllegalOrderedRead | ReadError::ZeroRttRejected => Self::StreamLost(
                 StreamError::Unsupported(UnsupportedStreamOperation(error.into())),

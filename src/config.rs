@@ -9,14 +9,11 @@
 
 //! Configuration for `Endpoint`s.
 
+use quinn::IdleTimeout;
+
+use rustls::{Certificate, ClientConfig, ServerName};
 use serde::{Deserialize, Serialize};
 use std::{future::Future, net::IpAddr, sync::Arc, time::Duration};
-
-/// Default for [`Config::idle_timeout`] (1 minute).
-///
-/// This is based on average time in which routers would close the UDP mapping to the peer if they
-/// see no conversation between them.
-pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Default for [`Config::upnp_lease_duration`] (2 minutes).
 pub const DEFAULT_UPNP_LEASE_DURATION: Duration = Duration::from_secs(120);
@@ -26,6 +23,12 @@ pub const DEFAULT_UPNP_LEASE_DURATION: Duration = Duration::from_secs(120);
 /// Together with the default max and multiplier,
 /// gives 5-6 retries in ~30 s total retry time.
 pub const DEFAULT_INITIAL_RETRY_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Default for [`Config::idle_timeout`] (1 minute).
+///
+/// This is based on average time in which routers would close the UDP mapping to the peer if they
+/// see no conversation between them.
+pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Default for [`RetryConfig::max_retry_interval`] (15 s).
 ///
@@ -57,6 +60,15 @@ pub enum ConfigError {
     /// An error occurred when generating the TLS certificate.
     #[error("An error occurred when generating the TLS certificate")]
     CertificateGeneration(#[from] CertificateGenerationError),
+    /// Invalid idle timeout
+    #[error("An error occurred parsing idle timeout duration")]
+    InvalidIdleTimeout(#[from] quinn_proto::VarIntBoundsExceeded),
+    /// rustls error
+    #[error("An error occurred within rustls")]
+    Rustls(#[from] rustls::Error),
+    /// rustls error
+    #[error("An error occurred generaeting client config certificates")]
+    Webpki,
 }
 
 impl From<rcgen::RcgenError> for ConfigError {
@@ -65,17 +77,17 @@ impl From<rcgen::RcgenError> for ConfigError {
     }
 }
 
-impl From<quinn::ParseError> for ConfigError {
-    fn from(error: quinn::ParseError) -> Self {
-        Self::CertificateGeneration(CertificateGenerationError(error.into()))
-    }
-}
+// impl From<quinn::ParseError> for ConfigError {
+//     fn from(error: quinn::ParseError) -> Self {
+//         Self::CertificateGeneration(CertificateGenerationError(error.into()))
+//     }
+// }
 
-impl From<rustls::TLSError> for ConfigError {
-    fn from(error: rustls::TLSError) -> Self {
-        Self::CertificateGeneration(CertificateGenerationError(error.into()))
-    }
-}
+// impl From<TlsError> for ConfigError {
+//     fn from(error: TlsError) -> Self {
+//         Self::CertificateGeneration(CertificateGenerationError(error.into()))
+//     }
+// }
 
 /// An error that occured when generating the TLS certificate.
 #[derive(Debug, thiserror::Error)]
@@ -223,14 +235,40 @@ pub(crate) struct InternalConfig {
 
 impl InternalConfig {
     pub(crate) fn try_from_config(config: Config) -> Result<Self> {
-        let idle_timeout = config.idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT);
+        let default_idle_timeout: IdleTimeout = IdleTimeout::try_from(DEFAULT_IDLE_TIMEOUT)?; // 60s
+
+        // let's convert our duration to quinn's IdleTimeout
+        let idle_timeout = config
+            .idle_timeout
+            .map(IdleTimeout::try_from)
+            .unwrap_or(Ok(default_idle_timeout))
+            .map_err(ConfigError::from)?;
         let upnp_lease_duration = config
             .upnp_lease_duration
             .unwrap_or(DEFAULT_UPNP_LEASE_DURATION);
 
         let transport = Self::new_transport_config(idle_timeout, config.keep_alive_interval);
-        let client = Self::new_client_config(transport.clone());
-        let server = Self::new_server_config(transport)?;
+
+        // setup certificates
+        let mut roots = rustls::RootCertStore::empty();
+        let (cert, key) = Self::generate_cert()?;
+        roots.add(&cert).map_err(|_e| ConfigError::Webpki)?;
+
+        let mut client_crypto = ClientConfig::builder()
+            .with_safe_defaults()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+
+        // allow client to connect to unknown certificates, eg those generated above
+        client_crypto
+            .dangerous()
+            .set_certificate_verifier(Arc::new(SkipCertificateVerification));
+
+        let mut server = quinn::ServerConfig::with_single_cert(vec![cert], key)?;
+        server.transport = transport.clone();
+
+        let mut client = quinn::ClientConfig::new(Arc::new(client_crypto));
+        client.transport = transport;
 
         Ok(Self {
             client,
@@ -245,7 +283,7 @@ impl InternalConfig {
     }
 
     fn new_transport_config(
-        idle_timeout: Duration,
+        idle_timeout: IdleTimeout,
         keep_alive_interval: Option<Duration>,
     ) -> Arc<quinn::TransportConfig> {
         let mut config = quinn::TransportConfig::default();
@@ -253,58 +291,36 @@ impl InternalConfig {
         // QUIC encodes idle timeout in a varint with max size 2^62, which is below what can be
         // represented by Duration. For now, just ignore too large idle timeouts.
         // FIXME: don't ignore (e.g. clamp/error/panic)?
-        let _ = config.max_idle_timeout(Some(idle_timeout)).ok();
+        let _ = config.max_idle_timeout(Some(idle_timeout));
         let _ = config.keep_alive_interval(keep_alive_interval);
 
         Arc::new(config)
     }
 
-    fn new_client_config(transport: Arc<quinn::TransportConfig>) -> quinn::ClientConfig {
-        let mut config = quinn::ClientConfig {
-            transport,
-            ..Default::default()
-        };
-        Arc::make_mut(&mut config.crypto)
-            .dangerous()
-            .set_certificate_verifier(Arc::new(SkipCertificateVerification));
-        config
-    }
-
-    fn new_server_config(transport: Arc<quinn::TransportConfig>) -> Result<quinn::ServerConfig> {
-        let (cert, key) = Self::generate_cert()?;
-
-        let mut config = quinn::ServerConfig::default();
-        config.transport = transport;
-
-        let mut config = quinn::ServerConfigBuilder::new(config);
-        let _ = config.certificate(quinn::CertificateChain::from_certs(vec![cert]), key)?;
-
-        Ok(config.build())
-    }
-
-    fn generate_cert() -> Result<(quinn::Certificate, quinn::PrivateKey)> {
+    fn generate_cert() -> Result<(Certificate, rustls::PrivateKey)> {
         let cert = rcgen::generate_simple_self_signed(vec![SERVER_NAME.to_string()])?;
 
-        let cert_der = cert.serialize_der()?;
-        let key_der = cert.serialize_private_key_der();
+        let key = cert.serialize_private_key_der();
+        let cert = cert.serialize_der().unwrap();
 
-        Ok((
-            quinn::Certificate::from_der(&cert_der)?,
-            quinn::PrivateKey::from_der(&key_der)?,
-        ))
+        let key = rustls::PrivateKey(key);
+        let cert = Certificate(cert);
+        Ok((cert, key))
     }
 }
 
 struct SkipCertificateVerification;
 
-impl rustls::ServerCertVerifier for SkipCertificateVerification {
+impl rustls::client::ServerCertVerifier for SkipCertificateVerification {
     fn verify_server_cert(
         &self,
-        _roots: &rustls::RootCertStore,
-        _presented_certs: &[rustls::Certificate],
-        _dns_name: webpki::DNSNameRef,
+        _end_entity: &Certificate,
+        _intermediates: &[Certificate],
+        _server_name: &ServerName,
+        _scts: &mut dyn Iterator<Item = &[u8]>,
         _ocsp_response: &[u8],
-    ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
-        Ok(rustls::ServerCertVerified::assertion())
+        _now: std::time::SystemTime,
+    ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::ServerCertVerified::assertion())
     }
 }

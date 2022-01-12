@@ -20,7 +20,6 @@ use tiny_keccak::{Hasher, Sha3};
 type Digest256 = [u8; 32];
 
 mod common;
-mod quinn;
 
 #[ctor::ctor]
 fn setup() {
@@ -33,7 +32,7 @@ pub(crate) async fn new_endpoint() -> Result<(
     IncomingConnections,
     Option<(Connection, ConnectionIncoming)>,
 )> {
-    Ok(Endpoint::new(
+    Ok(Endpoint::new_peer(
         local_addr(),
         &[],
         Config {
