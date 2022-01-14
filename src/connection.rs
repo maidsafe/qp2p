@@ -242,7 +242,7 @@ impl RecvStream {
     pub async fn next(&mut self) -> Result<Bytes, RecvError> {
         match self.next_wire_msg().await? {
             Some(WireMsg::UserMsg(msg)) => Ok(msg),
-            msg => Err(SerializationError::unexpected(msg).into()),
+            msg => Err(SerializationError::unexpected(&msg).into()),
         }
     }
 
@@ -258,6 +258,7 @@ impl fmt::Debug for RecvStream {
 }
 
 /// The receiving API for a connection.
+#[derive(Debug)]
 pub struct ConnectionIncoming {
     message_rx: mpsc::Receiver<Result<Bytes, RecvError>>,
     _alive_tx: Arc<watch::Sender<()>>,
@@ -348,7 +349,7 @@ async fn listen_on_uni_streams(
                         .and_then(|msg| match msg {
                             Some(WireMsg::UserMsg(msg)) => Ok(Some((msg, recv_stream))),
                             None => Ok(None),
-                            _ => Err(SerializationError::unexpected(msg).into()),
+                            _ => Err(SerializationError::unexpected(&msg).into()),
                         })
                 })
             })
@@ -467,7 +468,7 @@ async fn listen_on_bi_streams(
                             // TODO: consider more carefully how to handle this
                             warn!(
                                 "Error on bi-stream: {}",
-                                SerializationError::unexpected(msg)
+                                SerializationError::unexpected(&msg)
                             );
                         }
                     }
@@ -552,7 +553,7 @@ async fn handle_endpoint_verification(
                 );
                 Ok(())
             }
-            msg => Err(RecvError::from(SerializationError::unexpected(msg)).into()),
+            msg => Err(RecvError::from(SerializationError::unexpected(&msg)).into()),
         }
     };
 

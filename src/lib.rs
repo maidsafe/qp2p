@@ -10,40 +10,27 @@
 //! qp2p enables communication within a peer to peer network over the QUIC protocol.
 
 // For explanation of lint checks, run `rustc -W help`
+// Forbid some very bad patterns. Forbid is stronger than `deny`, preventing us from suppressing the
+// lint with `#[allow(...)]` et-all.
 #![forbid(
     arithmetic_overflow,
     mutable_transmutes,
     no_mangle_const_items,
-    unknown_crate_types
+    unknown_crate_types,
+    unsafe_code
 )]
-#![deny(
-    bad_style,
-    deprecated,
-    improper_ctypes,
-    missing_docs,
-    non_shorthand_field_patterns,
-    overflowing_literals,
-    stable_features,
-    unconditional_recursion,
-    unknown_lints,
-    unsafe_code,
-    unused_allocation,
-    unused_attributes,
-    unused_comparisons,
-    unused_features,
-    unused_parens,
-    while_true,
-    clippy::unicode_not_nfc
-)]
+// Turn on some additional warnings to encourage good style.
 #![warn(
+    missing_debug_implementations,
+    missing_docs,
     trivial_casts,
     trivial_numeric_casts,
     unreachable_pub,
-    unused,
     unused_extern_crates,
     unused_import_braces,
     unused_qualifications,
-    unused_results
+    unused_results,
+    clippy::unicode_not_nfc
 )]
 
 pub mod config;

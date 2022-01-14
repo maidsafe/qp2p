@@ -39,6 +39,7 @@ const ECHO_SERVICE_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 const STANDARD_CHANNEL_SIZE: usize = 10000;
 
 /// Channel on which incoming connections are notified on
+#[derive(Debug)]
 pub struct IncomingConnections(pub(crate) MpscReceiver<(Connection, ConnectionIncoming)>);
 
 impl IncomingConnections {
@@ -460,7 +461,7 @@ impl Endpoint {
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
             Some(WireMsg::EndpointEchoResp(addr)) => Ok(addr),
-            msg => Err(RecvError::Serialization(SerializationError::unexpected(msg)).into()),
+            msg => Err(RecvError::Serialization(SerializationError::unexpected(&msg)).into()),
         }
     }
 
@@ -477,7 +478,7 @@ impl Endpoint {
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
             Some(WireMsg::EndpointVerificationResp(valid)) => Ok(valid),
-            msg => Err(RecvError::Serialization(SerializationError::unexpected(msg)).into()),
+            msg => Err(RecvError::Serialization(SerializationError::unexpected(&msg)).into()),
         }
     }
 }
