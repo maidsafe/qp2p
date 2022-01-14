@@ -456,7 +456,7 @@ impl SerializationError {
     }
 
     /// Construct a `SerializationError` for an unexpected message.
-    pub(crate) fn unexpected(actual: Option<WireMsg>) -> Self {
+    pub(crate) fn unexpected(actual: &Option<WireMsg>) -> Self {
         if let Some(actual) = actual {
             Self::new(format!(
                 "The message received was not the expected one: {}",
