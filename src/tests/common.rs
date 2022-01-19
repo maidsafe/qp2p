@@ -272,55 +272,64 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
     let (bob, mut bob_incoming_connections, _) = new_endpoint().await?;
     let bob_addr = bob.public_addr();
 
-    // Try to establish two connections to the same peer at the same time.
-    let ((b_to_a, mut bob_incoming_messages), (_, _)) =
-        future::try_join(bob.connect_to(&alice_addr), bob.connect_to(&alice_addr)).await?;
+    let (carol, mut carol_incoming_connections, _) = new_endpoint().await?;
+    let carol_addr = carol.public_addr();
 
-    // Alice gets both incoming connections
-    let (a_to_b, mut alice_incoming_messages) = if let Ok(Some((connection, incoming))) =
-        alice_incoming_connections.next().timeout().await
-    {
-        assert_eq!(connection.remote_address(), bob_addr);
-        (connection, incoming)
-    } else {
-        bail!("Missing incoming connection");
-    };
-    if let Ok(Some((connection, _))) = alice_incoming_connections.next().timeout().await {
-        assert_eq!(connection.remote_address(), bob_addr);
-    } else {
-        bail!("Missing incoming connection");
-    };
-
-    if let Ok(Some((connection, _))) = alice_incoming_connections.next().timeout().await {
-        bail!(
-            "Unexpected incoming connection from {}",
-            connection.remote_address()
-        );
-    }
-
-    // Send two messages, one from each peer
     let msg0 = random_msg(1024);
-    a_to_b.send(msg0.clone()).await?;
-
     let msg1 = random_msg(1024);
-    b_to_a.send(msg1.clone()).await?;
+    let msg2 = random_msg(1024);
 
-    // Bob did not get a new incoming connection
-    if let Ok(Some(_)) = bob_incoming_connections.next().timeout().await {
-        bail!("Unexpected incoming connection from alice to bob");
-    }
+    let (b_to_a, mut b_incoming_from_a) = bob.connect_to(&alice_addr).await?;
+    let (c_to_a, mut c_incoming_from_a) = carol.connect_to(&alice_addr).await?;
 
-    // Both messages are received  at the other end
-    if let Ok(message) = alice_incoming_messages.next().timeout().await {
-        assert_eq!(message?, Some(msg1));
-    } else {
-        bail!("No message received from Bob");
-    }
+    if let Some((a_to_b, mut alice_incoming_messages)) = alice_incoming_connections.next().await {
+        if let Some((a_to_c, mut alice_incoming_messages_2)) =
+            alice_incoming_connections.next().await
+        {
+            // all cehcks need to happen within here as conns are kept alive inside this if block
 
-    if let Ok(message) = bob_incoming_messages.next().timeout().await {
-        assert_eq!(message?, Some(msg0));
-    } else {
-        bail!("No message from alice");
+            assert_eq!(a_to_b.remote_address(), bob_addr);
+            assert_eq!(a_to_c.remote_address(), carol_addr);
+
+            b_to_a.send(msg0.clone()).await?;
+            c_to_a.send(msg1.clone()).await?;
+
+            // check bob hasnt been connected to for some reason
+            if let Ok(Some(_)) = bob_incoming_connections.next().timeout().await {
+                bail!("Unexpected incoming connection from alice to bob");
+            }
+            // check carol hasnt been connected to for some reason
+            if let Ok(Some(_)) = carol_incoming_connections.next().timeout().await {
+                bail!("Unexpected incoming connection from alice to carol");
+            }
+
+            // Both messages are received  at the alice end
+            if let Ok(message) = alice_incoming_messages.next().timeout().await {
+                assert_eq!(message?, Some(msg0));
+            } else {
+                bail!("No message received from Bob");
+            }
+
+            if let Ok(message) = alice_incoming_messages_2.next().timeout().await {
+                assert_eq!(message?, Some(msg1));
+            } else {
+                bail!("No message from carol");
+            }
+
+            a_to_b.send(msg2.clone()).await?;
+            a_to_c.send(msg2.clone()).await?;
+
+            if let Ok(message) = b_incoming_from_a.next().timeout().await {
+                assert_eq!(message?, Some(msg2.clone()));
+            } else {
+                bail!("No message received from Alice to bob");
+            }
+            if let Ok(message) = c_incoming_from_a.next().timeout().await {
+                assert_eq!(message?, Some(msg2));
+            } else {
+                bail!("No message received from Alive to Carol");
+            }
+        }
     }
 
     Ok(())
