@@ -26,9 +26,7 @@ pub const DEFAULT_INITIAL_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Default for [`Config::idle_timeout`] (1 minute).
 ///
-/// This is based on average time in which routers would close the UDP mapping to the peer if they
-/// see no conversation between them.
-pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(18);
 
 /// Default for [`RetryConfig::max_retry_interval`] (15 s).
 ///
@@ -76,18 +74,6 @@ impl From<rcgen::RcgenError> for ConfigError {
         Self::CertificateGeneration(CertificateGenerationError(error.into()))
     }
 }
-
-// impl From<quinn::ParseError> for ConfigError {
-//     fn from(error: quinn::ParseError) -> Self {
-//         Self::CertificateGeneration(CertificateGenerationError(error.into()))
-//     }
-// }
-
-// impl From<TlsError> for ConfigError {
-//     fn from(error: TlsError) -> Self {
-//         Self::CertificateGeneration(CertificateGenerationError(error.into()))
-//     }
-// }
 
 /// An error that occured when generating the TLS certificate.
 #[derive(Debug, thiserror::Error)]
