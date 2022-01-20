@@ -333,6 +333,7 @@ impl Endpoint {
 
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
     pub fn close(&self) {
+        trace!("Closing endpoint");
         let _ = self.termination_tx.send(());
         self.quinn_endpoint.close(0_u32.into(), b"Endpoint closed")
     }

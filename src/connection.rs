@@ -15,7 +15,7 @@ use tokio::{
     sync::{mpsc, watch},
     time::timeout,
 };
-use tracing::{trace, warn};
+use tracing::{error, trace, warn};
 
 // TODO: this seems arbitrary - it may need tuned or made configurable.
 const INCOMING_MESSAGE_BUFFER_LEN: usize = 10_000;
@@ -111,7 +111,10 @@ impl Connection {
                             .await
                             .map_err(|error| match &error {
                                 // don't retry on connection loss, since we can't recover that from here
-                                SendError::ConnectionLost(_) => backoff::Error::Permanent(error),
+                                SendError::ConnectionLost(_) => {
+                                    error!("Connection failed on send {:?}", error);
+                                    backoff::Error::Permanent(error)
+                                }
                                 _ => backoff::Error::Transient(error),
                             })
                     })
@@ -594,6 +597,7 @@ where
             Err(error) => {
                 let error = error.into();
                 if error.is_benign() {
+                    warn!("Benign error ignored {:?}", error);
                     None
                 } else {
                     Some(Err(error))

@@ -9,7 +9,7 @@
 
 //! Configuration for `Endpoint`s.
 
-use quinn::{IdleTimeout, VarInt};
+use quinn::IdleTimeout;
 
 use rustls::{Certificate, ClientConfig, ServerName};
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ pub const DEFAULT_UPNP_LEASE_DURATION: Duration = Duration::from_secs(120);
 /// gives 5-6 retries in ~30 s total retry time.
 pub const DEFAULT_INITIAL_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Default for [`Config::idle_timeout`] (1 minute).
+/// Default for [`Config::idle_timeout`] (18seconds).
 ///
 pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(18);
 
@@ -33,11 +33,6 @@ pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(18);
 /// Together with the default min and multiplier,
 /// gives 5-6 retries in ~30 s total retry time.
 pub const DEFAULT_MAX_RETRY_INTERVAL: Duration = Duration::from_secs(15);
-
-/// Default for [`Config::keep_alive_interval`] (30seconds).
-///
-/// This is a time lower than the idlea timeout, but large enough not to be consuming too much traffic
-pub const DEFAULT_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Default for [`RetryConfig::retry_delay_multiplier`] (x1.5).
 ///
@@ -237,9 +232,7 @@ impl InternalConfig {
         let upnp_lease_duration = config
             .upnp_lease_duration
             .unwrap_or(DEFAULT_UPNP_LEASE_DURATION);
-        let keep_alive_interval = config
-            .keep_alive_interval
-            .or(Some(DEFAULT_KEEP_ALIVE_INTERVAL));
+        let keep_alive_interval = config.keep_alive_interval;
 
         let transport = Self::new_transport_config(idle_timeout, keep_alive_interval);
 
@@ -284,17 +277,6 @@ impl InternalConfig {
 
         let _ = config.max_idle_timeout(Some(idle_timeout));
         let _ = config.keep_alive_interval(keep_alive_interval);
-
-        // This has a bearing on max memory: https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html#method.max_concurrent_bidi_streams
-        // here we/ve lowered it from 1250000
-        // eg this reduced max mem for: multiple_connections_with_many_larger_concurrent_messages
-        // from ~1gb to 300mb
-        let _ = config.stream_receive_window(VarInt::from_u32(500));
-
-        // defaults here are 100, we've lowered this here to prevent hammering of nodes...
-        // a lower count appears to reduce the change of dropped connections
-        let _ = config.max_concurrent_bidi_streams(VarInt::from_u32(10));
-        let _ = config.max_concurrent_uni_streams(VarInt::from_u32(10));
 
         Arc::new(config)
     }
