@@ -10,19 +10,11 @@
 use super::{hash, local_addr, new_endpoint, random_msg};
 use crate::{Config, Endpoint, RetryConfig};
 use color_eyre::eyre::{bail, eyre, Report, Result};
-use futures::{
-    future,
-    stream::{self, FuturesUnordered},
-    StreamExt, TryStreamExt,
-};
-use std::{
-    collections::BTreeSet,
-    sync::atomic::{AtomicUsize, Ordering},
-    time::Duration,
-};
-use tokio::sync::Notify;
+use futures::future;
+use std::sync::Arc;
+use std::{collections::BTreeSet, time::Duration};
 use tracing::info;
-use tracing_test::traced_test;
+// use tracing_test::traced_test;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn successful_connection() -> Result<()> {
@@ -217,7 +209,7 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
             assert_eq!(connection.remote_address(), alice_addr);
             incoming
         } else {
-            bail!("No incoming connectino from Alice");
+            bail!("No incoming connection from Alice");
         };
 
     let msg0 = random_msg(1024);
@@ -336,18 +328,24 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+// #[traced_test]
 async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     use futures::future;
 
-    let num_senders: usize = 200;
+    let num_senders: usize = 400;
     let num_messages_each: usize = 1000;
     let num_messages_total: usize = num_senders * num_messages_each;
 
     let (server_endpoint, mut recv_incoming_connections, _) = new_endpoint().await?;
     let server_addr = server_endpoint.public_addr();
+    let msg_len = 200;
+    let test_msgs: Vec<_> = (0..num_messages_each)
+        .map(|_| random_msg(msg_len))
+        .collect();
+    assert_eq!(test_msgs.len(), num_messages_each);
+    assert_eq!(msg_len, test_msgs[0].len());
 
-    let test_msgs: Vec<_> = (0..num_messages_each).map(|_| random_msg(200)).collect();
-    let sending_msgs = test_msgs.clone();
+    let sending_msgs = Arc::new(test_msgs);
 
     let mut tasks = Vec::new();
 
@@ -356,7 +354,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
         async move {
             let mut num_received = 0;
             let mut sending_tasks = Vec::new();
-
+            let mut task_connection: Option<super::Connection> = None;
             while let Some((connection, mut recv_incoming_messages)) =
                 recv_incoming_connections.next().await
             {
@@ -366,17 +364,18 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                         connection.remote_address(),
                         msg.len()
                     );
-                    assert_eq!(msg.len(), test_msgs[0].len());
-
+                    task_connection = Some(connection.clone());
                     sending_tasks.push(tokio::spawn({
                         let connection = connection.clone();
                         async move {
-                            // Hash the inputs for couple times to simulate certain workload.
                             let hash_result = hash(&msg);
+                            // to simulate certain workload.
                             for _ in 0..5 {
                                 let _ = hash(&msg);
                             }
+
                             // Send the hash result back.
+                            info!("About to send hash from receiver");
                             connection.send(hash_result.to_vec().into()).await?;
 
                             Ok::<_, Report>(())
@@ -390,12 +389,11 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                 }
             }
 
-            future::try_join_all(sending_tasks)
-                .await?
-                .into_iter()
-                .collect::<Result<_>>()?;
+            let _res = future::try_join_all(sending_tasks).await?;
 
-            Ok(())
+            info!("Receiver closed");
+
+            Ok(task_connection)
         }
     }));
 
@@ -404,12 +402,15 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
         let messages = sending_msgs.clone();
         tasks.push(tokio::spawn({
             let (send_endpoint, _, _) = new_endpoint().await?;
+            let task_connection: Option<super::Connection> = None;
 
             async move {
                 let mut hash_results = BTreeSet::new();
                 let (connection, mut recv_incoming_messages) =
                     send_endpoint.connect_to(&server_addr).await?;
-                for (index, message) in messages.iter().enumerate().take(num_messages_each) {
+
+                assert_eq!(messages.len(), num_messages_each);
+                for (index, message) in messages.iter().enumerate() {
                     let _ = hash_results.insert(hash(message));
                     info!("sender #{} sending message #{}", id, index);
                     connection.send(message.clone()).await?;
@@ -419,6 +420,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                     "sender #{} completed sending messages, starts listening",
                     id
                 );
+                let mut all_received_msgs = 0;
 
                 while let Ok(Ok(Some(msg))) = recv_incoming_messages.next().timeout().await {
                     info!(
@@ -431,133 +433,107 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
                     info!("Hash len before: {:?}", hash_results.len());
                     assert!(hash_results.remove(&msg[..]));
                     info!("Hash len after: {:?}", hash_results.len());
-
-                    if hash_results.is_empty() {
+                    all_received_msgs += 1;
+                    if hash_results.is_empty() && all_received_msgs == num_messages_each {
                         break;
                     }
                 }
 
-                Ok::<_, Report>(())
+                Ok::<_, Report>(task_connection)
             }
         }));
     }
 
-    future::try_join_all(tasks)
-        .await?
-        .into_iter()
-        .collect::<Result<_>>()?;
+    let _res = future::try_join_all(tasks).await?;
 
     Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[traced_test]
+// #[traced_test]
 async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<()> {
+    use futures::future;
+
     let num_senders: usize = 100;
     let num_messages_each: usize = 10;
     let num_messages_total: usize = num_senders * num_messages_each;
 
-    let (server_endpoint, recv_incoming_connections, _) = new_endpoint().await?;
+    let (server_endpoint, mut recv_incoming_connections, _) = new_endpoint().await?;
     let server_addr = server_endpoint.public_addr();
-
     let msg_len = 1024 * 1024;
     let test_msgs: Vec<_> = (0..num_messages_each)
         .map(|_| random_msg(msg_len))
         .collect();
-    let sending_msgs = test_msgs.clone();
+    assert_eq!(test_msgs.len(), num_messages_each);
+    assert_eq!(msg_len, test_msgs[0].len());
 
-    let mut tasks = FuturesUnordered::new();
+    let sending_msgs = Arc::new(test_msgs);
 
-    // Receiver + Hasher
-    tasks.push(tokio::spawn(async move {
-        let num_received = AtomicUsize::new(0);
-        assert!(!logs_contain("error"));
+    let mut tasks = Vec::new();
 
-        let finished = Notify::new();
-
-        let recv_incoming_connections = stream::unfold(
-            recv_incoming_connections,
-            |mut recv_incoming_connections| {
-                let finished = &finished;
-                async move {
-                    tokio::select! {
-                        Some(connection) = recv_incoming_connections.next() => Some((connection, recv_incoming_connections)),
-                        _ = finished.notified() => {
-                            info!("finished");
-                            None
-                        },
-                        else => None,
-                    }
-                }
-            },
-        );
-
-        recv_incoming_connections
-            .map(Result::<_, Report>::Ok)
-            .try_for_each_concurrent(
-                None,
-                |(connection, mut recv_incoming_messages)| {
-                    let num_received = &num_received;
-                    let finished = &finished;
-                    async move {
-                        let mut last_count = 0;
-
-                        while let Some(msg) = recv_incoming_messages.next().timeout().await?? {
-                            info!(
-                                "received from {:?} with message size {}",
-                                connection.remote_address(),
-                                msg.len()
-                            );
-                            assert!(!logs_contain("error"));
-
-                            assert_eq!(msg.len(), msg_len);
-
+    // Receiver
+    tasks.push(tokio::spawn({
+        async move {
+            let mut num_received = 0;
+            let mut sending_tasks = Vec::new();
+            let mut task_connection: Option<super::Connection> = None;
+            while let Some((connection, mut recv_incoming_messages)) =
+                recv_incoming_connections.next().await
+            {
+                while let Ok(Ok(Some(msg))) = recv_incoming_messages.next().timeout().await {
+                    info!(
+                        "received from {:?} with message size {}",
+                        connection.remote_address(),
+                        msg.len()
+                    );
+                    task_connection = Some(connection.clone());
+                    sending_tasks.push(tokio::spawn({
+                        let connection = connection.clone();
+                        async move {
                             let hash_result = hash(&msg);
+                            // to simulate certain workload.
                             for _ in 0..5 {
                                 let _ = hash(&msg);
                             }
 
                             // Send the hash result back.
+                            info!("About to send hash from receiver");
                             connection.send(hash_result.to_vec().into()).await?;
 
-                            assert!(!logs_contain("error"));
-
-                            last_count = num_received.fetch_add(1, Ordering::SeqCst) + 1;
-                            info!("counted {}/{} messages so far", last_count, num_messages_total);
+                            Ok::<_, Report>(())
                         }
+                    }));
 
-                        if last_count >= num_messages_total {
-                            info!("counted all {} messages, finishing", num_messages_total);
-                            finished.notify_one();
-                        }
+                    num_received += 1;
+                }
+                if num_received >= num_messages_total {
+                    break;
+                }
+            }
 
-                        Ok(())
-                    }
-                },
-            )
-            .await?;
+            let _res = future::try_join_all(sending_tasks).await?;
 
-        assert!(!logs_contain("error"));
+            info!("RECEIVER CLOSED");
 
-        Ok(())
+            Ok(task_connection)
+        }
     }));
 
-    // Sender + Verifier
+    // Sender
     for id in 0..num_senders {
         let messages = sending_msgs.clone();
-        assert!(!logs_contain("error"));
-
         tasks.push(tokio::spawn({
             let (send_endpoint, _, _) = new_endpoint().await?;
+            let task_connection: Option<super::Connection> = None;
 
             async move {
                 let mut hash_results = BTreeSet::new();
-
                 let (connection, mut recv_incoming_messages) =
                     send_endpoint.connect_to(&server_addr).await?;
-                for (index, message) in messages.iter().enumerate().take(num_messages_each) {
-                    let _ = hash_results.insert(hash(message));
 
+                assert_eq!(messages.len(), num_messages_each);
+                for (index, message) in messages.iter().enumerate() {
+                    let _ = hash_results.insert(hash(message));
                     info!("sender #{} sending message #{}", id, index);
                     connection.send(message.clone()).await?;
                 }
@@ -567,11 +543,10 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                     id
                 );
 
-                while let Some(msg) = recv_incoming_messages.next().await? {
-                    assert!(!logs_contain("error"));
-
+                let mut all_received_msgs = 0;
+                while let Ok(Ok(Some(msg))) = recv_incoming_messages.next().timeout().await {
                     info!(
-                        "sender #{} received from server {:?} with message size {:?}",
+                        "#{} received from server {:?} with message size {}",
                         id,
                         connection.remote_address(),
                         msg.len()
@@ -581,27 +556,18 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                     assert!(hash_results.remove(&msg[..]));
                     info!("Hash len after: {:?}", hash_results.len());
 
-                    if hash_results.is_empty() {
+                    all_received_msgs += 1;
+                    if hash_results.is_empty() && all_received_msgs == num_messages_each {
                         break;
                     }
                 }
 
-                assert!(
-                    hash_results.is_empty(),
-                    "verifier terminated before all results were verified"
-                );
-
-                Ok::<_, Report>(())
+                Ok::<_, Report>(task_connection)
             }
         }));
     }
 
-    while let Some(result) = tasks.next().await {
-        match result {
-            Ok(Ok(())) => (),
-            other => bail!("Error from test threads: {:?}", other),
-        }
-    }
+    let _res = future::try_join_all(tasks).await?;
 
     Ok(())
 }
@@ -674,7 +640,7 @@ async fn many_messages() -> Result<()> {
 // that succeeds. We should still be able to establish a connection with the rest of the
 // bootstrap contacts later.
 #[tokio::test(flavor = "multi_thread")]
-#[traced_test]
+// #[traced_test]
 async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()> {
     let (ep1, _ep1_incoming, _) = new_endpoint().await?;
     let (ep2, _ep2_incoming, _) = new_endpoint().await?;
@@ -721,7 +687,7 @@ async fn reachability() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[traced_test]
+// #[traced_test]
 async fn client() -> Result<()> {
     use crate::{Config, Endpoint};
 
