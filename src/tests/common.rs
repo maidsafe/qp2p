@@ -332,8 +332,8 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
 async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     use futures::future;
 
-    let num_senders: usize = 400;
-    let num_messages_each: usize = 1000;
+    let num_senders: usize = 100;
+    let num_messages_each: usize = 100;
     let num_messages_total: usize = num_senders * num_messages_each;
 
     let (server_endpoint, mut recv_incoming_connections, _) = new_endpoint().await?;
@@ -454,8 +454,8 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<()> {
     use futures::future;
 
-    let num_senders: usize = 100;
-    let num_messages_each: usize = 10;
+    let num_senders: usize = 10;
+    let num_messages_each: usize = 100;
     let num_messages_total: usize = num_senders * num_messages_each;
 
     let (server_endpoint, mut recv_incoming_connections, _) = new_endpoint().await?;
