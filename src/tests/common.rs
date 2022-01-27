@@ -738,6 +738,9 @@ async fn client() -> Result<()> {
     drop(server_to_client);
     drop(server_messages);
 
+    // small way for all drop effects to propagate
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
     // sending should now fail, since the connection was closed at the peer
     match client_to_server.send(b"world"[..].into()).await {
         Err(crate::SendError::ConnectionLost(_)) => {}
