@@ -328,7 +328,6 @@ async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-// #[traced_test]
 async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     use futures::future;
 
@@ -450,7 +449,6 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-// #[traced_test]
 async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<()> {
     use futures::future;
 
@@ -640,7 +638,6 @@ async fn many_messages() -> Result<()> {
 // that succeeds. We should still be able to establish a connection with the rest of the
 // bootstrap contacts later.
 #[tokio::test(flavor = "multi_thread")]
-// #[traced_test]
 async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()> {
     let (ep1, _ep1_incoming, _) = new_endpoint().await?;
     let (ep2, _ep2_incoming, _) = new_endpoint().await?;
@@ -687,7 +684,6 @@ async fn reachability() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-// #[traced_test]
 async fn client() -> Result<()> {
     use crate::{Config, Endpoint};
 

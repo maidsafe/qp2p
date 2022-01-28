@@ -166,16 +166,12 @@ impl From<quinn::ConnectError> for ConnectionError {
             quinn::ConnectError::EndpointStopping => Self::Stopped,
             quinn::ConnectError::TooManyConnections => Self::TooManyConnections,
             quinn::ConnectError::InvalidRemoteAddress(addr) => Self::InvalidAddress(addr),
-            quinn::ConnectError::InvalidDnsName(_) => {
+            quinn::ConnectError::InvalidDnsName(_)
+            | quinn::ConnectError::NoDefaultClientConfig
+            | quinn::ConnectError::UnsupportedVersion => {
                 // We currently use a hard-coded domain name, so if it's invalid we have a library
                 // breaking bug. We want to avoid panics though, so we propagate this as an opaque
                 // error.
-                Self::InternalConfigError(InternalConfigError(error))
-            }
-            _ => {
-                // This is logically impossible, but has not been removed from the quinn API
-                // (PR: https://github.com/quinn-rs/quinn/pull/1181). As above, we don't want to
-                // allow any panics, so we propagate it as an opaque internal error.
                 Self::InternalConfigError(InternalConfigError(error))
             }
         }
