@@ -40,6 +40,7 @@ pub(crate) async fn new_endpoint() -> Result<(
                 retrying_max_elapsed_time: Duration::from_millis(500),
                 ..RetryConfig::default()
             },
+            keep_alive_interval: Some(Duration::from_secs(5)),
             ..Config::default()
         },
     )
