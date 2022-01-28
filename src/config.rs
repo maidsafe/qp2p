@@ -26,6 +26,7 @@ pub const DEFAULT_INITIAL_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Default for [`Config::idle_timeout`] (18seconds).
 ///
+/// Ostensibly a little inside the 20s that a lot of routers might cut off at.
 pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(18);
 
 /// Default for [`RetryConfig::max_retry_interval`] (15 s).
