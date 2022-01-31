@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.28.0](https://github.com/maidsafe/qp2p/compare/v0.27.4...v0.28.0) (2022-01-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* moving to quinn 0.8
+
+### Features
+
+* moving to quinn 0.8 ([a9c0bb2](https://github.com/maidsafe/qp2p/commit/a9c0bb2fd70fcc659e1bb333f76aa345ec476ea7))
+
+
+### Bug Fixes
+
+* multiple conns to same peer test fixed ([5a6cb39](https://github.com/maidsafe/qp2p/commit/5a6cb39ef69efc1d0b53dcb8bf0fc05f67af2cc8))
+* test and connection stability ([aee6dfc](https://github.com/maidsafe/qp2p/commit/aee6dfc23d47588528c6593e5539a554c3f1d8f0))
+
 ### [0.27.4](https://github.com/maidsafe/qp2p/compare/v0.27.3...v0.27.4) (2022-01-17)
 
 ### [0.27.3](https://github.com/maidsafe/qp2p/compare/v0.27.2...v0.27.3) (2022-01-11)
