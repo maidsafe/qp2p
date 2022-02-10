@@ -32,6 +32,7 @@ tokio = { version = "1.12.0", features = ["sync"] }
 tracing = "~0.1.26"
 webpki = "~0.21.3"
 rustls = { version = "0.20.2", default-features = false, features = ["quic", "dangerous_configuration"] }
+structopt = {version = "0.3.25", optional = true}
 
 [dev-dependencies]
 color-eyre = "0.5.11"
