@@ -25,7 +25,7 @@ use std::{
     sync::Arc,
 };
 use tokio::sync::broadcast::{self, Sender};
-use tokio::sync::mpsc::{self, Receiver as MpscReceiver};
+use tokio::sync::mpsc::{self, error::TryRecvError, Receiver as MpscReceiver};
 use tokio::time::{timeout, Duration};
 use tracing::{error, info, trace, warn};
 
@@ -48,6 +48,12 @@ impl IncomingConnections {
     /// connecting peer
     pub async fn next(&mut self) -> Option<(Connection, ConnectionIncoming)> {
         self.0.recv().await
+    }
+
+    /// Non-blocking method to receive the next incoming connection if present.
+    /// See tokio::sync::mpsc::Receiver::try_recv()
+    pub fn try_recv(&mut self) -> Result<(Connection, ConnectionIncoming), TryRecvError> {
+        self.0.try_recv()
     }
 }
 
