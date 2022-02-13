@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.28.2](https://github.com/maidsafe/qp2p/compare/v0.28.1...v0.28.2) (2022-02-13)
+
+
+### Features
+
+* add 'structopt' feature flag ([7150c14](https://github.com/maidsafe/qp2p/commit/7150c1481a0121083659f24d5eae1f7ee580ad76))
+
 ### [0.28.1](https://github.com/maidsafe/qp2p/compare/v0.28.0...v0.28.1) (2022-02-13)
 
 
