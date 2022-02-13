@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.28.1](https://github.com/maidsafe/qp2p/compare/v0.28.0...v0.28.1) (2022-02-13)
+
+
+### Features
+
+* add IncomingConnections::try_recv() ([a7562e9](https://github.com/maidsafe/qp2p/commit/a7562e9468f6e5f7ec761818dc1ee8b40e1f1c38))
+
 ## [0.28.0](https://github.com/maidsafe/qp2p/compare/v0.27.4...v0.28.0) (2022-01-31)
 
 
