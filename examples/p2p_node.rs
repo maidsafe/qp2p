@@ -53,7 +53,10 @@ async fn main() -> Result<()> {
                 .expect("Invalid SocketAddr.  Use the form 127.0.0.1:1234");
             let msg = Bytes::from(MSG_MARCO);
             println!("Sending to {:?} --> {:?}\n", peer, msg);
-            node.connect_to(&peer).await?.0.send(msg.clone()).await?;
+            let (conn, mut incoming) = node.connect_to(&peer).await?;
+            conn.send(msg.clone()).await?;
+            let reply = incoming.next().await?.unwrap();
+            println!("Received from {:?} --> {:?}", peer, reply);
         }
 
         println!("Done sending");
