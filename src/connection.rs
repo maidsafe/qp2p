@@ -478,7 +478,7 @@ async fn listen_on_bi_streams(
                     Ok(Some(WireMsg::EndpointVerificationReq(addr))) => {
                         if let Err(error) = handle_endpoint_verification(
                             endpoint,
-                            &mut (*arc_mutex.lock().await).inner,
+                            &mut arc_mutex.lock().await.inner,
                             addr,
                         )
                         .await
