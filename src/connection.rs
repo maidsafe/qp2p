@@ -468,7 +468,7 @@ async fn listen_on_bi_streams(
                     }
                     Ok(Some(WireMsg::EndpointEchoReq)) => {
                         if let Err(error) =
-                            handle_endpoint_echo(&mut (*arc_mutex.lock().await).inner, peer_addr)
+                            handle_endpoint_echo(&mut arc_mutex.lock().await.inner, peer_addr)
                                 .await
                         {
                             // TODO: consider more carefully how to handle this
