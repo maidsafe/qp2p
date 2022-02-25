@@ -6,7 +6,7 @@ homepage = "https://maidsafe.net"
 license = "MIT OR BSD-3-Clause"
 readme = "README.md"
 repository = "https://github.com/maidsafe/qp2p"
-version = "0.28.2"
+version = "0.28.3"
 authors = [ "MaidSafe Developers <dev@maidsafe.net>" ]
 keywords = [ "quic" ]
 edition = "2021"
@@ -23,7 +23,7 @@ bincode = "1.2.1"
 bytes = { version = "1.0.1", features = ["serde"] }
 futures = "~0.3.8"
 igd = { version = "0.12.0", optional = true, features = ["aio"] }
-quinn = { version = "0.8.0", default-features = false, features = ["tls-rustls"] }
+quinn = { version = "0.8.0", default-features = false, features = ["tls-rustls", "ring"] }
 quinn-proto = "0.8.0"
 rcgen = "~0.8.4"
 serde = { version = "1.0.117", features = ["derive"] }
