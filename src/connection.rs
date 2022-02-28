@@ -103,7 +103,7 @@ impl Connection {
         priority: i32,
         retry_config: Option<&RetryConfig>,
     ) -> Result<(), SendError> {
-        match retry_config.or_else(|| self.default_retry_config.as_deref()) {
+        match retry_config.or(self.default_retry_config.as_deref()) {
             Some(retry_config) => {
                 retry_config
                     .retry(|| async {

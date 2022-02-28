@@ -55,6 +55,10 @@ async fn main() -> Result<()> {
             println!("Sending to {:?} --> {:?}\n", peer, msg);
             let (conn, mut incoming) = node.connect_to(&peer).await?;
             conn.send(msg.clone()).await?;
+            // `Endpoint` no longer having `connection_pool` to hold established connection.
+            // Which means the connection get closed immediately when it reaches end of life span.
+            // And causes the receiver side a sending error when reply via the in-coming connection.
+            // Hence here have to listen for the reply to avoid such error
             let reply = incoming.next().await?.unwrap();
             println!("Received from {:?} --> {:?}", peer, reply);
         }
