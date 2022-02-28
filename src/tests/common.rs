@@ -714,8 +714,7 @@ async fn client() -> Result<()> {
         .timeout()
         .await
         .ok()
-        .map(Result::transpose)
-        .flatten()
+        .and_then(Result::transpose)
         .ok_or_else(|| eyre!("Did not receive expected message"))??;
     assert_eq!(&message[..], b"hello");
 
@@ -726,8 +725,7 @@ async fn client() -> Result<()> {
         .timeout()
         .await
         .ok()
-        .map(Result::transpose)
-        .flatten()
+        .and_then(Result::transpose)
         .ok_or_else(|| eyre!("Did not receive expected message"))??;
     assert_eq!(&message[..], b"world");
 

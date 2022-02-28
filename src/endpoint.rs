@@ -239,22 +239,11 @@ impl Endpoint {
     /// Atttempts to connect to a peer at the given address. Connection attempts are retried based
     /// on the [`Config::retry_config`] used to create the endpoint.
     ///
-    /// Returns a [`Connection`], which is a handle representing the underlying connection. There's
-    /// presently little that you can do with a `Connection` itself, besides obtaining the
-    /// [`remote_address`](Connection::remote_address) which can then be used with other `Endpoint`
-    /// methods to communicate with the peer (the connection is retrieved via the connection pool –
-    /// see below).
+    /// Returns a [`Connection`], which is a connection instance.
     ///
     /// **Note:** this method is intended for use when it's necessary to connect to a specific peer.
     /// See [`connect_to_any`](Self::connect_to_any) if you just need a connection with any of a set
     /// of peers.
-    ///
-    /// # Connection pooling
-    ///
-    /// Connections are stored in an internal pool and reused if possible. A connection remains in
-    /// the pool until either side closes the connection (including due to timeouts or errors). This
-    /// method will check the pool before opening a new connection. If a new connection is opened,
-    /// it will be added to the pool.
     pub async fn connect_to(
         &self,
         node_addr: &SocketAddr,
@@ -269,14 +258,6 @@ impl Endpoint {
     /// peer in `peer_addrs`, and return the address of the first successfully established
     /// connection (the rest are cancelled and discarded). All connection attempts will be retried
     /// based on the [`Config::retry_config`] used to create the endpoint.
-    ///
-    /// # Connection pooling
-    ///
-    /// Connections are stored in an internal pool and reused if possible. A connection remains in
-    /// the pool until either side closes the connection (including due to timeouts or errors). This
-    /// method will check the pool before opening each connection. If a new connection is opened, it
-    /// will be added to the pool. Note that already pooled connections will have a higher chance of
-    /// 'winning' the race, and being the selected peer.
     pub async fn connect_to_any(
         &self,
         peer_addrs: &[SocketAddr],
@@ -303,13 +284,6 @@ impl Endpoint {
     /// Verify if an address is publicly reachable. This will attempt to create
     /// a new connection and use it to exchange a message and verify that the node
     /// can be reached.
-    ///
-    /// # Connection pooling
-    ///
-    /// Note that unlike most methods on `Endpoint`, this **will not** use the connection pool. This
-    /// ensures that the reachability check is accurate, otherwise we may use a pooled connection
-    /// that was opened by the peer (which tells us nothing about whether we can open a connection
-    /// to the peer).
     pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<(), RpcError> {
         trace!("Checking is reachable");
 
@@ -346,8 +320,8 @@ impl Endpoint {
 
     /// Attempt a connection to a node_addr.
     ///
-    /// All failures are retried with exponential back-off. This doesn't use the connection pool, it
-    /// will always try to open a new connection.
+    /// All failures are retried with exponential back-off.
+    /// It will always try to open a new connection.
     async fn new_connection(
         &self,
         node_addr: &SocketAddr,
