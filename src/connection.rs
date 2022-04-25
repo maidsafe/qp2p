@@ -26,6 +26,8 @@ const ENDPOINT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(30);
 // Error reason for closing a connection when triggered manually by qp2p apis
 const QP2P_CLOSED_CONNECTION: &str = "The connection was closed intentionally by qp2p.";
 
+type ResponseStream = Arc<Mutex<SendStream>>;
+
 /// The sending API for a connection.
 #[derive(Clone)]
 pub struct Connection {
@@ -263,7 +265,7 @@ impl fmt::Debug for RecvStream {
 /// The receiving API for a connection.
 #[derive(Debug)]
 pub struct ConnectionIncoming {
-    message_rx: mpsc::Receiver<Result<(Bytes, Option<Arc<Mutex<SendStream>>>), RecvError>>,
+    message_rx: mpsc::Receiver<Result<(Bytes, Option<ResponseStream>), RecvError>>,
     _alive_tx: Arc<watch::Sender<()>>,
 }
 
@@ -307,7 +309,7 @@ impl ConnectionIncoming {
     /// Get the next message sent by the peer, over any stream along with the stream to respond with.
     pub async fn next_with_stream(
         &mut self,
-    ) -> Result<Option<(Bytes, Option<Arc<Mutex<SendStream>>>)>, RecvError> {
+    ) -> Result<Option<(Bytes, Option<ResponseStream>)>, RecvError> {
         self.message_rx.recv().await.transpose()
     }
 }
@@ -323,7 +325,7 @@ fn start_message_listeners(
     uni_streams: quinn::IncomingUniStreams,
     bi_streams: quinn::IncomingBiStreams,
     alive_rx: watch::Receiver<()>,
-    message_tx: mpsc::Sender<Result<(Bytes, Option<Arc<Mutex<SendStream>>>), RecvError>>,
+    message_tx: mpsc::Sender<Result<(Bytes, Option<ResponseStream>), RecvError>>,
 ) {
     let _ = tokio::spawn(listen_on_uni_streams(
         peer_addr,
@@ -345,7 +347,7 @@ async fn listen_on_uni_streams(
     peer_addr: SocketAddr,
     uni_streams: FilterBenignClose<quinn::IncomingUniStreams>,
     mut alive_rx: watch::Receiver<()>,
-    message_tx: mpsc::Sender<Result<(Bytes, Option<Arc<Mutex<SendStream>>>), RecvError>>,
+    message_tx: mpsc::Sender<Result<(Bytes, Option<ResponseStream>), RecvError>>,
 ) {
     trace!(
         "Started listener for incoming uni-streams from {}",
@@ -419,7 +421,7 @@ async fn listen_on_bi_streams(
     peer_addr: SocketAddr,
     bi_streams: FilterBenignClose<quinn::IncomingBiStreams>,
     mut alive_rx: watch::Receiver<()>,
-    message_tx: mpsc::Sender<Result<(Bytes, Option<Arc<Mutex<SendStream>>>), RecvError>>,
+    message_tx: mpsc::Sender<Result<(Bytes, Option<ResponseStream>), RecvError>>,
 ) {
     trace!(
         "Started listener for incoming bi-streams from {}",
