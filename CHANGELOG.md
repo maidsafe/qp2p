@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.28.6](https://github.com/maidsafe/qp2p/compare/v0.28.5...v0.28.6) (2022-04-25)
+
+
+### Features
+
+* add Stream when getting next message from connection ([cd3b255](https://github.com/maidsafe/qp2p/commit/cd3b2551b2aef7cf2ca73e67cf2ff84d5ca9b3f9))
+
 ### [0.28.5](https://github.com/maidsafe/qp2p/compare/v0.28.4...v0.28.5) (2022-03-01)
 
 ### [0.28.4](https://github.com/maidsafe/qp2p/compare/v0.28.3...v0.28.4) (2022-03-01)
