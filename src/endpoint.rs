@@ -229,6 +229,15 @@ impl Endpoint {
         self.local_addr
     }
 
+    /// Change Endpoint SocketAddr
+    pub fn rebind_to(&self, local_addr: SocketAddr) -> Result<(), EndpointError> {
+        let new_socket = std::net::UdpSocket::bind(local_addr)?;
+
+        self.quinn_endpoint
+            .rebind(new_socket)
+            .map_err(EndpointError::from)
+    }
+
     /// Get the public address of the endpoint.
     pub fn public_addr(&self) -> SocketAddr {
         self.public_addr.unwrap_or(self.local_addr)
