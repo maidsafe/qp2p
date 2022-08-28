@@ -52,6 +52,7 @@ pub use error::{
     RpcError, SendError, SerializationError, StreamError, TransportErrorCode,
     UnsupportedStreamOperation,
 };
+pub use wire_msg::UsrMsgBytes;
 
 #[cfg(test)]
 mod tests;
