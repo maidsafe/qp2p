@@ -71,11 +71,15 @@ impl Connection {
 
     /// A stable identifier for the connection.
     ///
-    /// This ID will not change for the lifetime of the connection. Note that the connection ID will
-    /// be different at each peer, so this is most useful for tracing connection activity within a
-    /// single peer.
-    pub fn id(&self) -> usize {
-        self.inner.stable_id()
+    /// This ID will not change for the lifetime of the connection to a given ip.
+    ///
+    /// The ID pulls the internal conneciton id and concats with the SocketAddr of
+    /// the peer. So this _should_ be unique per peer (without IP spoofing).
+    ///
+    pub fn id(&self) -> String {
+        let socket = self.remote_address();
+
+        format!("{}{}", socket, self.inner.stable_id())
     }
 
     /// The address of the remote peer.
