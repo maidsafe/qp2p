@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.30.0](https://github.com/maidsafe/qp2p/compare/v0.29.0...v0.30.0) (2022-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* changes bytes interface for message send/read
+
+This more closely reflects msg header, destintation and payload
+parts, and allows for greater flexibility and deduplication when
+sending repeat headers/payloads to different peers
+
+### Features
+
+* take three Bytes for each send ([dcc35e5](https://github.com/maidsafe/qp2p/commit/dcc35e56d356d1548b8a985a42bc3de17e55ea08))
+
 ## [0.29.0](https://github.com/maidsafe/qp2p/compare/v0.28.7...v0.29.0) (2022-09-05)
 
 
