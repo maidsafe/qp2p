@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.29.0](https://github.com/maidsafe/qp2p/compare/v0.28.7...v0.29.0) (2022-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* the connection id is now a string.
+
+The quinn.stable_id is prefaced with the SockeetAddr of the
+peer, so this should provide a globally unique id now.
+
+### Features
+
+* make Connection.id unique across all peers ([ae102be](https://github.com/maidsafe/qp2p/commit/ae102bec7887107459a87300ec9820efabe527c0))
+
 ### [0.28.7](https://github.com/maidsafe/qp2p/compare/v0.28.6...v0.28.7) (2022-06-07)
 
 ### [0.28.6](https://github.com/maidsafe/qp2p/compare/v0.28.5...v0.28.6) (2022-04-25)
