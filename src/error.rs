@@ -91,7 +91,7 @@ pub enum ClientEndpointError {
 /// Errors that can cause connection loss.
 // This is a copy of `quinn::ConnectionError` without the `*Closed` variants, since we want to
 // separate them in our interface.
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum ConnectionError {
     /// The endpoint has been stopped.
     #[error("The endpoint has been stopped")]
@@ -199,12 +199,12 @@ impl From<quinn::ConnectionError> for ConnectionError {
 }
 
 /// An internal configuration error encountered by [`Endpoint`](crate::Endpoint) connect methods.
-#[derive(Clone, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[error(transparent)]
 pub struct InternalConfigError(quinn::ConnectError);
 
 /// The reason a connection was closed.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Close {
     /// This application closed the connection.
     Local,
@@ -270,7 +270,7 @@ impl From<quinn::ConnectionClose> for Close {
 /// An opaque error code indicating a transport failure.
 ///
 /// This can be turned to a string via its `Debug` and `Display` impls, but is otherwise opaque.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct TransportErrorCode(quinn_proto::TransportErrorCode);
 
 impl fmt::Debug for TransportErrorCode {
