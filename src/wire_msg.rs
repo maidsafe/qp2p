@@ -117,7 +117,7 @@ impl fmt::Display for WireMsg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             WireMsg::UserMsg(ref m) => {
-                write!(f, "WireMsg::UserMsg({})", utils::bin_data_format(&*m))
+                write!(f, "WireMsg::UserMsg({})", utils::bin_data_format(m))
             }
             WireMsg::EndpointEchoReq => write!(f, "WireMsg::EndpointEchoReq"),
             WireMsg::EndpointEchoResp(ref sa) => write!(f, "WireMsg::EndpointEchoResp({})", sa),
