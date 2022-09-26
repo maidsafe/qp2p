@@ -108,24 +108,26 @@ impl Connection {
         priority: i32,
         retry_config: Option<&RetryConfig>,
     ) -> Result<(), SendError> {
-        match retry_config.or(self.default_retry_config.as_deref()) {
-            Some(retry_config) => {
-                retry_config
-                    .retry(|| async {
-                        self.send_uni(user_msg_bytes.clone(), priority)
-                            .await
-                            .map_err(|error| match &error {
-                                // don't retry on connection loss, since we can't recover that from here
-                                SendError::ConnectionLost(_) => backoff::Error::Permanent(error),
-                                _ => backoff::Error::Transient(error),
-                            })
-                    })
-                    .await?;
+        // tokio::spawn(async move{
+            match retry_config.or(self.default_retry_config.as_deref()) {
+                Some(retry_config) => {
+                    retry_config
+                        .retry(|| async {
+                            self.send_uni(user_msg_bytes.clone(), priority)
+                                .await
+                                .map_err(|error| match &error {
+                                    // don't retry on connection loss, since we can't recover that from here
+                                    SendError::ConnectionLost(_) => backoff::Error::Permanent(error),
+                                    _ => backoff::Error::Transient(error),
+                                })
+                        })
+                        .await?;
+                }
+                None => {
+                    self.send_uni(user_msg_bytes, priority).await?;
+                }
             }
-            None => {
-                self.send_uni(user_msg_bytes, priority).await?;
-            }
-        }
+        // })
         Ok(())
     }
 
@@ -160,18 +162,28 @@ impl Connection {
 
     /// Opens a uni directional stream and sends message on this stream
     async fn send_uni(&self, user_msg_bytes: UsrMsgBytes, priority: i32) -> Result<(), SendError> {
-        let mut send_stream = self.open_uni().await.map_err(SendError::ConnectionLost)?;
-        send_stream.set_priority(priority);
+        let conn = self.clone();
+        let _handle = tokio::spawn(async move {
 
-        send_stream.send_user_msg(user_msg_bytes).await?;
+            let mut send_stream = conn.open_uni().await.map_err(SendError::ConnectionLost)?;
+            send_stream.set_priority(priority);
+    
+            send_stream.send_user_msg(user_msg_bytes).await?;
+    
+            // We try to make sure the stream is gracefully closed and the bytes get sent, but if it
+            // was already closed (perhaps by the peer) then we ignore the error.
+            // TODO: we probably shouldn't ignore the error...
+            send_stream.finish().await.or_else(|err| match err {
+                SendError::StreamLost(StreamError::Stopped(_)) => Ok(()),
+                _ => {
+                    // error!("qp2p send error...");
+                    Err(err)
+                },
+            })?;
 
-        // We try to make sure the stream is gracefully closed and the bytes get sent, but if it
-        // was already closed (perhaps by the peer) then we ignore the error.
-        // TODO: we probably shouldn't ignore the error...
-        send_stream.finish().await.or_else(|err| match err {
-            SendError::StreamLost(StreamError::Stopped(_)) => Ok(()),
-            _ => Err(err),
-        })?;
+            // Result::<(), Box<dyn Error>>::
+            Ok::<(), SendError>(())
+        });
 
         Ok(())
     }
