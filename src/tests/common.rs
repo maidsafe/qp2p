@@ -8,7 +8,7 @@
 // Software.
 
 use super::{hash, local_addr, new_endpoint, random_msg};
-use crate::{Config, Endpoint, RetryConfig};
+use crate::{Config, Endpoint};
 use bytes::Bytes;
 use color_eyre::eyre::{bail, eyre, Report, Result};
 use futures::future;
@@ -683,18 +683,8 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
 
     let contacts = vec![ep1.public_addr(), ep2.public_addr(), ep3.public_addr()];
 
-    let (ep, _, bootstrapped_peer) = Endpoint::new_peer(
-        local_addr(),
-        &contacts,
-        Config {
-            retry_config: RetryConfig {
-                retrying_max_elapsed_time: Duration::from_millis(500),
-                ..RetryConfig::default()
-            },
-            ..Config::default()
-        },
-    )
-    .await?;
+    let (ep, _, bootstrapped_peer) =
+        Endpoint::new_peer(local_addr(), &contacts, Config::default()).await?;
     let (bootstrapped_peer, _) =
         bootstrapped_peer.ok_or_else(|| eyre!("Failed to connecto to any contact"))?;
 
@@ -726,16 +716,7 @@ async fn client() -> Result<()> {
     use crate::{Config, Endpoint};
 
     let (server, mut server_connections, _) = new_endpoint().await?;
-    let client = Endpoint::new_client(
-        local_addr(),
-        Config {
-            retry_config: RetryConfig {
-                retrying_max_elapsed_time: Duration::from_millis(500),
-                ..RetryConfig::default()
-            },
-            ..Config::default()
-        },
-    )?;
+    let client = Endpoint::new_client(local_addr(), Config::default())?;
 
     let (client_to_server, mut client_messages) = client.connect_to(&server.public_addr()).await?;
     client_to_server
