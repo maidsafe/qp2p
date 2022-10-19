@@ -18,9 +18,6 @@ use std::{future::Future, net::IpAddr, sync::Arc, time::Duration};
 #[cfg(feature = "structopt")]
 use structopt::StructOpt;
 
-/// Default for [`Config::upnp_lease_duration`] (2 minutes).
-pub const DEFAULT_UPNP_LEASE_DURATION: Duration = Duration::from_secs(120);
-
 /// Default for [`RetryConfig::max_retry_interval`] (500 ms).
 ///
 /// Together with the default max and multiplier,
@@ -104,21 +101,14 @@ pub struct CertificateGenerationError(
 #[cfg_attr(feature = "structopt", derive(StructOpt))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Config {
-    /// Specify if port forwarding via UPnP should be done or not. This can be set to false if the network
-    /// is run locally on the network loopback or on a local area network.
-    #[cfg(feature = "igd")]
-    #[cfg_attr(feature = "structopt", structopt(long))]
-    pub forward_port: bool,
-
     /// External port number assigned to the socket address of the program.
     /// If this is provided, QP2p considers that the local port provided has been mapped to the
-    /// provided external port number and automatic port forwarding will be skipped.
+    /// provided external port number.
     #[cfg_attr(feature = "structopt", structopt(long))]
     pub external_port: Option<u16>,
 
-    /// External IP address of the computer on the WAN. This field is mandatory if the node is the genesis node and
-    /// port forwarding is not available. In case of non-genesis nodes, the external IP address will be resolved
-    /// using the Echo service.
+    /// External IP address of the computer on the WAN. This field is mandatory if the node is the genesis node. 
+    /// In case of non-genesis nodes, the external IP address will be resolved using the Echo service.
     #[cfg_attr(feature = "structopt", structopt(long))]
     pub external_ip: Option<IpAddr>,
 
@@ -146,16 +136,6 @@ pub struct Config {
     /// Must be nonzero for the peer to open any bidirectional streams.
     #[cfg_attr(feature = "structopt", structopt(long))]
     pub max_concurrent_bidi_streams: Option<u32>,
-
-    /// How long UPnP port mappings will last.
-    ///
-    /// Note that UPnP port mappings will be automatically renewed on this interval.
-    ///
-    /// If unspecified, this will default to [`DEFAULT_UPNP_LEASE_DURATION`], which should be
-    /// suitable in most cases but some routers may clear UPnP port mapping more frequently.
-    #[serde(default)]
-    #[cfg_attr(feature = "structopt", structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS"))]
-    pub upnp_lease_duration: Option<Duration>,
 
     /// Retry configurations for establishing connections and sending messages.
     /// Determines the retry behaviour of requests, by setting the back off strategy used.
@@ -249,12 +229,8 @@ impl Default for RetryConfig {
 pub(crate) struct InternalConfig {
     pub(crate) client: quinn::ClientConfig,
     pub(crate) server: quinn::ServerConfig,
-    #[cfg(feature = "igd")]
-    pub(crate) forward_port: bool,
     pub(crate) external_port: Option<u16>,
     pub(crate) external_ip: Option<IpAddr>,
-    #[allow(dead_code)]
-    pub(crate) upnp_lease_duration: Duration,
     pub(crate) retry_config: Arc<RetryConfig>,
 }
 
@@ -268,9 +244,6 @@ impl InternalConfig {
             .map(IdleTimeout::try_from)
             .unwrap_or(Ok(default_idle_timeout))
             .map_err(ConfigError::from)?;
-        let upnp_lease_duration = config
-            .upnp_lease_duration
-            .unwrap_or(DEFAULT_UPNP_LEASE_DURATION);
         let keep_alive_interval = config.keep_alive_interval;
 
         let transport = Self::new_transport_config(
@@ -303,11 +276,8 @@ impl InternalConfig {
         Ok(Self {
             client,
             server,
-            #[cfg(feature = "igd")]
-            forward_port: config.forward_port,
             external_port: config.external_port,
             external_ip: config.external_ip,
-            upnp_lease_duration,
             retry_config: Arc::new(config.retry_config),
         })
     }

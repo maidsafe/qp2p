@@ -37,16 +37,12 @@ pub mod config;
 mod connection;
 mod endpoint;
 mod error;
-#[cfg(feature = "igd")]
-mod igd;
 mod utils;
 mod wire_msg;
 
 pub use config::{Config, ConfigError, RetryConfig};
 pub use connection::{Connection, ConnectionIncoming, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections};
-#[cfg(feature = "igd")]
-pub use error::UpnpError;
 pub use error::{
     ClientEndpointError, Close, ConnectionError, EndpointError, InternalConfigError, RecvError,
     RpcError, SendError, StreamError, TransportErrorCode, UnsupportedStreamOperation,

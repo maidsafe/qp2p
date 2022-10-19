@@ -8,8 +8,6 @@
 // Software.
 
 use crate::config::ConfigError;
-#[cfg(feature = "igd")]
-use crate::igd::IgdError;
 use bytes::Bytes;
 use std::{fmt, io, net::SocketAddr};
 use thiserror::Error;
@@ -36,11 +34,6 @@ pub enum EndpointError {
         error: RpcError,
     },
 
-    /// Failed to establish UPnP port forwarding.
-    #[cfg(feature = "igd")]
-    #[error(transparent)]
-    Upnp(#[from] UpnpError),
-
     /// Failed to verify our public address with peer.
     #[error("Failed to verify our public address with peer {peer}")]
     EndpointVerification {
@@ -62,13 +55,6 @@ pub enum EndpointError {
     /// Io error.
     #[error(transparent)]
     IoError(#[from] io::Error),
-}
-
-#[cfg(feature = "igd")]
-impl From<IgdError> for EndpointError {
-    fn from(error: IgdError) -> Self {
-        Self::Upnp(UpnpError(error))
-    }
 }
 
 /// Errors returned by [`Endpoint::new_client`](crate::Endpoint::new_client).
@@ -449,9 +435,3 @@ pub enum StreamError {
 #[derive(Debug, Error)]
 #[error(transparent)]
 pub struct UnsupportedStreamOperation(Box<dyn std::error::Error + Send + Sync>);
-
-/// Failed to establish UPnP port forwarding.
-#[cfg(feature = "igd")]
-#[derive(Debug, Error)]
-#[error("Failed to establish UPnP port forwarding")]
-pub struct UpnpError(#[source] IgdError);

@@ -7,8 +7,6 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-#[cfg(feature = "igd")]
-use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig, RetryConfig, SERVER_NAME},
@@ -25,10 +23,6 @@ use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::mpsc::{self, error::TryRecvError, Receiver as MpscReceiver};
 use tokio::time::{timeout, Duration};
 use tracing::{error, info, trace, warn};
-
-// Number of seconds before timing out the IGD request to forward a port.
-#[cfg(feature = "igd")]
-const PORT_FORWARD_TIMEOUT: Duration = Duration::from_secs(30);
 
 // Number of seconds before timing out the echo service query.
 const ECHO_SERVICE_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -93,13 +87,6 @@ impl Endpoint {
     ///
     /// **Note:** if no contacts are given, the [`public_addr`](Self::public_addr) of the endpoint
     /// will not have been validated to be reachable by anyone
-    ///
-    /// # Port forwarding (UPnP)
-    ///
-    /// If configured (via `config.forward_port`), an external port mapping will be set up (using
-    /// the IGD UPnP protocol). The established external port will be reflected in
-    /// [`public_addr`](Self::public_addr), and the lease will be renewed automatically every
-    /// `config.upnp_lease_duration`.
     pub async fn new_peer(
         local_addr: impl Into<SocketAddr>,
         contacts: &[SocketAddr],
@@ -145,23 +132,7 @@ impl Endpoint {
 
         endpoint.public_addr = Some(public_addr);
 
-        #[cfg(feature = "igd")]
-        if config.forward_port {
-            timeout(
-                PORT_FORWARD_TIMEOUT,
-                forward_port(
-                    public_addr.port(),
-                    endpoint.local_addr(),
-                    config.upnp_lease_duration,
-                    termination_rx,
-                ),
-            )
-            .await
-            .map_err(|_| IgdError::TimedOut)??;
-        }
-
-        #[cfg(not(feature = "igd"))]
-        drop(termination_rx); // not needed if igd is disabled
+        drop(termination_rx);
 
         let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
 
