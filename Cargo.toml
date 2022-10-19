@@ -14,15 +14,11 @@ edition = "2021"
 [[example]]
 name = "p2p_node"
 
-[features]
-default = [ "igd" ]
-
 [dependencies]
 backoff = { version = "0.3.0", features = ["tokio"] }
 bincode = "1.2.1"
 bytes = { version = "1.0.1", features = ["serde"] }
 futures = "~0.3.8"
-igd = { version = "0.12.0", optional = true, features = ["aio"] }
 quinn = { version = "0.8.0", default-features = false, features = ["tls-rustls", "ring"] }
 quinn-proto = "0.8.0"
 rcgen = "~0.9"

@@ -14,7 +14,6 @@ This library provides an API to simplify common tasks when creating P2P networks
 - Establishing encrypted, uni- and bidirectional connections (using QUIC with TLS 1.3).
 - Connection pooling, for reusing already opened connections.
 - Fault-tolerance, including retries and racing connections against sets of peers.
-- Configuring [UPnP](https://en.wikipedia.org/wiki/Universal_Plug_and_Play) and validating external connectivity.
 - Sending discrete messages (using QUIC streams as 'framing').
 
 ## Features
@@ -52,14 +51,6 @@ This can help ensure continuity over flaky connections.
 Additionally, APIs are available to connect to any peer from a list of peers.
 Connections are established concurrently, and the first to succeed is kept, while the rest are discarded.
 This allows connecting to any of a set of equivalent peers, finding a still-reachable peer in a set of previously known peers, etc.
-
-### UPnP
-
-qp2p has build-in support for the [Internet Gateway Device Protocol (IGD)](https://en.wikipedia.org/wiki/Internet_Gateway_Device_Protocol).
-This enables automatic setup of port-forwarding for peers behind some NAT-enabled routers, including many home and small office routers.
-This serves to lower the barrier to accessing P2P networks as a peer.
-
-When UPnP is unavailable, manual port-forwarding may be necessary to establish incoming connectivity.
 
 ### Messaging
 
