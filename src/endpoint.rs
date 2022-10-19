@@ -17,7 +17,6 @@ use super::{
     },
 };
 use futures::StreamExt;
-use quinn::Endpoint as QuinnEndpoint;
 use std::{
     net::{IpAddr, SocketAddr},
 };
@@ -55,7 +54,7 @@ impl IncomingConnections {
 pub struct Endpoint {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
-    quinn_endpoint: QuinnEndpoint,
+    inner: quinn::Endpoint,
 
     termination_tx: Sender<()>,
 }
@@ -105,7 +104,7 @@ impl Endpoint {
         let (termination_tx, termination_rx) = broadcast::channel(1);
 
         let (mut quinn_endpoint, quinn_incoming) =
-            QuinnEndpoint::server(config.server.clone(), local_addr)?;
+            quinn::Endpoint::server(config.server.clone(), local_addr)?;
 
         let quinn_endpoint_socket_addr = quinn_endpoint.local_addr()?;
 
@@ -115,7 +114,7 @@ impl Endpoint {
         let mut endpoint = Self {
             local_addr: quinn_endpoint_socket_addr,
             public_addr: None, // we'll set this below
-            quinn_endpoint,
+            inner: quinn_endpoint,
             termination_tx,
         };
 
@@ -138,7 +137,7 @@ impl Endpoint {
         listen_for_incoming_connections(
             quinn_incoming,
             connection_tx,
-            endpoint.quinn_endpoint.clone(),
+            endpoint.inner.clone(),
         );
 
         if let Some((contact, _)) = contact.as_ref() {
@@ -172,7 +171,7 @@ impl Endpoint {
 
         let local_addr = local_addr.into();
 
-        let mut quinn_endpoint = QuinnEndpoint::client(local_addr)?;
+        let mut quinn_endpoint = quinn::Endpoint::client(local_addr)?;
 
         // retrieve the actual used socket addr
         let local_quinn_socket_addr = quinn_endpoint.local_addr()?;
@@ -182,7 +181,7 @@ impl Endpoint {
         let endpoint = Self {
             local_addr: local_quinn_socket_addr,
             public_addr: None, // we're a client
-            quinn_endpoint,
+            inner: quinn_endpoint,
             termination_tx,
         };
 
@@ -278,7 +277,7 @@ impl Endpoint {
     pub fn close(&self) {
         trace!("Closing endpoint");
         let _ = self.termination_tx.send(());
-        self.quinn_endpoint.close(0_u32.into(), b"Endpoint closed")
+        self.inner.close(0_u32.into(), b"Endpoint closed")
     }
 
     /// Attempt a connection to a node_addr.
@@ -290,7 +289,7 @@ impl Endpoint {
         node_addr: &SocketAddr,
     ) -> Result<(Connection, ConnectionIncoming), ConnectionError> {
         trace!("Attempting to connect to {:?}", node_addr);
-        let connecting = match self.quinn_endpoint.connect(*node_addr, SERVER_NAME) {
+        let connecting = match self.inner.connect(*node_addr, SERVER_NAME) {
             Ok(conn) => Ok(conn),
             Err(error) => {
                 warn!("Connection attempt failed due to {:?}", error);
@@ -303,7 +302,7 @@ impl Endpoint {
                 trace!("Successfully connected to peer: {}", node_addr);
 
                 let (connection, connection_incoming) =
-                    Connection::new(self.quinn_endpoint.clone(), new_conn);
+                    Connection::new(self.inner.clone(), new_conn);
 
                 Ok((connection, connection_incoming))
             }
