@@ -43,12 +43,7 @@ To minimise this overhead, all opened connections are pooled and reused based on
 
 ### Fault tolerance
 
-All operations are retried using an exponential back-off strategy (with jitter), configurable by how long to keep retrying for.
-This can help ensure continuity over flaky connections.
-
-**Note:** This means that all messages sent with this library will have 'at least once' delivery – ideally message handling should be idempotent, or else deduplication will have to be performed on receipt.
-
-Additionally, APIs are available to connect to any peer from a list of peers.
+APIs are available to connect to any peer from a list of peers.
 Connections are established concurrently, and the first to succeed is kept, while the rest are discarded.
 This allows connecting to any of a set of equivalent peers, finding a still-reachable peer in a set of previously known peers, etc.
 
