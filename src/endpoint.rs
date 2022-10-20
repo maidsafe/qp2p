@@ -13,7 +13,6 @@ use super::{
     connection::{Connection, ConnectionIncoming},
     error::{ClientEndpointError, ConnectionError, EndpointError, RpcError},
 };
-use futures::StreamExt;
 use quinn::Endpoint as QuinnEndpoint;
 use std::net::{IpAddr, SocketAddr};
 use tokio::sync::broadcast::{self, Sender};
