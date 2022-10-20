@@ -16,10 +16,7 @@ use super::{
         SerializationError,
     },
 };
-use futures::StreamExt;
-use std::{
-    net::{IpAddr, SocketAddr},
-};
+use std::net::{IpAddr, SocketAddr};
 use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::mpsc::{self, error::TryRecvError, Receiver as MpscReceiver};
 use tokio::time::{timeout, Duration};
@@ -134,11 +131,7 @@ impl Endpoint {
 
         let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
 
-        listen_for_incoming_connections(
-            quinn_incoming,
-            connection_tx,
-            endpoint.inner.clone(),
-        );
+        listen_for_incoming_connections(quinn_incoming, connection_tx, endpoint.inner.clone());
 
         if let Some((contact, _)) = contact.as_ref() {
             let valid = endpoint

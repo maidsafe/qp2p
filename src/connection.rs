@@ -41,27 +41,20 @@ pub struct Connection {
 impl Connection {
     pub(crate) fn new(
         endpoint: quinn::Endpoint,
-        connection: quinn::NewConnection,
+        connection: quinn::Connection,
     ) -> (Connection, ConnectionIncoming) {
         // this channel serves to keep the background message listener alive so long as one side of
         // the connection API is alive.
         let (alive_tx, alive_rx) = watch::channel(());
         let alive_tx = Arc::new(alive_tx);
-        let peer_address = connection.connection.remote_address();
+        let peer_address = connection.remote_address();
 
         (
             Self {
-                inner: connection.connection,
+                inner: connection.clone(),
                 _alive_tx: Arc::clone(&alive_tx),
             },
-            ConnectionIncoming::new(
-                endpoint,
-                peer_address,
-                connection.uni_streams,
-                connection.bi_streams,
-                alive_tx,
-                alive_rx,
-            ),
+            ConnectionIncoming::new(endpoint, peer_address, connection, alive_tx, alive_rx),
         )
     }
 
@@ -254,8 +247,7 @@ impl ConnectionIncoming {
     fn new(
         endpoint: quinn::Endpoint,
         peer_addr: SocketAddr,
-        uni_streams: quinn::IncomingUniStreams,
-        bi_streams: quinn::IncomingBiStreams,
+        connection: quinn::Connection,
         alive_tx: Arc<watch::Sender<()>>,
         alive_rx: watch::Receiver<()>,
     ) -> Self {
@@ -263,14 +255,7 @@ impl ConnectionIncoming {
 
         // offload the actual message handling to a background task - the task will exit when
         // `alive_tx` is dropped, which would be when both sides of the connection are dropped.
-        start_message_listeners(
-            endpoint,
-            peer_addr,
-            uni_streams,
-            bi_streams,
-            alive_rx,
-            message_tx,
-        );
+        start_message_listeners(endpoint, peer_addr, connection, alive_rx, message_tx);
 
         Self {
             message_rx,
@@ -303,30 +288,25 @@ impl ConnectionIncoming {
 fn start_message_listeners(
     endpoint: quinn::Endpoint,
     peer_addr: SocketAddr,
-    uni_streams: quinn::IncomingUniStreams,
-    bi_streams: quinn::IncomingBiStreams,
+    connection: quinn::Connection,
     alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<(UsrMsgBytes, Option<ResponseStream>), RecvError>>,
 ) {
     let _ = tokio::spawn(listen_on_uni_streams(
         peer_addr,
-        FilterBenignClose(uni_streams),
+        connection.clone(),
         alive_rx.clone(),
         message_tx.clone(),
     ));
 
     let _ = tokio::spawn(listen_on_bi_streams(
-        endpoint,
-        peer_addr,
-        FilterBenignClose(bi_streams),
-        alive_rx,
-        message_tx,
+        endpoint, peer_addr, connection, alive_rx, message_tx,
     ));
 }
 
 async fn listen_on_uni_streams(
     peer_addr: SocketAddr,
-    uni_streams: FilterBenignClose<quinn::IncomingUniStreams>,
+    connection: quinn::Connection,
     mut alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<(UsrMsgBytes, Option<ResponseStream>), RecvError>>,
 ) {
@@ -335,23 +315,35 @@ async fn listen_on_uni_streams(
         peer_addr
     );
 
-    let mut uni_messages = Box::pin(
-        uni_streams
-            .map_ok(|recv_stream| {
-                trace!("Handling incoming uni-stream from {}", peer_addr);
+    // Turn the `accept_uni` method into a stream that yields an `Some(Err(ConnectionError))` before `None`
+    let uni_streams = futures::stream::unfold(Some(connection), |connection| async move {
+        let connection = match connection {
+            Some(c) => c,
+            None => return None,
+        };
 
-                stream::try_unfold(recv_stream, |mut recv_stream| async move {
-                    WireMsg::read_from_stream(&mut recv_stream)
-                        .await
-                        .and_then(|msg| match msg {
-                            Some(WireMsg::UserMsg(msg)) => Ok(Some((msg, recv_stream))),
-                            None => Ok(None),
-                            _ => Err(SerializationError::unexpected(&msg).into()),
-                        })
-                })
+        match connection.accept_uni().await {
+            Ok(recv) => Some((Ok(recv), Some(connection))),
+            Err(err) => Some((Err(err), None)),
+        }
+    });
+
+    let uni_messages = uni_streams
+        .map_ok(|recv_stream| {
+            trace!("Handling incoming uni-stream from {}", peer_addr);
+
+            stream::try_unfold(recv_stream, |mut recv_stream| async move {
+                WireMsg::read_from_stream(&mut recv_stream)
+                    .await
+                    .and_then(|msg| match msg {
+                        Some(WireMsg::UserMsg(msg)) => Ok(Some((msg, recv_stream))),
+                        None => Ok(None),
+                        _ => Err(SerializationError::unexpected(&msg).into()),
+                    })
             })
-            .try_flatten(),
-    );
+        })
+        .try_flatten();
+    let mut uni_messages = Box::pin(uni_messages);
 
     // it's a shame to allocate, but there are `Pin` errors otherwise – and we should only be doing
     // this once (per connection).
@@ -400,7 +392,7 @@ async fn listen_on_uni_streams(
 async fn listen_on_bi_streams(
     endpoint: quinn::Endpoint,
     peer_addr: SocketAddr,
-    bi_streams: FilterBenignClose<quinn::IncomingBiStreams>,
+    connection: quinn::Connection,
     mut alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<(UsrMsgBytes, Option<ResponseStream>), RecvError>>,
 ) {
@@ -408,6 +400,19 @@ async fn listen_on_bi_streams(
         "Started listener for incoming bi-streams from {}",
         peer_addr
     );
+
+    // Turn the `accept_bi` method into a stream that yields an `Some(Err(ConnectionError))` before `None`
+    let bi_streams = futures::stream::unfold(Some(connection), |connection| async move {
+        let connection = match connection {
+            Some(c) => c,
+            None => return None,
+        };
+
+        match connection.accept_bi().await {
+            Ok(recv) => Some((Ok(recv), Some(connection))),
+            Err(err) => Some((Err(err), None)),
+        }
+    });
 
     let streaming = bi_streams.try_for_each_concurrent(None, |(send_stream, mut recv_stream)| {
         let endpoint = &endpoint;
@@ -485,6 +490,7 @@ async fn listen_on_bi_streams(
     // it's a shame to allocate, but there are `Pin` errors otherwise – and we should only be doing
     // this once.
     let mut alive = Box::pin(alive_rx.changed());
+    let streaming = Box::pin(streaming);
 
     match future::select(streaming, &mut alive).await {
         future::Either::Left((Ok(()), _)) => {
@@ -539,11 +545,11 @@ async fn handle_endpoint_verification(
             .map_err(ConnectionError::from)?
             .await?;
 
-        let (mut send_stream, mut recv_stream) = connection.connection.open_bi().await?;
+        let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
         trace!(
             "EndpointVerificationReq: sending EndpointEchoReq to {} over connection {}",
             addr,
-            connection.connection.stable_id()
+            connection.stable_id()
         );
         WireMsg::EndpointEchoReq
             .write_to_stream(&mut send_stream)
