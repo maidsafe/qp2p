@@ -157,7 +157,7 @@ impl InternalConfig {
         server.transport = transport.clone();
 
         let mut client = quinn::ClientConfig::new(Arc::new(client_crypto));
-        client.transport = transport;
+        let _ = client.transport_config(transport);
 
         Ok(Self {
             client,
