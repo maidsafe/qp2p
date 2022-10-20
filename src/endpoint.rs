@@ -96,20 +96,20 @@ impl Endpoint {
         EndpointError,
     > {
         let config = InternalConfig::try_from_config(config)?;
-        let local_addr = local_addr.into();
 
         let (termination_tx, termination_rx) = broadcast::channel(1);
 
         let (mut quinn_endpoint, quinn_incoming) =
-            quinn::Endpoint::server(config.server.clone(), local_addr)?;
-
-        let quinn_endpoint_socket_addr = quinn_endpoint.local_addr()?;
+            quinn::Endpoint::server(config.server.clone(), local_addr.into())?;
 
         // set client config used for any outgoing connections
         quinn_endpoint.set_default_client_config(config.client);
 
+        // Get actual socket address.
+        let local_addr = quinn_endpoint.local_addr()?;
+
         let mut endpoint = Self {
-            local_addr: quinn_endpoint_socket_addr,
+            local_addr,
             public_addr: None, // we'll set this below
             inner: quinn_endpoint,
             termination_tx,
@@ -275,7 +275,6 @@ impl Endpoint {
 
     /// Attempt a connection to a node_addr.
     ///
-    /// All failures are retried with exponential back-off.
     /// It will always try to open a new connection.
     async fn new_connection(
         &self,
