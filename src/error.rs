@@ -233,18 +233,16 @@ pub enum Close {
 impl fmt::Display for Close {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let (closed_by, error_code, reason): (_, &dyn fmt::Display, _) = match self {
-            Self::Local => return write!(f, "us"),
-            Self::Application { error_code, reason } => {
-                ("application", error_code, String::from_utf8_lossy(reason))
-            }
-            Self::Transport { error_code, reason } => {
-                ("transport", error_code, String::from_utf8_lossy(reason))
-            }
+            Self::Local => return write!(f, "we closed the connection"),
+            Self::Application { error_code, reason } => ("remote application", error_code, reason),
+            Self::Transport { error_code, reason } => ("transport layer", error_code, reason),
         };
         write!(
             f,
-            "{} (error code: {}, reason: {})",
-            closed_by, error_code, reason
+            "{} closed the connection (error code: {}, reason: {})",
+            closed_by,
+            error_code,
+            String::from_utf8_lossy(reason)
         )
     }
 }

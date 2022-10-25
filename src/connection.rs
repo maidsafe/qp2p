@@ -196,6 +196,11 @@ impl SendStream {
         Self { inner }
     }
 
+    /// Get the identity of this stream
+    pub fn id(&self) -> quinn::StreamId {
+        self.inner.id()
+    }
+
     /// Set the priority of the send stream.
     ///
     /// Every send stream has an initial priority of 0. Locally buffered data from streams with
@@ -246,6 +251,11 @@ pub struct RecvStream {
 impl RecvStream {
     fn new(inner: quinn::RecvStream) -> Self {
         Self { inner }
+    }
+
+    /// Get the identity of this stream
+    pub fn id(&self) -> quinn::StreamId {
+        self.inner.id()
     }
 
     /// Get the next message sent by the peer over this stream.
