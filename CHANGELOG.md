@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.30.1](https://github.com/maidsafe/qp2p/compare/v0.30.0...v0.30.1) (2022-10-25)
+
+
+### Features
+
+* **api:** exposing SendStream/RecvStream id() public APIs which return StreamId ([0bf7523](https://github.com/maidsafe/qp2p/commit/0bf7523d0bc6377d0a0301eef1256d4f36659198))
+
 ## [0.30.0](https://github.com/maidsafe/qp2p/compare/v0.29.0...v0.30.0) (2022-09-05)
 
 
