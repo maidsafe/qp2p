@@ -623,7 +623,6 @@ mod tests {
     use bytes::Bytes;
     use color_eyre::eyre::{bail, Result};
     use futures::future::OptionFuture;
-    use quinn::Endpoint as QuinnEndpoint;
     use std::time::Duration;
 
     #[tokio::test]
@@ -631,10 +630,10 @@ mod tests {
     async fn basic_usage() -> Result<()> {
         let config = InternalConfig::try_from_config(Default::default())?;
 
-        let mut peer1 = QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        let mut peer1 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
         peer1.set_default_client_config(config.client);
 
-        let peer2 = QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        let peer2 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
 
         {
             let (p1_tx, mut p1_rx) = Connection::new(
@@ -692,10 +691,10 @@ mod tests {
             ..Default::default()
         })?;
 
-        let mut peer1 = QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        let mut peer1 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
         peer1.set_default_client_config(config.client);
 
-        let peer2 = QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        let peer2 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
 
         // open a connection between the two peers
         let (p1_tx, _) = Connection::new(
@@ -738,10 +737,10 @@ mod tests {
     async fn test_endpoint_echo() -> Result<()> {
         let config = InternalConfig::try_from_config(Config::default())?;
 
-        let mut peer1 = QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        let mut peer1 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
         peer1.set_default_client_config(config.client);
 
-        let peer2 = QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        let peer2 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
 
         {
             let (p1_tx, _) = Connection::new(
@@ -789,10 +788,10 @@ mod tests {
     async fn endpoint_verification() -> Result<()> {
         let config = InternalConfig::try_from_config(Default::default())?;
 
-        let mut peer1 = QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        let mut peer1 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
         peer1.set_default_client_config(config.client.clone());
 
-        let mut peer2 = QuinnEndpoint::server(config.server.clone(), local_addr())?;
+        let mut peer2 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
         peer2.set_default_client_config(config.client);
 
         {

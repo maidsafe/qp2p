@@ -97,8 +97,7 @@ impl Endpoint {
 
         let (termination_tx, termination_rx) = broadcast::channel(1);
 
-        let (mut quinn_endpoint, quinn_incoming) =
-            QuinnEndpoint::server(config.server.clone(), local_addr.into())?;
+        let mut quinn_endpoint = quinn::Endpoint::server(config.server.clone(), local_addr.into())?;
 
         // set client config used for any outgoing connections
         quinn_endpoint.set_default_client_config(config.client);
@@ -129,11 +128,7 @@ impl Endpoint {
 
         let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
 
-        listen_for_incoming_connections(
-            quinn_incoming,
-            connection_tx,
-            endpoint.quinn_endpoint.clone(),
-        );
+        listen_for_incoming_connections(endpoint.quinn_endpoint.clone(), connection_tx);
 
         if let Some((contact, _)) = contact.as_ref() {
             let valid = endpoint
@@ -420,13 +415,12 @@ impl Endpoint {
 }
 
 pub(super) fn listen_for_incoming_connections(
-    mut quinn_incoming: quinn::Incoming,
-    connection_tx: mpsc::Sender<(Connection, ConnectionIncoming)>,
     quinn_endpoint: quinn::Endpoint,
+    connection_tx: mpsc::Sender<(Connection, ConnectionIncoming)>,
 ) {
     let _ = tokio::spawn(async move {
         loop {
-            match quinn_incoming.next().await {
+            match quinn_endpoint.accept().await {
                 Some(quinn_conn) => match quinn_conn.await {
                     Ok(connection) => {
                         let (connection, connection_incoming) =
