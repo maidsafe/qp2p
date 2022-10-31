@@ -13,9 +13,7 @@ use super::{
     connection::{Connection, ConnectionIncoming},
     error::{ClientEndpointError, ConnectionError, EndpointError, RpcError},
 };
-use quinn::Endpoint as QuinnEndpoint;
 use std::net::{IpAddr, SocketAddr};
-use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::mpsc::{self, error::TryRecvError, Receiver as MpscReceiver};
 use tokio::time::{timeout, Duration};
 use tracing::{error, info, trace, warn};
@@ -47,11 +45,9 @@ impl IncomingConnections {
 /// Endpoint instance which can be used to communicate with peers.
 #[derive(Clone)]
 pub struct Endpoint {
+    inner: quinn::Endpoint,
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
-    quinn_endpoint: QuinnEndpoint,
-
-    termination_tx: Sender<()>,
 }
 
 impl std::fmt::Debug for Endpoint {
@@ -95,8 +91,6 @@ impl Endpoint {
     > {
         let config = InternalConfig::try_from_config(config)?;
 
-        let (termination_tx, termination_rx) = broadcast::channel(1);
-
         let mut quinn_endpoint = quinn::Endpoint::server(config.server.clone(), local_addr.into())?;
 
         // set client config used for any outgoing connections
@@ -108,8 +102,7 @@ impl Endpoint {
         let mut endpoint = Self {
             local_addr,
             public_addr: None, // we'll set this below
-            quinn_endpoint,
-            termination_tx,
+            inner: quinn_endpoint,
         };
 
         let contact = endpoint.connect_to_any(contacts).await;
@@ -124,11 +117,9 @@ impl Endpoint {
 
         endpoint.public_addr = Some(public_addr);
 
-        drop(termination_rx);
-
         let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
 
-        listen_for_incoming_connections(endpoint.quinn_endpoint.clone(), connection_tx);
+        listen_for_incoming_connections(endpoint.inner.clone(), connection_tx);
 
         if let Some((contact, _)) = contact.as_ref() {
             let valid = endpoint
@@ -157,22 +148,17 @@ impl Endpoint {
     ) -> Result<Self, ClientEndpointError> {
         let config = InternalConfig::try_from_config(config)?;
 
-        let (termination_tx, _termination_rx) = broadcast::channel(1);
-
-        let local_addr = local_addr.into();
-
-        let mut quinn_endpoint = QuinnEndpoint::client(local_addr)?;
-
-        // retrieve the actual used socket addr
-        let local_quinn_socket_addr = quinn_endpoint.local_addr()?;
+        let mut quinn_endpoint = quinn::Endpoint::client(local_addr.into())?;
 
         quinn_endpoint.set_default_client_config(config.client);
 
+        // retrieve the actual used socket addr
+        let local_addr = quinn_endpoint.local_addr()?;
+
         let endpoint = Self {
-            local_addr: local_quinn_socket_addr,
+            local_addr,
             public_addr: None, // we're a client
-            quinn_endpoint,
-            termination_tx,
+            inner: quinn_endpoint,
         };
 
         Ok(endpoint)
@@ -266,8 +252,7 @@ impl Endpoint {
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
     pub fn close(&self) {
         trace!("Closing endpoint");
-        let _ = self.termination_tx.send(());
-        self.quinn_endpoint.close(0_u32.into(), b"Endpoint closed")
+        self.inner.close(0_u32.into(), b"Endpoint closed")
     }
 
     /// Attempt a connection to a node_addr.
@@ -278,7 +263,7 @@ impl Endpoint {
         node_addr: &SocketAddr,
     ) -> Result<(Connection, ConnectionIncoming), ConnectionError> {
         trace!("Attempting to connect to {:?}", node_addr);
-        let connecting = match self.quinn_endpoint.connect(*node_addr, SERVER_NAME) {
+        let connecting = match self.inner.connect(*node_addr, SERVER_NAME) {
             Ok(conn) => Ok(conn),
             Err(error) => {
                 warn!("Connection attempt failed due to {:?}", error);
@@ -291,7 +276,7 @@ impl Endpoint {
                 trace!("Successfully connected to peer: {}", node_addr);
 
                 let (connection, connection_incoming) =
-                    Connection::new(self.quinn_endpoint.clone(), new_conn);
+                    Connection::new(self.inner.clone(), new_conn);
 
                 Ok((connection, connection_incoming))
             }
