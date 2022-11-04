@@ -2,7 +2,7 @@
 
 use crate::{
     config::{RetryConfig, SERVER_NAME},
-    error::{ConnectionError, RecvError, RpcError, SendError, SerializationError, StreamError},
+    error::{ConnectionError, RecvError, RpcError, SendError, StreamError},
     wire_msg::{UsrMsgBytes, WireMsg},
 };
 use futures::{
@@ -259,10 +259,11 @@ impl RecvStream {
     }
 
     /// Get the next message sent by the peer over this stream.
-    pub async fn next(&mut self) -> Result<UsrMsgBytes, RecvError> {
+    pub async fn next(&mut self) -> Result<Option<UsrMsgBytes>, RecvError> {
         match self.next_wire_msg().await? {
-            Some(WireMsg::UserMsg(msg)) => Ok(msg),
-            msg => Err(SerializationError::unexpected(&msg).into()),
+            Some(WireMsg::UserMsg(msg)) => Ok(Some(msg)),
+            Some(msg) => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
+            None => Ok(None),
         }
     }
 
@@ -379,8 +380,10 @@ async fn listen_on_uni_streams(
                         .await
                         .and_then(|msg| match msg {
                             Some(WireMsg::UserMsg(msg)) => Ok(Some((msg, recv_stream))),
+                            Some(other_msg) => {
+                                Err(RecvError::UnexpectedMsgReceived(other_msg.to_string()))
+                            }
                             None => Ok(None),
-                            _ => Err(SerializationError::unexpected(&msg).into()),
                         })
                 })
             })
@@ -502,12 +505,9 @@ async fn listen_on_bi_streams(
                             warn!("Error handling endpoint verification request: {}", error);
                         }
                     }
-                    Ok(msg) => {
+                    Ok(Some(other_msg)) => {
                         // TODO: consider more carefully how to handle this
-                        warn!(
-                            "Error on bi-stream: {}",
-                            SerializationError::unexpected(&msg)
-                        );
+                        warn!("Unexpected type of message received on bi-stream: {other_msg}");
                     }
                 }
             }
@@ -591,7 +591,10 @@ async fn handle_endpoint_verification(
                 );
                 Ok(())
             }
-            msg => Err(RecvError::from(SerializationError::unexpected(&msg)).into()),
+            msg => Err(RpcError::EchoResponseMissing {
+                peer: addr,
+                response: msg.map(|m| m.to_string()),
+            }),
         }
     };
 

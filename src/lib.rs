@@ -49,8 +49,7 @@ pub use endpoint::{Endpoint, IncomingConnections};
 pub use error::UpnpError;
 pub use error::{
     ClientEndpointError, Close, ConnectionError, EndpointError, InternalConfigError, RecvError,
-    RpcError, SendError, SerializationError, StreamError, TransportErrorCode,
-    UnsupportedStreamOperation,
+    RpcError, SendError, StreamError, TransportErrorCode, UnsupportedStreamOperation,
 };
 pub use wire_msg::UsrMsgBytes;
 

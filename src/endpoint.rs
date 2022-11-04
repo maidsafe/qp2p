@@ -13,10 +13,7 @@ use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig, RetryConfig, SERVER_NAME},
     connection::{Connection, ConnectionIncoming},
-    error::{
-        ClientEndpointError, ConnectionError, EndpointError, RecvError, RpcError,
-        SerializationError,
-    },
+    error::{ClientEndpointError, ConnectionError, EndpointError, RpcError},
 };
 use futures::StreamExt;
 use quinn::Endpoint as QuinnEndpoint;
@@ -442,7 +439,10 @@ impl Endpoint {
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
             Some(WireMsg::EndpointEchoResp(addr)) => Ok(addr),
-            msg => Err(RecvError::Serialization(SerializationError::unexpected(&msg)).into()),
+            msg => Err(RpcError::EchoResponseMissing {
+                peer: contact.remote_address(),
+                response: msg.map(|m| m.to_string()),
+            }),
         }
     }
 
@@ -459,7 +459,10 @@ impl Endpoint {
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
             Some(WireMsg::EndpointVerificationResp(valid)) => Ok(valid),
-            msg => Err(RecvError::Serialization(SerializationError::unexpected(&msg)).into()),
+            msg => Err(RpcError::EndpointVerificationRespMissing {
+                peer: contact.remote_address(),
+                response: msg.map(|m| m.to_string()),
+            }),
         }
     }
 }

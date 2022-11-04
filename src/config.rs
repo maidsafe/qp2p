@@ -254,7 +254,7 @@ pub(crate) struct InternalConfig {
 
 impl InternalConfig {
     pub(crate) fn try_from_config(config: Config) -> Result<Self> {
-        let default_idle_timeout: IdleTimeout = IdleTimeout::try_from(DEFAULT_IDLE_TIMEOUT)?; // 60s
+        let default_idle_timeout: IdleTimeout = IdleTimeout::try_from(DEFAULT_IDLE_TIMEOUT)?;
 
         // let's convert our duration to quinn's IdleTimeout
         let idle_timeout = config
