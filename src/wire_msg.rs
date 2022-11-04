@@ -8,7 +8,7 @@
 // Software.
 
 use crate::{
-    error::{RecvError, SendError, SerializationError},
+    error::{RecvError, SendError},
     utils,
 };
 use bytes::{Bytes, BytesMut};
@@ -88,7 +88,7 @@ impl WireMsg {
         recv.read_exact(&mut payload_data).await?;
 
         if payload_data.is_empty() {
-            Err(SerializationError::new("Empty message received from peer").into())
+            Err(RecvError::EmptyMsgPayload)
         } else if msg_flag == USER_MSG_FLAG {
             Ok(Some(WireMsg::UserMsg((
                 Bytes::from(header_data),
@@ -98,11 +98,7 @@ impl WireMsg {
         } else if msg_flag == ECHO_SRVC_MSG_FLAG {
             Ok(Some(bincode::deserialize(&payload_data)?))
         } else {
-            Err(SerializationError::new(format!(
-                "Invalid message type flag found in message header: {}",
-                msg_flag
-            ))
-            .into())
+            Err(RecvError::InvalidMsgTypeFlag(msg_flag))
         }
     }
 
@@ -197,21 +193,17 @@ impl MsgHeader {
         usr_msg_flag: u8,
     ) -> Result<Self, SendError> {
         let total_len = user_header.len() + user_dst.len() + payload.len();
-        match u32::try_from(total_len) {
-            Err(_) => Err(SerializationError::new(format!(
-                "The serialized message is too long ({} bytes, max: 4 GiB)",
-                total_len
-            ))
-            .into()),
-            Ok(_total_len) => Ok(Self {
-                version: MSG_PROTOCOL_VERSION,
-                user_header_len: user_header.len() as u32,
-                user_dst_len: user_dst.len() as u32,
-                payload_len: payload.len() as u32,
-                usr_msg_flag,
-                reserved: [0, 0],
-            }),
-        }
+        let _total_len =
+            u32::try_from(total_len).map_err(|_| SendError::MessageTooLong(total_len))?;
+
+        Ok(Self {
+            version: MSG_PROTOCOL_VERSION,
+            user_header_len: user_header.len() as u32,
+            user_dst_len: user_dst.len() as u32,
+            payload_len: payload.len() as u32,
+            usr_msg_flag,
+            reserved: [0, 0],
+        })
     }
 
     fn user_header_len(&self) -> u32 {
