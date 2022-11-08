@@ -11,16 +11,13 @@
 use super::igd::{forward_port, IgdError};
 use super::wire_msg::WireMsg;
 use super::{
-    config::{Config, InternalConfig, RetryConfig, SERVER_NAME},
+    config::{Config, InternalConfig, SERVER_NAME},
     connection::{Connection, ConnectionIncoming},
     error::{ClientEndpointError, ConnectionError, EndpointError, RpcError},
 };
 use futures::StreamExt;
 use quinn::Endpoint as QuinnEndpoint;
-use std::{
-    net::{IpAddr, SocketAddr},
-    sync::Arc,
-};
+use std::net::{IpAddr, SocketAddr};
 use tokio::sync::broadcast::{self, Sender};
 use tokio::sync::mpsc::{self, error::TryRecvError, Receiver as MpscReceiver};
 use tokio::time::{timeout, Duration};
@@ -60,8 +57,6 @@ pub struct Endpoint {
     local_addr: SocketAddr,
     public_addr: Option<SocketAddr>,
     quinn_endpoint: QuinnEndpoint,
-    retry_config: Arc<RetryConfig>,
-
     termination_tx: Sender<()>,
 }
 
@@ -70,7 +65,6 @@ impl std::fmt::Debug for Endpoint {
         f.debug_struct("Endpoint")
             .field("local_addr", &self.local_addr)
             .field("quinn_endpoint", &"<endpoint omitted>")
-            .field("retry_config", &self.retry_config)
             .finish()
     }
 }
@@ -129,7 +123,6 @@ impl Endpoint {
             local_addr: quinn_endpoint_socket_addr,
             public_addr: None, // we'll set this below
             quinn_endpoint,
-            retry_config: config.retry_config,
             termination_tx,
         };
 
@@ -169,7 +162,6 @@ impl Endpoint {
             quinn_incoming,
             connection_tx,
             endpoint.quinn_endpoint.clone(),
-            endpoint.retry_config.clone(),
         );
 
         if let Some((contact, _)) = contact.as_ref() {
@@ -214,7 +206,6 @@ impl Endpoint {
             local_addr: local_quinn_socket_addr,
             public_addr: None, // we're a client
             quinn_endpoint,
-            retry_config: config.retry_config,
             termination_tx,
         };
 
@@ -233,8 +224,7 @@ impl Endpoint {
 
     /// Connect to a peer.
     ///
-    /// Atttempts to connect to a peer at the given address. Connection attempts are retried based
-    /// on the [`Config::retry_config`] used to create the endpoint.
+    /// Atttempts to connect to a peer at the given address.
     ///
     /// Returns a [`Connection`], which is a connection instance.
     ///
@@ -253,8 +243,7 @@ impl Endpoint {
     /// Often in peer-to-peer networks, it's sufficient to communicate to any node on the network,
     /// rather than having to connect to specific nodes. This method will start connecting to every
     /// peer in `peer_addrs`, and return the address of the first successfully established
-    /// connection (the rest are cancelled and discarded). All connection attempts will be retried
-    /// based on the [`Config::retry_config`] used to create the endpoint.
+    /// connection (the rest are cancelled and discarded).
     pub async fn connect_to_any(
         &self,
         peer_addrs: &[SocketAddr],
@@ -323,35 +312,28 @@ impl Endpoint {
         &self,
         node_addr: &SocketAddr,
     ) -> Result<(Connection, ConnectionIncoming), ConnectionError> {
-        self.retry_config
-            .retry(|| async {
-                trace!("Attempting to connect to {:?}", node_addr);
-                let connecting = match self.quinn_endpoint.connect(*node_addr, SERVER_NAME) {
-                    Ok(conn) => Ok(conn),
-                    Err(error) => {
-                        warn!("Connection attempt failed due to {:?}", error);
-                        Err(ConnectionError::from(error))
-                    }
-                }?;
+        trace!("Attempting to connect to {:?}", node_addr);
+        let connecting = match self.quinn_endpoint.connect(*node_addr, SERVER_NAME) {
+            Ok(conn) => Ok(conn),
+            Err(error) => {
+                warn!("Connection attempt failed due to {:?}", error);
+                Err(ConnectionError::from(error))
+            }
+        }?;
 
-                let new_conn = match connecting.await {
-                    Ok(new_conn) => {
-                        trace!("Successfully connected to peer: {}", node_addr);
+        let new_conn = match connecting.await {
+            Ok(new_conn) => {
+                trace!("Successfully connected to peer: {}", node_addr);
 
-                        let (connection, connection_incoming) = Connection::new(
-                            self.quinn_endpoint.clone(),
-                            Some(self.retry_config.clone()),
-                            new_conn,
-                        );
+                let (connection, connection_incoming) =
+                    Connection::new(self.quinn_endpoint.clone(), new_conn);
 
-                        Ok((connection, connection_incoming))
-                    }
-                    Err(error) => Err(ConnectionError::from(error)),
-                }?;
+                Ok((connection, connection_incoming))
+            }
+            Err(error) => Err(ConnectionError::from(error)),
+        }?;
 
-                Ok(new_conn)
-            })
-            .await
+        Ok(new_conn)
     }
 
     // set an appropriate public address based on `config` and a reachability check.
@@ -471,18 +453,14 @@ pub(super) fn listen_for_incoming_connections(
     mut quinn_incoming: quinn::Incoming,
     connection_tx: mpsc::Sender<(Connection, ConnectionIncoming)>,
     quinn_endpoint: quinn::Endpoint,
-    retry_config: Arc<RetryConfig>,
 ) {
     let _ = tokio::spawn(async move {
         loop {
             match quinn_incoming.next().await {
                 Some(quinn_conn) => match quinn_conn.await {
                     Ok(connection) => {
-                        let (connection, connection_incoming) = Connection::new(
-                            quinn_endpoint.clone(),
-                            Some(retry_config.clone()),
-                            connection,
-                        );
+                        let (connection, connection_incoming) =
+                            Connection::new(quinn_endpoint.clone(), connection);
 
                         if connection_tx
                             .send((connection, connection_incoming))

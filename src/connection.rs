@@ -1,8 +1,8 @@
 //! A message-oriented API wrapping the underlying QUIC library (`quinn`).
 
 use crate::{
-    config::{RetryConfig, SERVER_NAME},
-    error::{ConnectionError, RecvError, RpcError, SendError, StreamError},
+    config::SERVER_NAME,
+    error::{ConnectionError, RecvError, RpcError, SendError, SerializationError, StreamError},
     wire_msg::{UsrMsgBytes, WireMsg},
 };
 use futures::{
@@ -31,8 +31,6 @@ type ResponseStream = Arc<Mutex<SendStream>>;
 #[derive(Clone)]
 pub struct Connection {
     inner: quinn::Connection,
-    default_retry_config: Option<Arc<RetryConfig>>,
-
     // A reference to the 'alive' marker for the connection. This isn't read by `Connection`, but
     // must be held to keep background listeners alive until both halves of the connection are
     // dropped.
@@ -42,7 +40,6 @@ pub struct Connection {
 impl Connection {
     pub(crate) fn new(
         endpoint: quinn::Endpoint,
-        default_retry_config: Option<Arc<RetryConfig>>,
         connection: quinn::NewConnection,
     ) -> (Connection, ConnectionIncoming) {
         // this channel serves to keep the background message listener alive so long as one side of
@@ -54,7 +51,6 @@ impl Connection {
         (
             Self {
                 inner: connection.connection,
-                default_retry_config,
                 _alive_tx: Arc::clone(&alive_tx),
             },
             ConnectionIncoming::new(
@@ -96,7 +92,7 @@ impl Connection {
     /// belongs to. See [`send_with`](Self::send_with) if you want to send a message with specific
     /// configuration.
     pub async fn send(&self, bytes: UsrMsgBytes) -> Result<(), SendError> {
-        self.send_with(bytes, 0, None).await
+        self.send_with(bytes, 0).await
     }
 
     /// Send a message to the peer using the given configuration.
@@ -106,29 +102,8 @@ impl Connection {
         &self,
         user_msg_bytes: UsrMsgBytes,
         priority: i32,
-        retry_config: Option<&RetryConfig>,
     ) -> Result<(), SendError> {
-        // tokio::spawn(async move{
-            match retry_config.or(self.default_retry_config.as_deref()) {
-                Some(retry_config) => {
-                    retry_config
-                        .retry(|| async {
-                            self.send_uni(user_msg_bytes.clone(), priority)
-                                .await
-                                .map_err(|error| match &error {
-                                    // don't retry on connection loss, since we can't recover that from here
-                                    SendError::ConnectionLost(_) => backoff::Error::Permanent(error),
-                                    _ => backoff::Error::Transient(error),
-                                })
-                        })
-                        .await?;
-                }
-                None => {
-                    self.send_uni(user_msg_bytes, priority).await?;
-                }
-            }
-        // })
-        Ok(())
+        self.send_uni(user_msg_bytes, priority).await
     }
 
     /// Open a unidirection stream to the peer.
@@ -163,29 +138,21 @@ impl Connection {
     /// Opens a uni directional stream and sends message on this stream
     async fn send_uni(&self, user_msg_bytes: UsrMsgBytes, priority: i32) -> Result<(), SendError> {
         let conn = self.clone();
-        let _handle = tokio::spawn(async move {
+        let mut send_stream = conn.open_uni().await.map_err(SendError::ConnectionLost)?;
+        send_stream.set_priority(priority);
 
-            let mut send_stream = conn.open_uni().await.map_err(SendError::ConnectionLost)?;
-            send_stream.set_priority(priority);
-    
-            send_stream.send_user_msg(user_msg_bytes).await?;
-    
-            // We try to make sure the stream is gracefully closed and the bytes get sent, but if it
-            // was already closed (perhaps by the peer) then we ignore the error.
-            // TODO: we probably shouldn't ignore the error...
-            send_stream.finish().await.or_else(|err| match err {
-                SendError::StreamLost(StreamError::Stopped(_)) => Ok(()),
-                _ => {
-                    // error!("qp2p send error...");
-                    Err(err)
-                },
-            })?;
+        send_stream.send_user_msg(user_msg_bytes).await?;
 
-            // Result::<(), Box<dyn Error>>::
-            Ok::<(), SendError>(())
-        });
-
-        Ok(())
+        // We try to make sure the stream is gracefully closed and the bytes get sent, but if it
+        // was already closed (perhaps by the peer) then we ignore the error.
+        // TODO: we probably shouldn't ignore the error...
+        send_stream.finish().await.or_else(|err| match err {
+            SendError::StreamLost(StreamError::Stopped(_)) => Ok(()),
+            _ => {
+                // error!("qp2p send error...");
+                Err(err)
+            }
+        })
     }
 }
 
@@ -683,13 +650,12 @@ mod tests {
         {
             let (p1_tx, mut p1_rx) = Connection::new(
                 peer1.clone(),
-                None,
                 peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
             );
 
             let (p2_tx, mut p2_rx) =
                 if let Some(connection) = timeout(peer2_incoming.then(|c| c).try_next()).await?? {
-                    Connection::new(peer2.clone(), None, connection)
+                    Connection::new(peer2.clone(), connection)
                 } else {
                     bail!("did not receive incoming connection when one was expected");
                 };
@@ -743,13 +709,12 @@ mod tests {
         // open a connection between the two peers
         let (p1_tx, _) = Connection::new(
             peer1.clone(),
-            None,
             peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
         );
 
         let (_, mut p2_rx) =
             if let Some(connection) = timeout(peer2_incoming.then(|c| c).try_next()).await?? {
-                Connection::new(peer2.clone(), None, connection)
+                Connection::new(peer2.clone(), connection)
             } else {
                 bail!("did not receive incoming connection when one was expected");
             };
@@ -788,14 +753,13 @@ mod tests {
         {
             let (p1_tx, _) = Connection::new(
                 peer1.clone(),
-                None,
                 peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
             );
 
             // we need to accept the connection on p2, or the message won't be processed
             let _p2_handle =
                 if let Some(connection) = timeout(peer2_incoming.then(|c| c).try_next()).await?? {
-                    Connection::new(peer2.clone(), None, connection)
+                    Connection::new(peer2.clone(), connection)
                 } else {
                     bail!("did not receive incoming connection when one was expected");
                 };
@@ -840,14 +804,13 @@ mod tests {
         {
             let (p1_tx, _) = Connection::new(
                 peer1.clone(),
-                None,
                 peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
             );
 
             // we need to accept the connection on p2, or the message won't be processed
             let _p2_handle =
                 if let Some(connection) = timeout(peer2_incoming.then(|c| c).try_next()).await?? {
-                    Connection::new(peer2.clone(), None, connection)
+                    Connection::new(peer2.clone(), connection)
                 } else {
                     bail!("did not receive incoming connection when one was expected");
                 };
@@ -860,7 +823,7 @@ mod tests {
             // we need to accept the connection on p1, or the message won't be processed
             let _p1_handle =
                 if let Some(connection) = timeout(peer1_incoming.then(|c| c).try_next()).await?? {
-                    Connection::new(peer1.clone(), None, connection)
+                    Connection::new(peer1.clone(), connection)
                 } else {
                     bail!("did not receive incoming connection when one was expected");
                 };

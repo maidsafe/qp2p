@@ -42,7 +42,7 @@ mod igd;
 mod utils;
 mod wire_msg;
 
-pub use config::{Config, ConfigError, RetryConfig};
+pub use config::{Config, ConfigError};
 pub use connection::{Connection, ConnectionIncoming, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections};
 #[cfg(feature = "igd")]
