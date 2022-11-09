@@ -5,15 +5,9 @@ use crate::{
     error::{ConnectionError, RecvError, RpcError, SendError, StreamError},
     wire_msg::{UsrMsgBytes, WireMsg},
 };
-use futures::{
-    future,
-    stream::{self, StreamExt, TryStreamExt},
-};
-use std::{fmt, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::{
-    sync::{mpsc, watch},
-    time::timeout,
-};
+use futures::{future, stream::TryStreamExt};
+use std::{fmt, net::SocketAddr, time::Duration};
+use tokio::{sync::mpsc, time::timeout};
 use tracing::{trace, warn};
 
 // TODO: this seems arbitrary - it may need tuned or made configurable.
@@ -31,11 +25,6 @@ type ResponseStream = SendStream;
 #[derive(Clone)]
 pub struct Connection {
     inner: quinn::Connection,
-
-    // A reference to the 'alive' marker for the connection. This isn't read by `Connection`, but
-    // must be held to keep background listeners alive until both halves of the connection are
-    // dropped.
-    _alive_tx: Arc<watch::Sender<()>>,
 }
 
 impl Connection {
@@ -43,27 +32,15 @@ impl Connection {
         endpoint: quinn::Endpoint,
         connection: quinn::Connection,
     ) -> (Connection, ConnectionIncoming) {
-        // this channel serves to keep the background message listener alive so long as one side of
-        // the connection API is alive.
-        let (alive_tx, alive_rx) = watch::channel(());
-        let alive_tx = Arc::new(alive_tx);
         let peer_address = connection.remote_address();
         let conn = Self {
-            inner: connection,
-            _alive_tx: Arc::clone(&alive_tx),
+            inner: connection.clone(),
         };
         let conn_id = conn.id();
 
         (
             conn,
-            ConnectionIncoming::new(
-                endpoint,
-                conn_id,
-                peer_address,
-                connection,
-                alive_tx,
-                alive_rx,
-            ),
+            ConnectionIncoming::new(endpoint, conn_id, peer_address, connection),
         )
     }
 
@@ -295,7 +272,6 @@ impl fmt::Debug for RecvStream {
 #[derive(Debug)]
 pub struct ConnectionIncoming {
     message_rx: mpsc::Receiver<Result<(UsrMsgBytes, Option<ResponseStream>), RecvError>>,
-    _alive_tx: Arc<watch::Sender<()>>,
 }
 
 impl ConnectionIncoming {
@@ -304,21 +280,14 @@ impl ConnectionIncoming {
         conn_id: String,
         peer_addr: SocketAddr,
         connection: quinn::Connection,
-        alive_tx: Arc<watch::Sender<()>>,
-        alive_rx: watch::Receiver<()>,
     ) -> Self {
         let (message_tx, message_rx) = mpsc::channel(INCOMING_MESSAGE_BUFFER_LEN);
 
         // offload the actual message handling to a background task - the task will exit when
         // `alive_tx` is dropped, which would be when both sides of the connection are dropped.
-        start_message_listeners(
-            endpoint, conn_id, peer_addr, connection, alive_rx, message_tx,
-        );
+        start_message_listeners(endpoint, conn_id, peer_addr, connection, message_tx);
 
-        Self {
-            message_rx,
-            _alive_tx: alive_tx,
-        }
+        Self { message_rx }
     }
 
     /// Get the next message sent by the peer, over any stream.
@@ -348,106 +317,72 @@ fn start_message_listeners(
     conn_id: String,
     peer_addr: SocketAddr,
     connection: quinn::Connection,
-    alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<(UsrMsgBytes, Option<ResponseStream>), RecvError>>,
 ) {
     let _ = tokio::spawn(listen_on_uni_streams(
         peer_addr,
         connection.clone(),
-        alive_rx.clone(),
         message_tx.clone(),
     ));
 
     let _ = tokio::spawn(listen_on_bi_streams(
-        endpoint, conn_id, peer_addr, connection, alive_rx, message_tx,
+        endpoint, conn_id, peer_addr, connection, message_tx,
     ));
 }
 
 async fn listen_on_uni_streams(
-    peer_addr: SocketAddr,
+    addr: SocketAddr,
     connection: quinn::Connection,
-    mut alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<(UsrMsgBytes, Option<ResponseStream>), RecvError>>,
 ) {
-    trace!(
-        "Started listener for incoming uni-streams from {}",
-        peer_addr
-    );
+    trace!("Started listener for incoming uni-streams from {addr}");
 
-    // Turn the `accept_uni` method into a stream that yields an `Some(Err(ConnectionError))` before `None`
-    let uni_streams = futures::stream::unfold(Some(connection), |connection| async move {
-        let connection = match connection {
-            Some(c) => c,
-            None => return None,
+    loop {
+        // Wait for an incoming stream.
+        let uni = connection.accept_uni().await.map_err(ConnectionError::from);
+        trace!("incoming uni-stream from {addr}",);
+
+        let message_tx = message_tx.clone();
+
+        let mut recv = match uni {
+            Ok(recv) => recv,
+            // In case of a connection error, there is not much we can do.
+            Err(err) => {
+                trace!("incoming uni-stream from {addr}: ERROR: {err}");
+                    // WARNING: This might block!
+                    // The result doesn't matter, we are done after this.
+                    let _ = message_tx.send(Err(RecvError::ConnectionLost(err))).await;
+                break;
+            }
         };
 
-        match connection.accept_uni().await {
-            Ok(recv) => Some((Ok(recv), Some(connection))),
-            Err(err) => {
-                let err: ConnectionError = err.into();
-                Some((Err(err), None))
+        // Make sure we are able to process multiple streams in parallel.
+        let _ = tokio::spawn(async move {
+            loop {
+                let msg = WireMsg::read_from_stream(&mut recv).await;
+                let msg = match msg {
+                    // Stream was finished or connection closed, so stop receiving.
+                    Ok(None) => break,
+                    Ok(Some(msg)) => match msg {
+                        WireMsg::UserMsg(msg) => Ok(msg),
+                        msg => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
+                    },
+                    Err(err) => Err(err),
+                };
+
+                // We send away the msg or error, if the channel is gone, stop receiving.
+                if message_tx.send(msg.map(|b| (b, None))).await.is_err() {
+                    break;
+                };
             }
-        }
-    });
 
-    let uni_messages = uni_streams
-        .map_ok(|recv_stream| {
-            trace!("Handling incoming uni-stream from {}", peer_addr);
-
-            stream::try_unfold(recv_stream, |mut recv_stream| async move {
-                WireMsg::read_from_stream(&mut recv_stream)
-                    .await
-                    .and_then(|msg| match msg {
-                        Some(WireMsg::UserMsg(msg)) => Ok(Some((msg, recv_stream))),
-                        Some(msg) => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
-                        None => Ok(None),
-                    })
-            })
-        })
-        .try_flatten();
-    let mut uni_messages = Box::pin(uni_messages);
-
-    // it's a shame to allocate, but there are `Pin` errors otherwise – and we should only be doing
-    // this once (per connection).
-    let mut alive = Box::pin(alive_rx.changed());
-
-    while let Some(result) = {
-        match future::select(uni_messages.next(), &mut alive).await {
-            future::Either::Left((result, _)) => result,
-            future::Either::Right((Ok(_), pending_message)) => {
-                // we don't expect to actually send a value over the alive channel, so just ignore
-                pending_message.await
-            }
-            future::Either::Right((Err(_), _)) => {
-                // the connection has been dropped
-                // TODO: should we just drop pending messages here? if not, how long do we wait?
-                trace!(
-                    "Stopped listener for incoming uni-streams from {}: connection handles dropped",
-                    peer_addr
-                );
-                None
-            }
-        }
-    } {
-        let mut break_ = false;
-
-        if let Err(RecvError::ConnectionLost(_)) = &result {
-            // if the connection is lost, we should stop processing (after sending the error)
-            break_ = true;
-        }
-
-        if message_tx.send(result.map(|b| (b, None))).await.is_err() {
-            // if we can't send the result, the receiving end is closed so we should stop processing
-            break_ = true;
-        }
-
-        if break_ {
-            break;
-        }
+            trace!("END {addr}");
+        });
     }
+
     trace!(
         "Stopped listener for incoming uni-streams from {}: stream finished",
-        peer_addr
+        addr
     );
 }
 
@@ -456,7 +391,6 @@ async fn listen_on_bi_streams(
     conn_id: String,
     peer_addr: SocketAddr,
     connection: quinn::Connection,
-    mut alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<(UsrMsgBytes, Option<ResponseStream>), RecvError>>,
 ) {
     trace!("Started listener for incoming bi-streams from {peer_addr}");
@@ -529,7 +463,7 @@ async fn listen_on_bi_streams(
 
     // it's a shame to allocate, but there are `Pin` errors otherwise – and we should only be doing
     // this once.
-    let mut alive = Box::pin(alive_rx.changed());
+    let mut alive = Box::pin(futures::future::pending::<()>());
     let streaming = Box::pin(streaming);
 
     match future::select(streaming, &mut alive).await {
