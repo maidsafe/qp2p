@@ -41,7 +41,7 @@ mod utils;
 mod wire_msg;
 
 pub use config::{Config, ConfigError};
-pub use connection::{Connection, ConnectionIncoming, RecvStream, SendStream};
+pub use connection::{Connection, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections};
 pub use error::{
     ClientEndpointError, Close, ConnectionError, EndpointError, InternalConfigError, RecvError,
