@@ -93,9 +93,7 @@ impl Connection {
     }
 
     ///
-    pub fn accept_bi(
-        &self,
-    ) -> ReceiverStream<Result<(UsrMsgBytes, SendStream), RecvError>> {
+    pub fn accept_bi(&self) -> ReceiverStream<Result<(UsrMsgBytes, SendStream), RecvError>> {
         let (tx, rx) = tokio::sync::mpsc::channel(INCOMING_MESSAGE_BUFFER_LEN);
 
         let connection = self.inner.clone();
@@ -487,10 +485,9 @@ mod tests {
             );
             let mut p1_rx = p1_tx.accept_uni();
 
-            let p2_tx = if let Some(connection) =
-                timeout(OptionFuture::from(peer2.accept().await))
-                    .await?
-                    .and_then(|c| c.ok())
+            let p2_tx = if let Some(connection) = timeout(OptionFuture::from(peer2.accept().await))
+                .await?
+                .and_then(|c| c.ok())
             {
                 Connection::new(connection, peer2.clone())
             } else {
@@ -503,7 +500,6 @@ mod tests {
                 .await?
                 .send_user_msg((Bytes::new(), Bytes::new(), Bytes::from_static(b"hello")))
                 .await?;
-
 
             if let Some(Ok((_, _, msg))) = timeout(p2_rx.next()).await? {
                 assert_eq!(&msg[..], b"hello");
@@ -550,10 +546,9 @@ mod tests {
             peer1.clone(),
         );
 
-        let p2_conn = if let Some(connection) =
-            timeout(OptionFuture::from(peer2.accept().await))
-                .await?
-                .and_then(|c| c.ok())
+        let p2_conn = if let Some(connection) = timeout(OptionFuture::from(peer2.accept().await))
+            .await?
+            .and_then(|c| c.ok())
         {
             Connection::new(connection, peer2.clone())
         } else {
@@ -582,6 +577,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[tracing_test::traced_test]
     async fn test_endpoint_echo() -> Result<()> {
         let config = InternalConfig::try_from_config(Config::default())?;
 
@@ -602,7 +598,9 @@ mod tests {
                     .await?
                     .and_then(|c| c.ok())
             {
-                Connection::new(connection, peer2.clone())
+                let conn = Connection::new(connection, peer2.clone());
+                let rx = conn.accept_bi();
+                (conn, rx)
             } else {
                 bail!("did not receive incoming connection when one was expected");
             };
@@ -654,7 +652,9 @@ mod tests {
                     .await?
                     .and_then(|c| c.ok())
             {
-                Connection::new(connection, peer2.clone())
+                let conn = Connection::new(connection, peer2.clone());
+                let rx = conn.accept_bi();
+                (conn, rx)
             } else {
                 bail!("did not receive incoming connection when one was expected");
             };
@@ -670,7 +670,9 @@ mod tests {
                     .await?
                     .and_then(|c| c.ok())
             {
-                Connection::new(connection, peer1.clone())
+                let conn = Connection::new(connection, peer1.clone());
+                let rx = conn.accept_bi();
+                (conn, rx)
             } else {
                 bail!("did not receive incoming connection when one was expected");
             };
