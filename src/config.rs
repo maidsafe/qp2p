@@ -34,7 +34,11 @@ type Result<T, E = ConfigError> = std::result::Result<T, E>;
 pub enum ConfigError {
     /// An error occurred when generating the TLS certificate.
     #[error("An error occurred when generating the TLS certificate")]
-    CertificateGeneration(#[from] CertificateGenerationError),
+    // Though there are multiple different errors that could occur by the code, since we are
+    // generating a certificate, they should only really occur due to buggy implementations. As
+    // such, we don't attempt to expose more detail than 'something went wrong', which will
+    // hopefully be enough for someone to file a bug report...
+    CertificateGeneration(Box<dyn std::error::Error + Send + Sync>),
     /// Invalid idle timeout
     #[error("An error occurred parsing idle timeout duration")]
     InvalidIdleTimeout(#[from] quinn_proto::VarIntBoundsExceeded),
@@ -48,20 +52,9 @@ pub enum ConfigError {
 
 impl From<rcgen::RcgenError> for ConfigError {
     fn from(error: rcgen::RcgenError) -> Self {
-        Self::CertificateGeneration(CertificateGenerationError(error.into()))
+        Self::CertificateGeneration(error.into())
     }
 }
-
-/// An error that occured when generating the TLS certificate.
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct CertificateGenerationError(
-    // Though there are multiple different errors that could occur by the code, since we are
-    // generating a certificate, they should only really occur due to buggy implementations. As
-    // such, we don't attempt to expose more detail than 'something went wrong', which will
-    // hopefully be enough for someone to file a bug report...
-    Box<dyn std::error::Error + Send + Sync>,
-);
 
 /// QuicP2p configurations
 #[cfg_attr(feature = "structopt", derive(StructOpt))]
