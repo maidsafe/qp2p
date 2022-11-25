@@ -11,7 +11,7 @@ use futures::{
 };
 use std::{fmt, net::SocketAddr, pin::Pin, sync::Arc, task, time::Duration};
 use tokio::{
-    sync::{mpsc, watch, Mutex},
+    sync::{mpsc, watch},
     time::timeout,
 };
 use tracing::{trace, warn};
@@ -25,7 +25,7 @@ const ENDPOINT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(30);
 // Error reason for closing a connection when triggered manually by qp2p apis
 const QP2P_CLOSED_CONNECTION: &str = "The connection was closed intentionally by qp2p.";
 
-type ResponseStream = Arc<Mutex<SendStream>>;
+type ResponseStream = SendStream;
 
 /// The sending API for a connection.
 #[derive(Clone)]
@@ -441,74 +441,49 @@ async fn listen_on_bi_streams(
     mut alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<(UsrMsgBytes, Option<ResponseStream>), RecvError>>,
 ) {
-    trace!(
-        "Started listener for incoming bi-streams from {}",
-        peer_addr
-    );
-
+    trace!("Started listener for incoming bi-streams from {peer_addr}");
     let streaming = bi_streams.try_for_each_concurrent(None, |(send_stream, mut recv_stream)| {
         let endpoint = &endpoint;
         let message_tx = &message_tx;
         async move {
-            trace!("Handling incoming bi-stream from {}", peer_addr);
-            let arc_mutex = Arc::new(Mutex::new(SendStream::new(send_stream)));
-
-            loop {
-                match WireMsg::read_from_stream(&mut recv_stream).await {
-                    Err(error) => {
-                        let mut break_ = false;
-
-                        if let RecvError::ConnectionLost(_) = &error {
-                            break_ = true;
-                        }
-
-                        if let Err(error) = message_tx.send(Err(error)).await {
-                            // if we can't send the result, the receiving end is closed so we should stop
-                            trace!("Receiver gone, dropping error: {:?}", error);
-                            break_ = true;
-                        }
-
-                        if break_ {
-                            break;
-                        }
+            trace!("Handling incoming bi-stream from {peer_addr}");
+            match WireMsg::read_from_stream(&mut recv_stream).await {
+                Err(error) => {
+                    if let Err(error) = message_tx.send(Err(error)).await {
+                        // if we can't send the result, the receiving end is closed so we should stop
+                        trace!("Receiver gone, dropping error: {error:?}");
                     }
-                    Ok(None) => {
-                        break;
-                    }
-                    Ok(Some(WireMsg::UserMsg((header, dst, payload)))) => {
-                        if let Err(msg) = message_tx
-                            .send(Ok(((header, dst, payload), Some(arc_mutex.clone()))))
-                            .await
-                        {
-                            // if we can't send the result, the receiving end is closed so we should stop
-                            trace!("Receiver gone, dropping message: {:?}", msg);
-                            break;
-                        }
-                    }
-                    Ok(Some(WireMsg::EndpointEchoReq)) => {
-                        if let Err(error) =
-                            handle_endpoint_echo(&mut arc_mutex.lock().await.inner, peer_addr).await
-                        {
-                            // TODO: consider more carefully how to handle this
-                            warn!("Error handling endpoint echo request: {}", error);
-                        }
-                    }
-                    Ok(Some(WireMsg::EndpointVerificationReq(addr))) => {
-                        if let Err(error) = handle_endpoint_verification(
-                            endpoint,
-                            &mut arc_mutex.lock().await.inner,
-                            addr,
-                        )
+                }
+                Ok(None) => {}
+                Ok(Some(WireMsg::UserMsg((header, dst, payload)))) => {
+                    if let Err(msg) = message_tx
+                        .send(Ok((
+                            (header, dst, payload),
+                            Some(SendStream::new(send_stream)),
+                        )))
                         .await
-                        {
-                            // TODO: consider more carefully how to handle this
-                            warn!("Error handling endpoint verification request: {}", error);
-                        }
+                    {
+                        // if we can't send the result, the receiving end is closed so we should stop
+                        trace!("Receiver gone, dropping message: {msg:?}");
                     }
-                    Ok(Some(other_msg)) => {
+                }
+                Ok(Some(WireMsg::EndpointEchoReq)) => {
+                    if let Err(error) = handle_endpoint_echo(send_stream, peer_addr).await {
                         // TODO: consider more carefully how to handle this
-                        warn!("Unexpected type of message received on bi-stream: {other_msg}");
+                        warn!("Error handling endpoint echo request: {error:?}");
                     }
+                }
+                Ok(Some(WireMsg::EndpointVerificationReq(addr))) => {
+                    if let Err(error) =
+                        handle_endpoint_verification(endpoint, send_stream, addr).await
+                    {
+                        // TODO: consider more carefully how to handle this
+                        warn!("Error handling endpoint verification request: {error:?}");
+                    }
+                }
+                Ok(Some(other_msg)) => {
+                    // TODO: consider more carefully how to handle this
+                    warn!("Unexpected type of message received on bi-stream: {other_msg}");
                 }
             }
 
@@ -522,52 +497,42 @@ async fn listen_on_bi_streams(
 
     match future::select(streaming, &mut alive).await {
         future::Either::Left((Ok(()), _)) => {
-            trace!(
-                "Stopped listener for incoming bi-streams from {}: stream ended",
-                peer_addr
-            );
+            trace!("Stopped listener for incoming bi-streams from {peer_addr}: stream ended");
         }
         future::Either::Left((Err(error), _)) => {
             // A connection error occurred on bi_streams, we don't propagate anything here as we
             // expect propagation to be handled in listen_on_uni_streams.
             warn!(
-                "Stopped listener for incoming bi-streams from {} due to error: {:?}",
-                peer_addr, error
+                "Stopped listener for incoming bi-streams from {peer_addr} due to error: {error:?}"
             );
         }
         future::Either::Right((_, _)) => {
             // the connection was closed
             // TODO: should we just drop pending messages here? if not, how long do we wait?
-            trace!(
-                "Stopped listener for incoming bi-streams from {}: connection handles dropped",
-                peer_addr
-            );
+            trace!("Stopped listener for incoming bi-streams from {peer_addr}: connection handles dropped");
         }
     }
 }
 
 async fn handle_endpoint_echo(
-    send_stream: &mut quinn::SendStream,
+    mut send_stream: quinn::SendStream,
     peer_addr: SocketAddr,
 ) -> Result<(), SendError> {
-    trace!("Replying to EndpointEchoReq from {}", peer_addr);
+    trace!("Replying to EndpointEchoReq from {peer_addr}");
     WireMsg::EndpointEchoResp(peer_addr)
-        .write_to_stream(send_stream)
+        .write_to_stream(&mut send_stream)
         .await
 }
 
 async fn handle_endpoint_verification(
     endpoint: &quinn::Endpoint,
-    send_stream: &mut quinn::SendStream,
+    mut verif_response_stream: quinn::SendStream,
     addr: SocketAddr,
 ) -> Result<(), SendError> {
-    trace!("Performing endpoint verification for {}", addr);
+    trace!("Performing endpoint verification for {addr}");
 
     let verify = async {
-        trace!(
-            "EndpointVerificationReq: opening new connection to {}",
-            addr
-        );
+        trace!("EndpointVerificationReq: opening new connection to {addr}");
         let connection = endpoint
             .connect(addr, SERVER_NAME)
             .map_err(ConnectionError::from)?
@@ -575,8 +540,7 @@ async fn handle_endpoint_verification(
 
         let (mut send_stream, mut recv_stream) = connection.connection.open_bi().await?;
         trace!(
-            "EndpointVerificationReq: sending EndpointEchoReq to {} over connection {}",
-            addr,
+            "EndpointVerificationReq: sending EndpointEchoReq to {addr} over connection {}",
             connection.connection.stable_id()
         );
         WireMsg::EndpointEchoReq
@@ -585,10 +549,7 @@ async fn handle_endpoint_verification(
 
         match WireMsg::read_from_stream(&mut recv_stream).await? {
             Some(WireMsg::EndpointEchoResp(_)) => {
-                trace!(
-                    "EndpointVerificationReq: Received EndpointEchoResp from {}",
-                    addr
-                );
+                trace!("EndpointVerificationReq: Received EndpointEchoResp from {addr}");
                 Ok(())
             }
             msg => Err(RpcError::EchoResponseMissing {
@@ -603,11 +564,11 @@ async fn handle_endpoint_verification(
         .unwrap_or_else(|error| Err(error.into()));
 
     if let Err(error) = &verified {
-        warn!("Endpoint verification for {} failed: {:?}", addr, error);
+        warn!("Endpoint verification for {addr} failed: {error:?}");
     }
 
     WireMsg::EndpointVerificationResp(verified.is_ok())
-        .write_to_stream(send_stream)
+        .write_to_stream(&mut verif_response_stream)
         .await?;
 
     Ok(())
@@ -865,6 +826,8 @@ mod tests {
                 bail!("did not receive incoming message when one was expected");
             }
 
+            // only one msg per bi-stream is supported, let's create a new bi-stream for this test
+            let (mut send_stream, mut recv_stream) = p1_tx.open_bi().await?;
             send_stream
                 .send_wire_msg(WireMsg::EndpointVerificationReq(local_addr()))
                 .await?;
