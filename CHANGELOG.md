@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.31.0](https://github.com/maidsafe/qp2p/compare/v0.30.1...v0.31.0) (2022-11-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **conn:** accept only one incoming msg per bi-stream
+* **api:** refactoring and addition of new Error types to the public API
+
+* **api:** refactoring and addition of new Error types to the public API ([da9d885](https://github.com/maidsafe/qp2p/commit/da9d885ae85faf322570d25ae7ebe41f1bb382e6))
+* **conn:** accept only one incoming msg per bi-stream ([13b499c](https://github.com/maidsafe/qp2p/commit/13b499c980cadc73bcd3c967c32ca8c4d3198913))
+
 ### [0.30.1](https://github.com/maidsafe/qp2p/compare/v0.30.0...v0.30.1) (2022-10-25)
 
 
