@@ -136,9 +136,9 @@ impl WireMsg {
         send_stream.write_all(&header_bytes).await?;
 
         // Send message bytes over QUIC
-        send_stream.write_all(&msg_head[..]).await?;
-        send_stream.write_all(&msg_dst[..]).await?;
-        send_stream.write_all(&msg_payload[..]).await?;
+        send_stream.write_all(&msg_head).await?;
+        send_stream.write_all(&msg_dst).await?;
+        send_stream.write_all(&msg_payload).await?;
 
         Ok(())
     }
