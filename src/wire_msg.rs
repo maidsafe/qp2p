@@ -76,9 +76,13 @@ impl WireMsg {
         let dst_length = msg_header.user_dst_len() as usize;
         let payload_length = msg_header.user_payload_len() as usize;
 
-        let mut header_data: Vec<u8> = vec![0; header_length];
-        let mut dst_data: Vec<u8> = vec![0; dst_length];
-        let mut payload_data: Vec<u8> = vec![0; payload_length];
+        let mut header_data = BytesMut::with_capacity(header_length);
+        let mut dst_data = BytesMut::with_capacity(dst_length);
+        let mut payload_data = BytesMut::with_capacity(payload_length);
+        // buffer capacity does not actually give us length, so this sets us up
+        header_data.resize(header_length, 0);
+        dst_data.resize(dst_length, 0);
+        payload_data.resize(payload_length, 0);
 
         let msg_flag = msg_header.usr_msg_flag();
 
@@ -91,9 +95,9 @@ impl WireMsg {
             Err(RecvError::EmptyMsgPayload)
         } else if msg_flag == USER_MSG_FLAG {
             Ok(Some(WireMsg::UserMsg((
-                Bytes::from(header_data),
-                Bytes::from(dst_data),
-                Bytes::from(payload_data),
+                header_data.freeze(),
+                dst_data.freeze(),
+                payload_data.freeze(),
             ))))
         } else if msg_flag == ECHO_SRVC_MSG_FLAG {
             Ok(Some(bincode::deserialize(&payload_data)?))
