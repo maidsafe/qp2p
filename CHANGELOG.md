@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.31.1](https://github.com/maidsafe/qp2p/compare/v0.31.0...v0.31.1) (2022-11-28)
+
 ## [0.31.0](https://github.com/maidsafe/qp2p/compare/v0.30.1...v0.31.0) (2022-11-26)
 
 
