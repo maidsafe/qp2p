@@ -197,7 +197,7 @@ fn listen_on_uni_streams(
                     Ok(None) => return,
                     Ok(Some(msg)) => match msg {
                         WireMsg::UserMsg(msg) => Ok(msg),
-                        msg => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
+                        _ => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
                     },
                     Err(err) => Err(err),
                 };
