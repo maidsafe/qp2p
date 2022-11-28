@@ -5,10 +5,14 @@ use crate::{
     error::{ConnectionError, RecvError, RpcError, SendError, StreamError},
     wire_msg::{UsrMsgBytes, WireMsg},
 };
-use std::{fmt, net::SocketAddr, time::Duration};
+use bytes::Bytes;
+use futures::lock::Mutex;
 use quinn::VarInt;
-use tokio::time::timeout;
-use tokio_stream::wrappers::ReceiverStream;
+use std::{fmt, net::SocketAddr, time::Duration};
+use tokio::{
+    sync::mpsc::{Receiver, Sender},
+    time::timeout,
+};
 use tracing::{trace, warn};
 
 // TODO: this seems arbitrary - it may need tuned or made configurable.
@@ -20,11 +24,16 @@ const ENDPOINT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(30);
 // Error reason for closing a connection when triggered manually by qp2p apis
 const QP2P_CLOSED_CONNECTION: &str = "The connection was closed intentionally by qp2p.";
 
+type ResultUni = Result<(Bytes, Bytes, Bytes), RecvError>;
+type ResultBi = Result<((Bytes, Bytes, Bytes), SendStream), RecvError>;
+
 /// The sending API for a connection.
 pub struct Connection {
     inner: quinn::Connection,
-    // Needed to establish an outgoing connection if we receive a request to verify an endpoint.
-    endpoint: quinn::Endpoint,
+
+    // Wrapped in mutex to allow receiving messages on separate threads with shared references to this connection.
+    rx_uni: Mutex<Receiver<ResultUni>>,
+    rx_bi: Mutex<Receiver<ResultBi>>,
 }
 
 impl Drop for Connection {
@@ -35,134 +44,28 @@ impl Drop for Connection {
 
 impl Connection {
     pub(crate) fn new(connection: quinn::Connection, endpoint: quinn::Endpoint) -> Connection {
+        let (tx_uni, rx_uni) = tokio::sync::mpsc::channel(INCOMING_MESSAGE_BUFFER_LEN);
+        let (tx_bi, rx_bi) = tokio::sync::mpsc::channel(INCOMING_MESSAGE_BUFFER_LEN);
+        listen_on_uni_streams(connection.clone(), tx_uni);
+        listen_on_bi_streams(connection.clone(), endpoint, tx_bi);
+
         Self {
             inner: connection,
-            endpoint,
+            rx_uni: Mutex::new(rx_uni),
+            rx_bi: Mutex::new(rx_bi),
         }
     }
 
     ///
-    pub fn accept_uni(&self) -> ReceiverStream<Result<UsrMsgBytes, RecvError>> {
-        let (tx, rx) = tokio::sync::mpsc::channel(INCOMING_MESSAGE_BUFFER_LEN);
-
-        let connection = self.inner.clone();
-        let id = self.inner.stable_id();
-
-        let _ = tokio::spawn(async move {
-            trace!("Connection {id}: listening for incoming uni-streams");
-
-            loop {
-                // Wait for an incoming stream.
-                let uni = connection.accept_uni().await.map_err(ConnectionError::from);
-                let mut recv = match uni {
-                    Ok(recv) => recv,
-                    // In case of a connection error, there is not much we can do.
-                    Err(err) => {
-                        trace!("Connection {id}: incoming uni-stream: ERROR: {err}");
-                        // WARNING: This might block!
-                        let _ = tx.send(Err(RecvError::ConnectionLost(err))).await;
-                        break;
-                    }
-                };
-                trace!("Connection {id}: incoming uni-stream accepted");
-
-                let tx = tx.clone();
-
-                // Make sure we are able to process multiple streams in parallel.
-                let _ = tokio::spawn(async move {
-                    let msg = WireMsg::read_from_stream(&mut recv).await;
-                    let msg = match msg {
-                        // Stream was finished or connection closed.
-                        Ok(None) => return,
-                        Ok(Some(msg)) => match msg {
-                            WireMsg::UserMsg(msg) => Ok(msg),
-                            msg => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
-                        },
-                        Err(err) => Err(err),
-                    };
-
-                    // Send away the msg or error
-                    let _ = tx.send(msg).await;
-                });
-            }
-
-            trace!("Connection {id}: stopped listening for uni-streams");
-        });
-
-        ReceiverStream::new(rx)
+    pub async fn recv_bi(&self) -> Option<ResultBi> {
+        let mut rx = self.rx_bi.lock().await;
+        rx.recv().await
     }
 
     ///
-    pub fn accept_bi(&self) -> ReceiverStream<Result<(UsrMsgBytes, SendStream), RecvError>> {
-        let (tx, rx) = tokio::sync::mpsc::channel(INCOMING_MESSAGE_BUFFER_LEN);
-
-        let connection = self.inner.clone();
-        let endpoint = self.endpoint.clone();
-        let id = self.inner.stable_id();
-        let conn_id = self.id();
-
-        let _ = tokio::spawn(async move {
-            trace!("Connection {id}: listening for incoming bi-streams");
-
-            loop {
-                // Wait for an incoming stream.
-                let bi = connection.accept_bi().await.map_err(ConnectionError::from);
-                let (send, mut recv) = match bi {
-                    Ok(recv) => recv,
-                    // In case of a connection error, there is not much we can do.
-                    Err(err) => {
-                        trace!("Connection {id}: incoming bi-stream: ERROR: {err}");
-                        // WARNING: This might block!
-                        let _ = tx.send(Err(RecvError::ConnectionLost(err))).await;
-                        break;
-                    }
-                };
-                trace!("Connection {id}: incoming bi-stream accepted");
-
-                let tx = tx.clone();
-                let endpoint = endpoint.clone();
-                let addr = connection.remote_address();
-                let conn_id = conn_id.clone();
-
-                // Make sure we are able to process multiple streams in parallel.
-                let _ = tokio::spawn(async move {
-                    let msg = WireMsg::read_from_stream(&mut recv).await;
-                    let msg = match msg {
-                        // Stream was finished or connection closed.
-                        Ok(None) => return,
-                        Ok(Some(WireMsg::UserMsg(msg))) => Ok(msg),
-                        Ok(Some(WireMsg::EndpointEchoReq)) => {
-                            if let Err(error) = handle_endpoint_echo(send, addr).await {
-                                // TODO: consider more carefully how to handle this
-                                warn!("Error handling endpoint echo request: {}", error);
-                            }
-                            return;
-                        }
-                        Ok(Some(WireMsg::EndpointVerificationReq(addr))) => {
-                            if let Err(error) =
-                                handle_endpoint_verification(&endpoint, send, addr).await
-                            {
-                                // TODO: consider more carefully how to handle this
-                                warn!("Error handling endpoint verification request: {}", error);
-                            }
-                            return;
-                        }
-                        // We do not expect other types.
-                        Ok(Some(msg)) => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
-                        Err(err) => Err(err),
-                    };
-
-                    // Pass the stream, so it can be used to respond to the user message.
-                    let msg = msg.map(|msg| (msg, SendStream::new(send, conn_id)));
-                    // Send away the msg or error
-                    let _ = tx.send(msg).await;
-                });
-            }
-
-            trace!("Connection {id}: stopped listening for uni-streams");
-        });
-
-        ReceiverStream::new(rx)
+    pub async fn recv_uni(&self) -> Option<ResultUni> {
+        let mut rx = self.rx_uni.lock().await;
+        rx.recv().await
     }
 
     /// Returns `Some(...)` if the connection is closed.
@@ -258,6 +161,125 @@ impl Connection {
 
         Ok(())
     }
+}
+
+fn listen_on_uni_streams(
+    connection: quinn::Connection,
+    tx: Sender<Result<(Bytes, Bytes, Bytes), RecvError>>,
+) {
+    let id = connection.stable_id();
+
+    let _ = tokio::spawn(async move {
+        trace!("Connection {id}: listening for incoming uni-streams");
+
+        loop {
+            // Wait for an incoming stream.
+            let uni = connection.accept_uni().await.map_err(ConnectionError::from);
+            let mut recv = match uni {
+                Ok(recv) => recv,
+                // In case of a connection error, there is not much we can do.
+                Err(err) => {
+                    trace!("Connection {id}: incoming uni-stream: ERROR: {err}");
+                    // WARNING: This might block!
+                    let _ = tx.send(Err(RecvError::ConnectionLost(err))).await;
+                    break;
+                }
+            };
+            trace!("Connection {id}: incoming uni-stream accepted");
+
+            let tx = tx.clone();
+
+            // Make sure we are able to process multiple streams in parallel.
+            let _ = tokio::spawn(async move {
+                let msg = WireMsg::read_from_stream(&mut recv).await;
+                let msg = match msg {
+                    // Stream was finished or connection closed.
+                    Ok(None) => return,
+                    Ok(Some(msg)) => match msg {
+                        WireMsg::UserMsg(msg) => Ok(msg),
+                        msg => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
+                    },
+                    Err(err) => Err(err),
+                };
+
+                // Send away the msg or error
+                let _ = tx.send(msg).await;
+            });
+        }
+
+        trace!("Connection {id}: stopped listening for uni-streams");
+    });
+}
+
+#[allow(clippy::type_complexity)]
+fn listen_on_bi_streams(
+    connection: quinn::Connection,
+    endpoint: quinn::Endpoint,
+    tx: Sender<Result<((Bytes, Bytes, Bytes), SendStream), RecvError>>,
+) {
+    let id = connection.stable_id();
+    let conn_id = format!("{}{}", connection.remote_address(), connection.stable_id());
+
+    let _ = tokio::spawn(async move {
+        trace!("Connection {id}: listening for incoming bi-streams");
+
+        loop {
+            // Wait for an incoming stream.
+            let bi = connection.accept_bi().await.map_err(ConnectionError::from);
+            let (send, mut recv) = match bi {
+                Ok(recv) => recv,
+                // In case of a connection error, there is not much we can do.
+                Err(err) => {
+                    trace!("Connection {id}: incoming bi-stream: ERROR: {err:?}");
+                    // WARNING: This might block!
+                    let _ = tx.send(Err(RecvError::ConnectionLost(err))).await;
+                    break;
+                }
+            };
+            trace!("Connection {id}: incoming bi-stream accepted");
+
+            let tx = tx.clone();
+            let endpoint = endpoint.clone();
+            let addr = connection.remote_address();
+            let conn_id = conn_id.clone();
+
+            // Make sure we are able to process multiple streams in parallel.
+            let _ = tokio::spawn(async move {
+                let msg = WireMsg::read_from_stream(&mut recv).await;
+                let msg = match msg {
+                    // Stream was finished or connection closed.
+                    Ok(None) => return,
+                    Ok(Some(WireMsg::UserMsg(msg))) => Ok(msg),
+                    Ok(Some(WireMsg::EndpointEchoReq)) => {
+                        if let Err(error) = handle_endpoint_echo(send, addr).await {
+                            // TODO: consider more carefully how to handle this
+                            warn!("Error handling endpoint echo request: {}", error);
+                        }
+                        return;
+                    }
+                    Ok(Some(WireMsg::EndpointVerificationReq(addr))) => {
+                        if let Err(error) =
+                            handle_endpoint_verification(&endpoint, send, addr).await
+                        {
+                            // TODO: consider more carefully how to handle this
+                            warn!("Error handling endpoint verification request: {}", error);
+                        }
+                        return;
+                    }
+                    // We do not expect other types.
+                    Ok(Some(msg)) => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
+                    Err(err) => Err(err),
+                };
+
+                // Pass the stream, so it can be used to respond to the user message.
+                let msg = msg.map(|msg| (msg, SendStream::new(send, conn_id)));
+                // Send away the msg or error
+                let _ = tx.send(msg).await;
+            });
+        }
+
+        trace!("Connection {id}: stopped listening for uni-streams");
+    });
 }
 
 impl fmt::Debug for Connection {
@@ -465,7 +487,7 @@ mod tests {
     };
     use bytes::Bytes;
     use color_eyre::eyre::{bail, Result};
-    use futures::{future::OptionFuture, StreamExt};
+    use futures::future::OptionFuture;
     use std::time::Duration;
 
     #[tokio::test]
@@ -483,7 +505,6 @@ mod tests {
                 peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
                 peer1.clone(),
             );
-            let mut p1_rx = p1_tx.accept_uni();
 
             let p2_tx = if let Some(connection) = timeout(OptionFuture::from(peer2.accept().await))
                 .await?
@@ -493,7 +514,6 @@ mod tests {
             } else {
                 bail!("did not receive incoming connection when one was expected");
             };
-            let mut p2_rx = p2_tx.accept_uni();
 
             p1_tx
                 .open_uni()
@@ -501,7 +521,7 @@ mod tests {
                 .send_user_msg((Bytes::new(), Bytes::new(), Bytes::from_static(b"hello")))
                 .await?;
 
-            if let Some(Ok((_, _, msg))) = timeout(p2_rx.next()).await? {
+            if let Some(Ok((_, _, msg))) = timeout(p2_tx.recv_uni()).await? {
                 assert_eq!(&msg[..], b"hello");
             } else {
                 bail!("did not receive message when one was expected");
@@ -513,7 +533,7 @@ mod tests {
                 .send_user_msg((Bytes::new(), Bytes::new(), Bytes::from_static(b"world")))
                 .await?;
 
-            if let Some(Ok((_, _, msg))) = timeout(p1_rx.next()).await? {
+            if let Some(Ok((_, _, msg))) = timeout(p1_tx.recv_uni()).await? {
                 assert_eq!(&msg[..], b"world");
             } else {
                 bail!("did not receive message when one was expected");
@@ -568,7 +588,7 @@ mod tests {
         }
 
         // trying to receive should NOT return an error
-        match p2_conn.accept_uni().next().await {
+        match p2_conn.recv_uni().await {
             None => {}
             res => bail!("unexpected recv result: {:?}", res),
         }
@@ -598,9 +618,7 @@ mod tests {
                     .await?
                     .and_then(|c| c.ok())
             {
-                let conn = Connection::new(connection, peer2.clone());
-                let rx = conn.accept_bi();
-                (conn, rx)
+                Connection::new(connection, peer2.clone())
             } else {
                 bail!("did not receive incoming connection when one was expected");
             };
@@ -652,9 +670,7 @@ mod tests {
                     .await?
                     .and_then(|c| c.ok())
             {
-                let conn = Connection::new(connection, peer2.clone());
-                let rx = conn.accept_bi();
-                (conn, rx)
+                Connection::new(connection, peer2.clone())
             } else {
                 bail!("did not receive incoming connection when one was expected");
             };
@@ -670,9 +686,7 @@ mod tests {
                     .await?
                     .and_then(|c| c.ok())
             {
-                let conn = Connection::new(connection, peer1.clone());
-                let rx = conn.accept_bi();
-                (conn, rx)
+                Connection::new(connection, peer1.clone())
             } else {
                 bail!("did not receive incoming connection when one was expected");
             };
