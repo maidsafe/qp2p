@@ -7,9 +7,9 @@ use crate::{
 };
 use futures::{
     future,
-    stream::{self, Stream, StreamExt, TryStream, TryStreamExt},
+    stream::{self, StreamExt, TryStreamExt},
 };
-use std::{fmt, net::SocketAddr, pin::Pin, sync::Arc, task, time::Duration};
+use std::{fmt, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch},
     time::timeout,
@@ -345,23 +345,19 @@ fn start_message_listeners(
 ) {
     let _ = tokio::spawn(listen_on_uni_streams(
         peer_addr,
-        FilterBenignClose(uni_streams),
+        uni_streams,
         alive_rx.clone(),
         message_tx.clone(),
     ));
 
     let _ = tokio::spawn(listen_on_bi_streams(
-        endpoint,
-        peer_addr,
-        FilterBenignClose(bi_streams),
-        alive_rx,
-        message_tx,
+        endpoint, peer_addr, bi_streams, alive_rx, message_tx,
     ));
 }
 
 async fn listen_on_uni_streams(
     peer_addr: SocketAddr,
-    uni_streams: FilterBenignClose<quinn::IncomingUniStreams>,
+    uni_streams: quinn::IncomingUniStreams,
     mut alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<(UsrMsgBytes, Option<ResponseStream>), RecvError>>,
 ) {
@@ -437,7 +433,7 @@ async fn listen_on_uni_streams(
 async fn listen_on_bi_streams(
     endpoint: quinn::Endpoint,
     peer_addr: SocketAddr,
-    bi_streams: FilterBenignClose<quinn::IncomingBiStreams>,
+    bi_streams: quinn::IncomingBiStreams,
     mut alive_rx: watch::Receiver<()>,
     message_tx: mpsc::Sender<Result<(UsrMsgBytes, Option<ResponseStream>), RecvError>>,
 ) {
@@ -574,41 +570,12 @@ async fn handle_endpoint_verification(
     Ok(())
 }
 
-struct FilterBenignClose<S>(S);
-
-impl<S> Stream for FilterBenignClose<S>
-where
-    S: Stream<Item = Result<S::Ok, S::Error>> + TryStream + Unpin,
-    S::Error: Into<ConnectionError>,
-{
-    type Item = Result<S::Ok, ConnectionError>;
-
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        ctx: &mut task::Context,
-    ) -> task::Poll<Option<Self::Item>> {
-        let next = futures::ready!(self.0.poll_next_unpin(ctx));
-        task::Poll::Ready(match next.transpose() {
-            Ok(next) => next.map(Ok),
-            Err(error) => {
-                let error = error.into();
-                if error.is_benign() {
-                    warn!("Benign error ignored {:?}", error);
-                    None
-                } else {
-                    Some(Err(error))
-                }
-            }
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::Connection;
     use crate::{
         config::{Config, InternalConfig, SERVER_NAME},
-        error::{ConnectionError, SendError},
+        error::{ConnectionError, RecvError, SendError},
         tests::local_addr,
         wire_msg::WireMsg,
     };
@@ -676,7 +643,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn benign_connection_loss() -> Result<()> {
+    async fn connection_loss() -> Result<()> {
         let config = InternalConfig::try_from_config(Config {
             // set a very low idle timeout
             idle_timeout: Some(Duration::from_secs(1)),
@@ -717,7 +684,7 @@ mod tests {
 
         // trying to receive should NOT return an error
         match p2_rx.next().await {
-            Ok(None) => {}
+            Err(RecvError::ConnectionLost(ConnectionError::TimedOut)) => {}
             res => bail!("unexpected recv result: {:?}", res),
         }
 

@@ -139,26 +139,6 @@ pub enum ConnectionError {
     Closed(Close),
 }
 
-impl ConnectionError {
-    // A 'benign' connection error is one that does not represent an error on the connection, but
-    // rather a natural change of state. This may still be an error for the caller (e.g. if the
-    // connection is closed when trying to send a message), but not always (e.g. if the connection
-    // closes during a message receive loop, we could quietly end the stream instead). This method
-    // helps to centralise that discrimination.
-    pub(crate) fn is_benign(&self) -> bool {
-        matches!(
-            self,
-            // We expect that timeouts will be used to naturally close connections once they are
-            // idle, so we treat it as benign.
-            Self::TimedOut |
-            // A graceful close from our end.
-            Self::Closed(Close::Local) |
-            // A graceful close from the peer, with the default code 0
-            Self::Closed(Close::Application { error_code: 0, .. })
-        )
-    }
-}
-
 impl From<quinn::ConnectError> for ConnectionError {
     fn from(error: quinn::ConnectError) -> Self {
         match error {
