@@ -46,17 +46,7 @@ impl WireMsg {
     ) -> Result<Option<Self>, RecvError> {
         let mut header_bytes = [0; MSG_HEADER_LEN];
         match recv.read(&mut header_bytes).err_into().await {
-            Err(RecvError::ConnectionLost(error)) if error.is_benign() => {
-                // We ignore 'benign' connection loss for the initial read, this follows from the
-                // understanding that quinn would always yield any successfully read bytes, so we
-                // would move further into the function, which will always propagated encountered
-                // errors.
-                return Ok(None);
-            }
-            Err(error) => {
-                // Any other error would indicate a real issue, so return it
-                return Err(error);
-            }
+            Err(error) => return Err(error),
             Ok(None) => return Ok(None),
             Ok(Some(len)) => {
                 if len < MSG_HEADER_LEN {
