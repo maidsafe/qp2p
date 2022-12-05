@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.32.0](https://github.com/maidsafe/qp2p/compare/v0.31.1...v0.32.0) (2022-12-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** Currently when an error occurs upon trying to read from a stream,
+we swallow some of the errors assuming them benign, as if the connection
+was just nicely closed. It'll be better to report the error upwards so
+the caller/user of this lib can be aware of it since it knows much better
+the context where it's happening to make any decision.
+
+### Bug Fixes
+
+* **api:** don't treat any type of errors as benign ([ff9c805](https://github.com/maidsafe/qp2p/commit/ff9c805beba26a46d2ab88ed25e6b451d82ec4ba))
+
 ### [0.31.1](https://github.com/maidsafe/qp2p/compare/v0.31.0...v0.31.1) (2022-11-28)
 
 ## [0.31.0](https://github.com/maidsafe/qp2p/compare/v0.30.1...v0.31.0) (2022-11-26)
