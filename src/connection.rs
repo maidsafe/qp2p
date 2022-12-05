@@ -186,6 +186,30 @@ impl fmt::Debug for Connection {
     }
 }
 
+/// Identifier for a stream within a particular connection
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct StreamId(quinn::StreamId);
+impl fmt::Display for StreamId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let initiator = match self.0.initiator() {
+            quinn_proto::Side::Client => "initiator",
+            quinn_proto::Side::Server => "acceptor",
+        };
+        let dir = match self.0.dir() {
+            quinn_proto::Dir::Uni => "uni",
+            quinn_proto::Dir::Bi => "bi",
+        };
+        write!(
+            f,
+            "{} {}directional stream {}",
+            initiator,
+            dir,
+            self.0.index()
+        )
+    }
+}
+
 /// The sending API for a QUIC stream.
 pub struct SendStream {
     inner: quinn::SendStream,
@@ -197,8 +221,8 @@ impl SendStream {
     }
 
     /// Get the identity of this stream
-    pub fn id(&self) -> quinn::StreamId {
-        self.inner.id()
+    pub fn id(&self) -> StreamId {
+        StreamId(self.inner.id())
     }
 
     /// Set the priority of the send stream.
@@ -254,8 +278,8 @@ impl RecvStream {
     }
 
     /// Get the identity of this stream
-    pub fn id(&self) -> quinn::StreamId {
-        self.inner.id()
+    pub fn id(&self) -> StreamId {
+        StreamId(self.inner.id())
     }
 
     /// Get the next message sent by the peer over this stream.
