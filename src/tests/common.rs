@@ -86,10 +86,10 @@ async fn no_reuse_outgoing_connection() -> Result<()> {
         .await?;
 
     // Bob should recieve an incoming connection and message
-    let mut bob_incoming_messages =
+    let (_conn, mut bob_incoming_messages) =
         if let Ok(Some((connection, incoming))) = bob_incoming_connections.next().timeout().await {
             assert_eq!(connection.remote_address(), alice_addr);
-            incoming
+            (connection, incoming)
         } else {
             bail!("No incoming connection");
         };
@@ -146,10 +146,10 @@ async fn no_reuse_incoming_connection() -> Result<()> {
         .await?;
 
     // Bob should recieve an incoming connection and message
-    let mut bob_incoming_messages =
+    let (_conn, mut bob_incoming_messages) =
         if let Ok(Some((connection, incoming))) = bob_incoming_connections.next().timeout().await {
             assert_eq!(connection.remote_address(), alice_addr);
-            incoming
+            (connection, incoming)
         } else {
             bail!("No incoming connection");
         };
@@ -197,28 +197,28 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     // others connection first), two separate connections are created. This test verifies that
     // everything still works correctly even in this case.
 
-    let (alice, mut alice_incoming_connections, _) = new_endpoint().await?;
+    let (alice, mut alice_incoming_connections, _conn_alice) = new_endpoint().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, mut bob_incoming_connections, _) = new_endpoint().await?;
+    let (bob, mut bob_incoming_connections, _conn_bob) = new_endpoint().await?;
     let bob_addr = bob.public_addr();
 
     let ((a_to_b, _), (b_to_a, _)) =
         future::try_join(alice.connect_to(&bob_addr), bob.connect_to(&alice_addr)).await?;
 
-    let mut alice_incoming_messages = if let Ok(Some((connection, incoming))) =
+    let (_conn_to_alice, mut alice_incoming_messages) = if let Ok(Some((connection, incoming))) =
         alice_incoming_connections.next().timeout().await
     {
         assert_eq!(connection.remote_address(), bob_addr);
-        incoming
+        (connection, incoming)
     } else {
         bail!("No incoming connection from Bob");
     };
 
-    let mut bob_incoming_messages =
+    let (_conn_to_bob, mut bob_incoming_messages) =
         if let Ok(Some((connection, incoming))) = bob_incoming_connections.next().timeout().await {
             assert_eq!(connection.remote_address(), alice_addr);
-            incoming
+            (connection, incoming)
         } else {
             bail!("No incoming connection from Alice");
         };
@@ -252,11 +252,11 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     // Bob connects to Alice again. This opens a new connection.
     let (b_to_a, _) = bob.connect_to(&alice_addr).await?;
 
-    let mut alice_incoming_messages = if let Ok(Some((connection, incoming))) =
+    let (_conn, mut alice_incoming_messages) = if let Ok(Some((connection, incoming))) =
         alice_incoming_connections.next().timeout().await
     {
         assert_eq!(connection.remote_address(), bob_addr);
-        incoming
+        (connection, incoming)
     } else {
         bail!("Missing incoming connection");
     };
@@ -378,10 +378,11 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
         async move {
             let mut num_received = 0;
             let mut sending_tasks = Vec::new();
-            let mut task_connection: Option<super::Connection> = None;
+            let mut task_connection = None;
             while let Some((connection, mut recv_incoming_messages)) =
                 recv_incoming_connections.next().await
             {
+                let connection = Arc::new(connection);
                 while let Ok(Ok(Some((_, _, msg)))) = recv_incoming_messages.next().timeout().await
                 {
                     info!(
@@ -429,7 +430,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
         let messages = sending_msgs.clone();
         tasks.push(tokio::spawn({
             let (send_endpoint, _, _) = new_endpoint().await?;
-            let task_connection: Option<super::Connection> = None;
+            let task_connection = None;
 
             async move {
                 let mut hash_results = BTreeSet::new();
@@ -505,10 +506,11 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
         async move {
             let mut num_received = 0;
             let mut sending_tasks = Vec::new();
-            let mut task_connection: Option<super::Connection> = None;
+            let mut task_connection = None;
             while let Some((connection, mut recv_incoming_messages)) =
                 recv_incoming_connections.next().await
             {
+                let connection = Arc::new(connection);
                 while let Ok(Ok(Some((_, _, msg)))) = recv_incoming_messages.next().timeout().await
                 {
                     info!(
@@ -556,7 +558,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
         let messages = sending_msgs.clone();
         tasks.push(tokio::spawn({
             let (send_endpoint, _, _) = new_endpoint().await?;
-            let task_connection: Option<super::Connection> = None;
+            let task_connection = None;
 
             async move {
                 let mut hash_results = BTreeSet::new();
