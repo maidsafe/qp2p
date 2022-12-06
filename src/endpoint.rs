@@ -7,16 +7,16 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
+use crate::connection::ConnectionIncoming;
+
 use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig, SERVER_NAME},
     connection::Connection,
-    error::{
-        ClientEndpointError, ConnectionError, EndpointError, RpcError,
-    },
+    error::{ClientEndpointError, ConnectionError, EndpointError, RpcError},
 };
 use std::net::{IpAddr, SocketAddr};
-use tokio::sync::mpsc::{self, error::TryRecvError, Receiver as MpscReceiver};
+use tokio::sync::mpsc::{self, error::TryRecvError, Receiver};
 use tokio::time::{timeout, Duration};
 use tracing::{error, info, trace, warn};
 
@@ -28,18 +28,18 @@ const STANDARD_CHANNEL_SIZE: usize = 10000;
 
 /// Channel on which incoming connections are notified on
 #[derive(Debug)]
-pub struct IncomingConnections(pub(crate) MpscReceiver<Connection>);
+pub struct IncomingConnections(pub(crate) Receiver<(Connection, ConnectionIncoming)>);
 
 impl IncomingConnections {
     /// Blocks until there is an incoming connection and returns the address of the
     /// connecting peer
-    pub async fn next(&mut self) -> Option<Connection> {
+    pub async fn next(&mut self) -> Option<(Connection, ConnectionIncoming)> {
         self.0.recv().await
     }
 
     /// Non-blocking method to receive the next incoming connection if present.
     /// See tokio::sync::mpsc::Receiver::try_recv()
-    pub fn try_recv(&mut self) -> Result<Connection, TryRecvError> {
+    pub fn try_recv(&mut self) -> Result<(Connection, ConnectionIncoming), TryRecvError> {
         self.0.try_recv()
     }
 }
@@ -83,7 +83,14 @@ impl Endpoint {
         local_addr: impl Into<SocketAddr>,
         contacts: &[SocketAddr],
         config: Config,
-    ) -> Result<(Self, IncomingConnections, Option<Connection>), EndpointError> {
+    ) -> Result<
+        (
+            Self,
+            IncomingConnections,
+            Option<(Connection, ConnectionIncoming)>,
+        ),
+        EndpointError,
+    > {
         let config = InternalConfig::try_from_config(config)?;
 
         let mut quinn_endpoint = quinn::Endpoint::server(config.server.clone(), local_addr.into())?;
@@ -101,9 +108,10 @@ impl Endpoint {
         };
 
         let contact = endpoint.connect_to_any(contacts).await;
+        let contact_ref = contact.as_ref().map(|c| &c.0);
 
         let public_addr = endpoint
-            .resolve_public_addr(config.external_ip, config.external_port, contact.as_ref())
+            .resolve_public_addr(config.external_ip, config.external_port, contact_ref)
             .await?;
 
         endpoint.public_addr = Some(public_addr);
@@ -112,7 +120,7 @@ impl Endpoint {
 
         listen_for_incoming_connections(endpoint.inner.clone(), connection_tx);
 
-        if let Some(contact) = contact.as_ref() {
+        if let Some(contact) = contact_ref {
             let valid = endpoint
                 .endpoint_verification(contact, public_addr)
                 .await
@@ -174,7 +182,10 @@ impl Endpoint {
     /// **Note:** this method is intended for use when it's necessary to connect to a specific peer.
     /// See [`connect_to_any`](Self::connect_to_any) if you just need a connection with any of a set
     /// of peers.
-    pub async fn connect_to(&self, node_addr: &SocketAddr) -> Result<Connection, ConnectionError> {
+    pub async fn connect_to(
+        &self,
+        node_addr: &SocketAddr,
+    ) -> Result<(Connection, ConnectionIncoming), ConnectionError> {
         self.new_connection(node_addr).await
     }
 
@@ -184,7 +195,10 @@ impl Endpoint {
     /// rather than having to connect to specific nodes. This method will start connecting to every
     /// peer in `peer_addrs`, and return the address of the first successfully established
     /// connection (the rest are cancelled and discarded).
-    pub async fn connect_to_any(&self, peer_addrs: &[SocketAddr]) -> Option<Connection> {
+    pub async fn connect_to_any(
+        &self,
+        peer_addrs: &[SocketAddr],
+    ) -> Option<(Connection, ConnectionIncoming)> {
         trace!("Connecting to any of {:?}", peer_addrs);
         if peer_addrs.is_empty() {
             return None;
@@ -210,7 +224,7 @@ impl Endpoint {
     pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<(), RpcError> {
         trace!("Checking is reachable");
 
-        let connection = self.new_connection(peer_addr).await?;
+        let (connection, _) = self.new_connection(peer_addr).await?;
         let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
 
         send_stream.send_wire_msg(WireMsg::EndpointEchoReq).await?;
@@ -243,7 +257,10 @@ impl Endpoint {
     /// Attempt a connection to a node_addr.
     ///
     /// It will always try to open a new connection.
-    async fn new_connection(&self, node_addr: &SocketAddr) -> Result<Connection, ConnectionError> {
+    async fn new_connection(
+        &self,
+        node_addr: &SocketAddr,
+    ) -> Result<(Connection, ConnectionIncoming), ConnectionError> {
         trace!("Attempting to connect to {:?}", node_addr);
         let connecting = match self.inner.connect(*node_addr, SERVER_NAME) {
             Ok(conn) => Ok(conn),
@@ -380,7 +397,7 @@ impl Endpoint {
 
 pub(super) fn listen_for_incoming_connections(
     quinn_endpoint: quinn::Endpoint,
-    connection_tx: mpsc::Sender<Connection>,
+    connection_tx: mpsc::Sender<(Connection, ConnectionIncoming)>,
 ) {
     let _ = tokio::spawn(async move {
         loop {
