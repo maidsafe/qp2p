@@ -685,11 +685,11 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
 
     let (ep, _, bootstrapped_peer) =
         Endpoint::new_peer(local_addr(), &contacts, Config::default()).await?;
-    let (bootstrapped_peer, _) =
+    let bootstrapped_peer =
         bootstrapped_peer.ok_or_else(|| eyre!("Failed to connecto to any contact"))?;
 
     for peer in contacts {
-        if peer != bootstrapped_peer.remote_address() {
+        if peer != bootstrapped_peer.0.remote_address() {
             ep.connect_to(&peer).await.map(drop)?;
         }
     }
