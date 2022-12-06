@@ -5,6 +5,7 @@ use crate::{
     error::{ConnectionError, RecvError, RpcError, SendError, StreamError},
     wire_msg::{UsrMsgBytes, WireMsg},
 };
+use quinn::VarInt;
 use std::{fmt, net::SocketAddr, time::Duration};
 use tokio::{
     sync::mpsc::{Receiver, Sender},
@@ -24,9 +25,13 @@ const QP2P_CLOSED_CONNECTION: &str = "The connection was closed intentionally by
 type IncomingMsg = Result<(UsrMsgBytes, Option<SendStream>), RecvError>;
 
 /// The sending API for a connection.
-#[derive(Clone)]
 pub struct Connection {
     inner: quinn::Connection,
+}
+impl Drop for Connection {
+    fn drop(&mut self) {
+        self.inner.close(VarInt::from_u32(0), b"lost interest");
+    }
 }
 
 impl Connection {
