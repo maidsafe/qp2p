@@ -28,6 +28,7 @@ There are several informative posts describing both QUIC and TLS 1.3:
 
 These are highly recommended to be able to better understand this library, in particular the Cloudflare blog posts (10 minute read).
 
+
 ### Encryption of connections
 
 QUIC provides connection security via the use of TLS 1.3.
