@@ -9,7 +9,7 @@
 
 //! Configuration for `Endpoint`s.
 
-use quinn::IdleTimeout;
+use quinn::{IdleTimeout, VarInt};
 
 use rustls::{Certificate, ClientConfig, ServerName};
 use serde::{Deserialize, Serialize};
@@ -141,6 +141,12 @@ pub struct Config {
     #[cfg_attr(feature = "structopt", structopt(long, parse(try_from_str = parse_millis), value_name = "MILLIS"))]
     pub keep_alive_interval: Option<Duration>,
 
+    /// Maximum number of incoming bidirectional streams that may be open concurrently
+    ///
+    /// Must be nonzero for the peer to open any bidirectional streams.
+    #[cfg_attr(feature = "structopt", structopt(long))]
+    pub max_concurrent_bidi_streams: Option<u32>,
+
     /// How long UPnP port mappings will last.
     ///
     /// Note that UPnP port mappings will be automatically renewed on this interval.
@@ -267,7 +273,11 @@ impl InternalConfig {
             .unwrap_or(DEFAULT_UPNP_LEASE_DURATION);
         let keep_alive_interval = config.keep_alive_interval;
 
-        let transport = Self::new_transport_config(idle_timeout, keep_alive_interval);
+        let transport = Self::new_transport_config(
+            idle_timeout,
+            keep_alive_interval,
+            config.max_concurrent_bidi_streams,
+        );
 
         // setup certificates
         let mut roots = rustls::RootCertStore::empty();
@@ -305,11 +315,15 @@ impl InternalConfig {
     fn new_transport_config(
         idle_timeout: IdleTimeout,
         keep_alive_interval: Option<Duration>,
+        max_concurrent_bidi_streams: Option<u32>,
     ) -> Arc<quinn::TransportConfig> {
         let mut config = quinn::TransportConfig::default();
 
         let _ = config.max_idle_timeout(Some(idle_timeout));
         let _ = config.keep_alive_interval(keep_alive_interval);
+        if let Some(n) = max_concurrent_bidi_streams {
+            let _ = config.max_concurrent_bidi_streams(VarInt::from_u32(n));
+        }
 
         Arc::new(config)
     }
