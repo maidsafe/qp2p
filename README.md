@@ -33,7 +33,7 @@ These are highly recommended to be able to better understand this library, in pa
 QUIC provides connection security via the use of TLS 1.3.
 Currently, self-signed certificates are used to encrypt connections, but this provides *no* authentication.
 
-In future, we would like to support authentication via certificate authorities and pre-agreed certificates.
+In the future, we would like to support authentication via certificate authorities and pre-agreed certificates.
 This should satisfy the requirements of many P2P networks, whether they trust any clearnet certificate authority (which may be a centralised attack source) or whether they pass the identity management up to a different layer to validate identities and simply use qp2p as a secured network in terms of encrypted connections.
 
 ### Connection pooling
