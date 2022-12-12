@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.33.0](https://github.com/maidsafe/qp2p/compare/v0.32.0...v0.33.0) (2022-12-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* Nothing really, but the release
+process for non breaking changes is currently broken
+
+### Features
+
+* Arbitrary breaking change to force release ([5164fff](https://github.com/maidsafe/qp2p/commit/5164fffef309c19df2b4f110abe7e980122797ed))
+
 ## [0.32.0](https://github.com/maidsafe/qp2p/compare/v0.31.1...v0.32.0) (2022-12-12)
 
 
