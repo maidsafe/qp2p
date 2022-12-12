@@ -75,6 +75,40 @@ the context where it's happening to make any decision.
 
 ### ⚠ BREAKING CHANGES
 
+* This commit itself does not break anything, but is
+added to force a release flow for previous commits
+* update quinn to 0.9
+* **api:** Currently when an error occurs upon trying to read from a stream,
+we swallow some of the errors assuming them benign, as if the connection
+was just nicely closed. It'll be better to report the error upwards so
+the caller/user of this lib can be aware of it since it knows much better
+the context where it's happening to make any decision.
+
+### Features
+
+* drop IGD support ([5da6a33](https://github.com/maidsafe/qp2p/commit/5da6a33bd40b79e5503e1e3e86e28c42816ee5ed))
+* drop retry support ([7909ca5](https://github.com/maidsafe/qp2p/commit/7909ca5939f575de6b624480d1a15f2a24b973bf))
+* update quinn to 0.9 ([891b45e](https://github.com/maidsafe/qp2p/commit/891b45ea4998edbe3ff7476c3d9298b96590198f))
+* update quinn to use `Endpoint::accept` ([bb6e610](https://github.com/maidsafe/qp2p/commit/bb6e610aa43db179f308d7e76237577cddb04f1a))
+* **config:** allow to set the max number of concurrent bi-streams ([a75c728](https://github.com/maidsafe/qp2p/commit/a75c7280c4dad2a8abc6cb9f12660572c105e6e2))
+* **stream:** include connection id information as part of the StreamId ([8acd490](https://github.com/maidsafe/qp2p/commit/8acd4906b01e58b0867a633721c13fd8c82bd4bd))
+
+
+### Bug Fixes
+
+* remove unused channel ([9507478](https://github.com/maidsafe/qp2p/commit/9507478b68ea39d0ea18143bea1d89ff88a13420))
+* return correct error type ([38fb7dd](https://github.com/maidsafe/qp2p/commit/38fb7dd417cf5f965b9abf1277dabe5089272a3e))
+* **api:** don't treat any type of errors as benign ([ff9c805](https://github.com/maidsafe/qp2p/commit/ff9c805beba26a46d2ab88ed25e6b451d82ec4ba))
+* **StreamID:** wrap quinn::StreamID to avoid misleading log ([4c06934](https://github.com/maidsafe/qp2p/commit/4c0693438244ad2200e97749ffb094acfee2d3d9))
+
+
+* small README correction ([692afb0](https://github.com/maidsafe/qp2p/commit/692afb0d359474d947f9cbd3043a69cbcb808f05))
+
+## [0.32.0](https://github.com/maidsafe/qp2p/compare/v0.31.1...v0.32.0) (2022-12-12)
+
+
+### ⚠ BREAKING CHANGES
+
 * update quinn to 0.9
 * **api:** Currently when an error occurs upon trying to read from a stream,
 we swallow some of the errors assuming them benign, as if the connection
