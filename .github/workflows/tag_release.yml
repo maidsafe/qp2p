@@ -36,4 +36,4 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
       - name: Push tags to main
-        run: git push "https://$GITHUB_ACTOR:$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY" HEAD:main --tags
+        run: git push "https://dirvine:${secret.MERGE_BUMP_BRANCH_TOKEN}@github.com/$GITHUB_REPOSITORY" HEAD:main --tags
