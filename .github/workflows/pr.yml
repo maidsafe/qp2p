@@ -47,20 +47,6 @@ jobs:
       # Run Clippy.
       - name: Clippy checks
         run: cargo clippy --workspace --all-targets --all-features
-
-  check_pr_size:
-    if: |
-      github.repository_owner == 'maidsafe' &&
-      !startsWith(github.event.pull_request.title, 'Automated version bump')
-    name: Check PR size doesn't break set limit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-        with:
-          fetch-depth: '0'
-      - uses: maidsafe/pr_size_checker@v3
-        with:
-          max_lines_changed: 200
   
   coverage:
     if: |
