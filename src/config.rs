@@ -168,6 +168,7 @@ impl InternalConfig {
         let mut config = quinn::TransportConfig::default();
 
         let _ = config.max_idle_timeout(Some(idle_timeout));
+
         let _ = config.keep_alive_interval(keep_alive_interval);
         if let Some(n) = max_concurrent_bidi_streams {
             let _ = config.max_concurrent_bidi_streams(VarInt::from_u32(n));
