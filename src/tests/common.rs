@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use super::{hash, local_addr, new_endpoint, random_msg};
+use super::{hash, local_addr, new_endpoint, new_endpoint_with_keepalive, random_msg};
 use crate::{Config, Endpoint, SendError};
 use bytes::Bytes;
 use color_eyre::eyre::{bail, eyre, Report, Result};
@@ -19,10 +19,10 @@ use tracing::info;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn successful_connection() -> Result<()> {
-    let (peer1, mut peer1_incoming_connections, _) = new_endpoint().await?;
+    let (peer1, mut peer1_incoming_connections, _) = new_endpoint_with_keepalive().await?;
     let peer1_addr = peer1.public_addr();
 
-    let (peer2, _, _) = new_endpoint().await?;
+    let (peer2, _, _) = new_endpoint_with_keepalive().await?;
     peer2.connect_to(&peer1_addr).await.map(drop)?;
     let peer2_addr = peer2.public_addr();
 
@@ -37,10 +37,10 @@ async fn successful_connection() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn single_message() -> Result<()> {
-    let (peer1, mut peer1_incoming_connections, _) = new_endpoint().await?;
+    let (peer1, mut peer1_incoming_connections, _) = new_endpoint_with_keepalive().await?;
     let peer1_addr = peer1.public_addr();
 
-    let (peer2, _, _) = new_endpoint().await?;
+    let (peer2, _, _) = new_endpoint_with_keepalive().await?;
     let peer2_addr = peer2.public_addr();
 
     // Peer 2 connects and sends a message
@@ -72,10 +72,10 @@ async fn single_message() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn no_reuse_outgoing_connection() -> Result<()> {
-    let (alice, _, _) = new_endpoint().await?;
+    let (alice, _, _) = new_endpoint_with_keepalive().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, mut bob_incoming_connections, _) = new_endpoint().await?;
+    let (bob, mut bob_incoming_connections, _) = new_endpoint_with_keepalive().await?;
     let bob_addr = bob.public_addr();
 
     // Connect for the first time and send a message.
@@ -132,10 +132,10 @@ async fn no_reuse_outgoing_connection() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn no_reuse_incoming_connection() -> Result<()> {
-    let (alice, mut alice_incoming_connections, _) = new_endpoint().await?;
+    let (alice, mut alice_incoming_connections, _) = new_endpoint_with_keepalive().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, mut bob_incoming_connections, _) = new_endpoint().await?;
+    let (bob, mut bob_incoming_connections, _) = new_endpoint_with_keepalive().await?;
     let bob_addr = bob.public_addr();
 
     // Connect for the first time and send a message.
@@ -197,10 +197,11 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
     // others connection first), two separate connections are created. This test verifies that
     // everything still works correctly even in this case.
 
-    let (alice, mut alice_incoming_connections, _conn_alice) = new_endpoint().await?;
+    let (alice, mut alice_incoming_connections, _conn_alice) =
+        new_endpoint_with_keepalive().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, mut bob_incoming_connections, _conn_bob) = new_endpoint().await?;
+    let (bob, mut bob_incoming_connections, _conn_bob) = new_endpoint_with_keepalive().await?;
     let bob_addr = bob.public_addr();
 
     let ((a_to_b, _), (b_to_a, _)) =
@@ -275,13 +276,13 @@ async fn simultaneous_incoming_and_outgoing_connections() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn multiple_concurrent_connects_to_the_same_peer() -> Result<()> {
-    let (alice, mut alice_incoming_connections, _) = new_endpoint().await?;
+    let (alice, mut alice_incoming_connections, _) = new_endpoint_with_keepalive().await?;
     let alice_addr = alice.public_addr();
 
-    let (bob, mut bob_incoming_connections, _) = new_endpoint().await?;
+    let (bob, mut bob_incoming_connections, _) = new_endpoint_with_keepalive().await?;
     let bob_addr = bob.public_addr();
 
-    let (carol, mut carol_incoming_connections, _) = new_endpoint().await?;
+    let (carol, mut carol_incoming_connections, _) = new_endpoint_with_keepalive().await?;
     let carol_addr = carol.public_addr();
 
     let msg0 = random_msg(1024);
@@ -360,7 +361,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     let num_messages_each: usize = 100;
     let num_messages_total: usize = num_senders * num_messages_each;
 
-    let (server_endpoint, mut recv_incoming_connections, _) = new_endpoint().await?;
+    let (server_endpoint, mut recv_incoming_connections, _) = new_endpoint_with_keepalive().await?;
     let server_addr = server_endpoint.public_addr();
     let msg_len = 200;
     let test_msgs: Vec<_> = (0..num_messages_each)
@@ -429,7 +430,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     for id in 0..num_senders {
         let messages = sending_msgs.clone();
         tasks.push(tokio::spawn({
-            let (send_endpoint, _, _) = new_endpoint().await?;
+            let (send_endpoint, _, _) = new_endpoint_with_keepalive().await?;
             let task_connection = None;
 
             async move {
@@ -488,7 +489,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
     let num_messages_each: usize = 100;
     let num_messages_total: usize = num_senders * num_messages_each;
 
-    let (server_endpoint, mut recv_incoming_connections, _) = new_endpoint().await?;
+    let (server_endpoint, mut recv_incoming_connections, _) = new_endpoint_with_keepalive().await?;
     let server_addr = server_endpoint.public_addr();
     let msg_len = 1024 * 1024;
     let test_msgs: Vec<_> = (0..num_messages_each)
@@ -557,7 +558,7 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
     for id in 0..num_senders {
         let messages = sending_msgs.clone();
         tasks.push(tokio::spawn({
-            let (send_endpoint, _, _) = new_endpoint().await?;
+            let (send_endpoint, _, _) = new_endpoint_with_keepalive().await?;
             let task_connection = None;
 
             async move {
@@ -616,8 +617,8 @@ async fn many_messages() -> Result<()> {
 
     let num_messages: usize = 10_000;
 
-    let (send_endpoint, _send_incoming, _) = new_endpoint().await?;
-    let (recv_endpoint, mut recv_incoming_connections, _) = new_endpoint().await?;
+    let (send_endpoint, _send_incoming, _) = new_endpoint_with_keepalive().await?;
+    let (recv_endpoint, mut recv_incoming_connections, _) = new_endpoint_with_keepalive().await?;
 
     let send_addr = send_endpoint.public_addr();
     let recv_addr = recv_endpoint.public_addr();
@@ -679,9 +680,9 @@ async fn many_messages() -> Result<()> {
 // bootstrap contacts later.
 #[tokio::test(flavor = "multi_thread")]
 async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()> {
-    let (ep1, _ep1_incoming, _) = new_endpoint().await?;
-    let (ep2, _ep2_incoming, _) = new_endpoint().await?;
-    let (ep3, _ep3_incoming, _) = new_endpoint().await?;
+    let (ep1, _ep1_incoming, _) = new_endpoint_with_keepalive().await?;
+    let (ep2, _ep2_incoming, _) = new_endpoint_with_keepalive().await?;
+    let (ep3, _ep3_incoming, _) = new_endpoint_with_keepalive().await?;
 
     let contacts = vec![ep1.public_addr(), ep2.public_addr(), ep3.public_addr()];
 
@@ -701,8 +702,8 @@ async fn connection_attempts_to_bootstrap_contacts_should_succeed() -> Result<()
 
 #[tokio::test(flavor = "multi_thread")]
 async fn reachability() -> Result<()> {
-    let (ep1, _ep1_incoming, _) = new_endpoint().await?;
-    let (ep2, _ep2_incoming, _) = new_endpoint().await?;
+    let (ep1, _ep1_incoming, _) = new_endpoint_with_keepalive().await?;
+    let (ep2, _ep2_incoming, _) = new_endpoint_with_keepalive().await?;
 
     if let Ok(()) = ep1.is_reachable(&"127.0.0.1:12345".parse()?).await {
         bail!("Unexpected success");
@@ -717,7 +718,7 @@ async fn reachability() -> Result<()> {
 async fn client() -> Result<()> {
     use crate::{Config, Endpoint};
 
-    let (server, mut server_connections, _) = new_endpoint().await?;
+    let (server, mut server_connections, _) = new_endpoint_with_keepalive().await?;
     let client = Endpoint::new_client(local_addr(), Config::default())?;
 
     let (client_to_server, mut client_messages) = client.connect_to(&server.public_addr()).await?;
