@@ -822,7 +822,7 @@ async fn no_client_keep_alive_times_out() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn client_keep_alive_works() -> Result<()> {
+async fn client_keep_alive_uni_stream_works() -> Result<()> {
     use crate::{Config, Endpoint};
 
     let (server, mut server_connections, _) = new_endpoint().await?;
@@ -872,6 +872,177 @@ async fn client_keep_alive_works() -> Result<()> {
         .and_then(Result::transpose)
         .ok_or_else(|| eyre!("Did not receive expected message after wait"))??;
     assert_eq!(&message[..], b"world");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn client_keep_alive_bidi_works() -> Result<()> {
+    use crate::{Config, Endpoint};
+
+    let (server, mut server_connections, _) = new_endpoint().await?;
+    let client = Endpoint::new_client(
+        local_addr(),
+        Config {
+            keep_alive_interval: Some(Duration::from_secs(5)),
+            ..Config::default()
+        },
+    )?;
+
+    let (client_to_server, _client_messages) = client.connect_to(&server.public_addr()).await?;
+    let (mut send_stream, _recv) = client_to_server.open_bi().await?;
+
+    let (server_to_client, mut server_messages) = server_connections
+        .next()
+        .await
+        .ok_or_else(|| eyre!("did not receive expected connection"))?;
+
+    assert_eq!(server_to_client.remote_address(), client.public_addr());
+
+    // Idle timeout + 2 second wait
+    tokio::time::sleep(crate::config::DEFAULT_IDLE_TIMEOUT.saturating_add(Duration::from_secs(2)))
+        .await;
+
+    send_stream
+        .send_user_msg((Bytes::new(), Bytes::new(), b"hello"[..].into()))
+        .await
+        .or_else(|e| bail!("Could not send expected message on bidi after wait: {e:?}"))?;
+
+    send_stream.finish().await?;
+
+    let (_, _, message) = server_messages
+        .next()
+        .timeout()
+        .await
+        .ok()
+        .and_then(Result::transpose)
+        .ok_or_else(|| eyre!("Did not receive expected message after wait"))??;
+    assert_eq!(&message[..], b"hello");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bidi_long_response_works() -> Result<()> {
+    use crate::{Config, Endpoint};
+
+    let (server, mut server_connections, _) = new_endpoint().await?;
+    let client = Endpoint::new_client(
+        local_addr(),
+        Config {
+            keep_alive_interval: Some(Duration::from_secs(5)),
+            ..Config::default()
+        },
+    )?;
+
+    let (client_to_server, _client_messages) = client.connect_to(&server.public_addr()).await?;
+    let (mut send_stream, mut recv) = client_to_server.open_bi().await?;
+
+    let (server_to_client, mut server_messages) = server_connections
+        .next()
+        .await
+        .ok_or_else(|| eyre!("did not receive expected connection"))?;
+
+    assert_eq!(server_to_client.remote_address(), client.public_addr());
+
+    send_stream
+        .send_user_msg((Bytes::new(), Bytes::new(), b"hello"[..].into()))
+        .await
+        .or_else(|e| bail!("Could not send expected message on bidi after wait: {e:?}"))?;
+
+    send_stream.finish().await?;
+
+    let ((_, _, message), response_stream) = server_messages
+        .next_with_stream()
+        .await
+        .transpose()
+        .ok_or(eyre!("Could not get incoming msg on stream"))??;
+    assert_eq!(&message[..], b"hello");
+
+    // Idle timeout + 2 second wait
+    tokio::time::sleep(crate::config::DEFAULT_IDLE_TIMEOUT.saturating_add(Duration::from_secs(2)))
+        .await;
+
+    if let Some(mut stream) = response_stream {
+        stream
+            .send_user_msg((Bytes::new(), Bytes::new(), b"world"[..].into()))
+            .await?;
+
+        stream.finish().await?;
+    } else {
+        bail!("No response stream found for server to send on");
+    }
+
+    let (_, _, message) = recv
+        .next()
+        .await
+        .transpose()
+        .ok_or_else(|| eyre!("Did not receive expected message after wait"))??;
+
+    assert_eq!(&message[..], b"world");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bidi_many_response_works() -> Result<()> {
+    use crate::{Config, Endpoint};
+
+    let (server, mut server_connections, _) = new_endpoint().await?;
+
+    for _i in 0..10_000 {
+        let client = Endpoint::new_client(
+            local_addr(),
+            Config {
+                keep_alive_interval: Some(Duration::from_secs(5)),
+                ..Config::default()
+            },
+        )?;
+
+        let (client_to_server, _client_messages) = client.connect_to(&server.public_addr()).await?;
+        let (mut send_stream, mut recv) = client_to_server.open_bi().await?;
+
+        let (server_to_client, mut server_messages) = server_connections
+            .next()
+            .await
+            .ok_or_else(|| eyre!("did not receive expected connection"))?;
+
+        assert_eq!(server_to_client.remote_address(), client.public_addr());
+
+        send_stream
+            .send_user_msg((Bytes::new(), Bytes::new(), b"hello"[..].into()))
+            .await
+            .or_else(|e| bail!("Could not send expected message on bidi after wait: {e:?}"))?;
+
+        // finish result doesn't actually mean we havent got the msg already or that there was an error
+        let _ignored = send_stream.finish().await;
+
+        let ((_, _, message), response_stream) = server_messages
+            .next_with_stream()
+            .await
+            .transpose()
+            .ok_or(eyre!("Could not get incoming msg on stream"))??;
+        assert_eq!(&message[..], b"hello");
+
+        if let Some(mut stream) = response_stream {
+            stream
+                .send_user_msg((Bytes::new(), Bytes::new(), b"world"[..].into()))
+                .await?;
+
+            // finish result doesn't actually mean we havent got the msg already or that there was an error
+            let _ignored = stream.finish().await;
+        } else {
+            bail!("No response stream found for server to send on");
+        }
+
+        let (_, _, message) = recv
+            .next()
+            .await
+            .transpose()
+            .ok_or_else(|| eyre!("Did not receive expected message after wait"))??;
+
+        assert_eq!(&message[..], b"world");
+    }
 
     Ok(())
 }
