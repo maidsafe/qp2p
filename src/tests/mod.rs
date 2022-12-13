@@ -10,10 +10,7 @@
 use crate::{Config, Connection, ConnectionIncoming, Endpoint, IncomingConnections};
 use bytes::Bytes;
 use color_eyre::eyre::Result;
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-    time::Duration,
-};
+use std::net::{Ipv4Addr, SocketAddr};
 use tiny_keccak::{Hasher, Sha3};
 
 /// SHA3-256 hash digest.
@@ -36,7 +33,6 @@ pub(crate) async fn new_endpoint() -> Result<(
         local_addr(),
         &[],
         Config {
-            keep_alive_interval: Some(Duration::from_secs(5)),
             ..Config::default()
         },
     )

@@ -8,7 +8,7 @@
 // Software.
 
 use super::{hash, local_addr, new_endpoint, random_msg};
-use crate::{Config, Endpoint};
+use crate::{Config, Endpoint, SendError};
 use bytes::Bytes;
 use color_eyre::eyre::{bail, eyre, Report, Result};
 use futures::future;
@@ -774,6 +774,103 @@ async fn client() -> Result<()> {
 
     // reconnecting should increment client's opened connection count
     let _ = client.connect_to(&server.public_addr()).await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn no_client_keep_alive_times_out() -> Result<()> {
+    use crate::{Config, Endpoint};
+
+    let (server, mut server_connections, _) = new_endpoint().await?;
+    let client = Endpoint::new_client(local_addr(), Config::default())?;
+
+    let (client_to_server, _client_messages) = client.connect_to(&server.public_addr()).await?;
+    client_to_server
+        .send((Bytes::new(), Bytes::new(), b"hello"[..].into()))
+        .await?;
+
+    let (server_to_client, mut server_messages) = server_connections
+        .next()
+        .await
+        .ok_or_else(|| eyre!("did not receive expected connection"))?;
+
+    assert_eq!(server_to_client.remote_address(), client.public_addr());
+
+    let (_, _, message) = server_messages
+        .next()
+        .timeout()
+        .await
+        .ok()
+        .and_then(Result::transpose)
+        .ok_or_else(|| eyre!("Did not receive expected message"))??;
+    assert_eq!(&message[..], b"hello");
+
+    // Idle timeout + 2 second wait
+    tokio::time::sleep(crate::config::DEFAULT_IDLE_TIMEOUT.saturating_add(Duration::from_secs(2)))
+        .await;
+
+    let err = server_to_client
+        .send((Bytes::new(), Bytes::new(), b"world"[..].into()))
+        .await;
+
+    match err {
+        Err(SendError::ConnectionLost(crate::ConnectionError::TimedOut)) => Ok(()),
+        _ => bail!("Unexpected outcome trying to send on a conneciton that should have timed out"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn client_keep_alive_works() -> Result<()> {
+    use crate::{Config, Endpoint};
+
+    let (server, mut server_connections, _) = new_endpoint().await?;
+    let client = Endpoint::new_client(
+        local_addr(),
+        Config {
+            keep_alive_interval: Some(Duration::from_secs(5)),
+            ..Config::default()
+        },
+    )?;
+
+    let (client_to_server, mut client_messages) = client.connect_to(&server.public_addr()).await?;
+    client_to_server
+        .send((Bytes::new(), Bytes::new(), b"hello"[..].into()))
+        .await?;
+
+    let (server_to_client, mut server_messages) = server_connections
+        .next()
+        .await
+        .ok_or_else(|| eyre!("did not receive expected connection"))?;
+
+    assert_eq!(server_to_client.remote_address(), client.public_addr());
+
+    let (_, _, message) = server_messages
+        .next()
+        .timeout()
+        .await
+        .ok()
+        .and_then(Result::transpose)
+        .ok_or_else(|| eyre!("Did not receive expected message"))??;
+    assert_eq!(&message[..], b"hello");
+
+    // Idle timeout and a 2 second wait
+    tokio::time::sleep(crate::config::DEFAULT_IDLE_TIMEOUT.saturating_add(Duration::from_secs(2)))
+        .await;
+
+    server_to_client
+        .send((Bytes::new(), Bytes::new(), b"world"[..].into()))
+        .await
+        .or_else(|e| bail!("Could not send expected message after wait: {e:?}"))?;
+
+    let (_h, _d, message) = client_messages
+        .next()
+        .timeout()
+        .await
+        .ok()
+        .and_then(Result::transpose)
+        .ok_or_else(|| eyre!("Did not receive expected message after wait"))??;
+    assert_eq!(&message[..], b"world");
 
     Ok(())
 }
