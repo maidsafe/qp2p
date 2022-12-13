@@ -30,6 +30,10 @@ pub struct Connection {
 }
 impl Drop for Connection {
     fn drop(&mut self) {
+        warn!(
+            "Connection handle dropped, thus closing it, conn_id={}",
+            self.id()
+        );
         self.inner.close(VarInt::from_u32(0), b"lost interest");
     }
 }
@@ -59,8 +63,7 @@ impl Connection {
     /// the peer. So this _should_ be unique per peer (without IP spoofing).
     ///
     pub fn id(&self) -> String {
-        let remote_addr = self.remote_address();
-        format!("{remote_addr}{}", self.inner.stable_id())
+        build_conn_id(&self.inner)
     }
 
     /// The address of the remote peer.
@@ -119,6 +122,7 @@ impl Connection {
     /// guaranteed to be delivered.
     pub fn close(&self, reason: Option<String>) {
         let reason = reason.unwrap_or_else(|| QP2P_CLOSED_CONNECTION.to_string());
+        warn!("Closing connection witn conn_id={}", self.id());
         self.inner.close(0u8.into(), &reason.into_bytes());
     }
 
@@ -141,11 +145,16 @@ impl Connection {
     }
 }
 
+// Helper to build a connection identifier string
+fn build_conn_id(conn: &quinn::Connection) -> String {
+    format!("{}{}", conn.remote_address(), conn.stable_id())
+}
+
 fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>) {
-    let id = connection.stable_id();
+    let conn_id = build_conn_id(&connection);
 
     let _ = tokio::spawn(async move {
-        trace!("Connection {id}: listening for incoming uni-streams");
+        trace!("Connection {conn_id}: listening for incoming uni-streams");
 
         loop {
             // Wait for an incoming stream.
@@ -154,13 +163,13 @@ fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>)
                 Ok(recv) => recv,
                 // In case of a connection error, there is not much we can do.
                 Err(err) => {
-                    trace!("Connection {id}: incoming uni-stream: ERROR: {err}");
+                    trace!("Connection {conn_id}: incoming uni-stream: ERROR: {err}");
                     // WARNING: This might block!
                     let _ = tx.send(Err(RecvError::ConnectionLost(err))).await;
                     break;
                 }
             };
-            trace!("Connection {id}: incoming uni-stream accepted");
+            trace!("Connection {conn_id}: incoming uni-stream accepted");
 
             let tx = tx.clone();
 
@@ -182,7 +191,7 @@ fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>)
             });
         }
 
-        trace!("Connection {id}: stopped listening for uni-streams");
+        trace!("Connection {conn_id}: stopped listening for uni-streams");
     });
 }
 
@@ -192,11 +201,10 @@ fn listen_on_bi_streams(
     endpoint: quinn::Endpoint,
     tx: Sender<IncomingMsg>,
 ) {
-    let id = connection.stable_id();
-    let conn_id = format!("{}{}", connection.remote_address(), connection.stable_id());
+    let conn_id = build_conn_id(&connection);
 
     let _ = tokio::spawn(async move {
-        trace!("Connection {id}: listening for incoming bi-streams");
+        trace!("Connection {conn_id}: listening for incoming bi-streams");
 
         loop {
             // Wait for an incoming stream.
@@ -205,13 +213,13 @@ fn listen_on_bi_streams(
                 Ok(recv) => recv,
                 // In case of a connection error, there is not much we can do.
                 Err(err) => {
-                    trace!("Connection {id}: incoming bi-stream: ERROR: {err:?}");
+                    trace!("Connection {conn_id}: incoming bi-stream: ERROR: {err:?}");
                     // WARNING: This might block!
                     let _ = tx.send(Err(RecvError::ConnectionLost(err))).await;
                     break;
                 }
             };
-            trace!("Connection {id}: incoming bi-stream accepted");
+            trace!("Connection {conn_id}: incoming bi-stream accepted");
 
             let tx = tx.clone();
             let endpoint = endpoint.clone();
@@ -228,7 +236,7 @@ fn listen_on_bi_streams(
                     Ok(Some(WireMsg::EndpointEchoReq)) => {
                         if let Err(error) = handle_endpoint_echo(send, addr).await {
                             // TODO: consider more carefully how to handle this
-                            warn!("Error handling endpoint echo request: {}", error);
+                            warn!("Error handling endpoint echo request on conn_id {conn_id}: {error}");
                         }
                         return;
                     }
@@ -237,7 +245,7 @@ fn listen_on_bi_streams(
                             handle_endpoint_verification(&endpoint, send, addr).await
                         {
                             // TODO: consider more carefully how to handle this
-                            warn!("Error handling endpoint verification request: {}", error);
+                            warn!("Error handling endpoint verification request on conn_id {conn_id}: {error}");
                         }
                         return;
                     }
@@ -253,7 +261,7 @@ fn listen_on_bi_streams(
             });
         }
 
-        trace!("Connection {id}: stopped listening for uni-streams");
+        trace!("Connection {conn_id}: stopped listening for uni-streams");
     });
 }
 

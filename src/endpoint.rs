@@ -265,16 +265,22 @@ impl Endpoint {
         let connecting = match self.inner.connect(*node_addr, SERVER_NAME) {
             Ok(conn) => Ok(conn),
             Err(error) => {
-                warn!("Connection attempt failed due to {:?}", error);
+                warn!(
+                    "Connection attempt to {node_addr:?} failed due to {:?}",
+                    error
+                );
                 Err(ConnectionError::from(error))
             }
         }?;
 
         let new_conn = match connecting.await {
             Ok(new_conn) => {
-                trace!("Successfully connected to peer: {}", node_addr);
-
-                Ok(Connection::new(new_conn, self.inner.clone()))
+                let connection = Connection::new(new_conn, self.inner.clone());
+                trace!(
+                    "Successfully connected to peer {node_addr}, conn_id={}",
+                    connection.0.id()
+                );
+                Ok(connection)
             }
             Err(error) => Err(ConnectionError::from(error)),
         }?;
@@ -405,9 +411,9 @@ pub(super) fn listen_for_incoming_connections(
                 Some(quinn_conn) => match quinn_conn.await {
                     Ok(connection) => {
                         let connection = Connection::new(connection, quinn_endpoint.clone());
-
+                        let conn_id = connection.0.id();
                         if connection_tx.send(connection).await.is_err() {
-                            warn!("Dropping incoming connection because receiver was dropped");
+                            warn!("Dropping incoming connection conn_id={conn_id}, because receiver was dropped");
                         }
                     }
                     Err(err) => {
