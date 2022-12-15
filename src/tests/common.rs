@@ -876,6 +876,29 @@ async fn client_keep_alive_works() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn endpoint_uses_same_socket_for_all_clients() -> Result<()> {
+    use crate::{Config, Endpoint};
+
+    let (server, _server_connections, _) = new_endpoint().await?;
+    let server_addr = server.public_addr();
+    let client = Endpoint::new_client(
+        local_addr(),
+        Config {
+            keep_alive_interval: Some(Duration::from_secs(5)),
+            ..Config::default()
+        },
+    )?;
+
+    for _i in 0..100 {
+        let (client_to_server_conn, _client_messages) =
+            client.connect_to(&server.public_addr()).await?;
+        assert_eq!(client_to_server_conn.remote_address(), server_addr);
+    }
+
+    Ok(())
+}
+
 trait Timeout: Sized {
     fn timeout(self) -> tokio::time::Timeout<Self>;
 }
