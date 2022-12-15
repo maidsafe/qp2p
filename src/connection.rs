@@ -2,7 +2,7 @@
 
 use crate::{
     config::SERVER_NAME,
-    error::{ConnectionError, RecvError, RpcError, SendError, StreamError},
+    error::{ConnectionError, RecvError, RpcError, SendError},
     wire_msg::{UsrMsgBytes, WireMsg},
 };
 use quinn::VarInt;
@@ -77,20 +77,8 @@ impl Connection {
     /// responsible for correlating any anticipated responses from incoming streams.
     ///
     /// The priority will be `0`.
-    pub async fn send(&self, bytes: UsrMsgBytes) -> Result<(), SendError> {
-        self.send_with(bytes, 0).await
-    }
-
-    /// Send a message to the peer using the given configuration.
-    ///
-    /// See [`send`](Self::send) if you want to send with the default configuration.
-    pub async fn send_with(
-        &self,
-        user_msg_bytes: UsrMsgBytes,
-        priority: i32,
-    ) -> Result<(), SendError> {
-        self.send_uni(user_msg_bytes, priority).await?;
-        Ok(())
+    pub async fn send(&self, user_msg_bytes: UsrMsgBytes) -> Result<(), SendError> {
+        self.send_with(user_msg_bytes, 0).await
     }
 
     /// Open a unidirection stream to the peer.
@@ -109,9 +97,10 @@ impl Connection {
     /// Messages sent over the stream will arrive at the peer in the order they were sent.
     pub async fn open_bi(&self) -> Result<(SendStream, RecvStream), ConnectionError> {
         let (send_stream, recv_stream) = self.inner.open_bi().await?;
+        let conn_id = self.id();
         Ok((
-            SendStream::new(send_stream, self.id()),
-            RecvStream::new(recv_stream, self.id()),
+            SendStream::new(send_stream, conn_id.clone()),
+            RecvStream::new(recv_stream, conn_id),
         ))
     }
 
@@ -126,22 +115,15 @@ impl Connection {
         self.inner.close(0u8.into(), &reason.into_bytes());
     }
 
-    /// Opens a uni directional stream and sends message on this stream
-    async fn send_uni(&self, user_msg_bytes: UsrMsgBytes, priority: i32) -> Result<(), SendError> {
+    /// Opens a uni-directional stream and sends message on it using the given priority.
+    async fn send_with(&self, user_msg_bytes: UsrMsgBytes, priority: i32) -> Result<(), SendError> {
         let mut send_stream = self.open_uni().await.map_err(SendError::ConnectionLost)?;
         send_stream.set_priority(priority);
 
         send_stream.send_user_msg(user_msg_bytes).await?;
 
-        // We try to make sure the stream is gracefully closed and the bytes get sent, but if it
-        // was already closed (perhaps by the peer) then we ignore the error.
-        // TODO: we probably shouldn't ignore the error...
-        send_stream.finish().await.or_else(|err| match err {
-            SendError::StreamLost(StreamError::Stopped(_)) => Ok(()),
-            _ => Err(err),
-        })?;
-
-        Ok(())
+        // We try to make sure the stream is gracefully closed and the bytes get sent
+        send_stream.finish().await
     }
 }
 
