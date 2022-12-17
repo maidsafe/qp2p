@@ -121,7 +121,7 @@ pub enum ConnectionError {
     TimedOut,
 
     /// The connection was closed.
-    #[error("The connection was closed by {0}")]
+    #[error("The connection was closed, {0}")]
     Closed(Close),
 }
 
