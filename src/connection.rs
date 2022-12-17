@@ -77,20 +77,8 @@ impl Connection {
     /// responsible for correlating any anticipated responses from incoming streams.
     ///
     /// The priority will be `0`.
-    pub async fn send(&self, bytes: UsrMsgBytes) -> Result<(), SendError> {
-        self.send_with(bytes, 0).await
-    }
-
-    /// Send a message to the peer using the given configuration.
-    ///
-    /// See [`send`](Self::send) if you want to send with the default configuration.
-    pub async fn send_with(
-        &self,
-        user_msg_bytes: UsrMsgBytes,
-        priority: i32,
-    ) -> Result<(), SendError> {
-        self.send_uni(user_msg_bytes, priority).await?;
-        Ok(())
+    pub async fn send(&self, user_msg_bytes: UsrMsgBytes) -> Result<(), SendError> {
+        self.send_with(user_msg_bytes, 0).await
     }
 
     /// Open a unidirection stream to the peer.
@@ -109,9 +97,10 @@ impl Connection {
     /// Messages sent over the stream will arrive at the peer in the order they were sent.
     pub async fn open_bi(&self) -> Result<(SendStream, RecvStream), ConnectionError> {
         let (send_stream, recv_stream) = self.inner.open_bi().await?;
+        let conn_id = self.id();
         Ok((
-            SendStream::new(send_stream, self.id()),
-            RecvStream::new(recv_stream, self.id()),
+            SendStream::new(send_stream, conn_id.clone()),
+            RecvStream::new(recv_stream, conn_id),
         ))
     }
 
@@ -126,8 +115,12 @@ impl Connection {
         self.inner.close(0u8.into(), &reason.into_bytes());
     }
 
-    /// Opens a uni directional stream and sends message on this stream
-    async fn send_uni(&self, user_msg_bytes: UsrMsgBytes, priority: i32) -> Result<(), SendError> {
+    /// Opens a uni-directional stream and sends message on it using the given priority.
+    pub async fn send_with(
+        &self,
+        user_msg_bytes: UsrMsgBytes,
+        priority: i32,
+    ) -> Result<(), SendError> {
         let mut send_stream = self.open_uni().await.map_err(SendError::ConnectionLost)?;
         send_stream.set_priority(priority);
 
@@ -261,7 +254,7 @@ fn listen_on_bi_streams(
             });
         }
 
-        trace!("Connection {conn_id}: stopped listening for uni-streams");
+        trace!("Connection {conn_id}: stopped listening for bi-streams");
     });
 }
 
