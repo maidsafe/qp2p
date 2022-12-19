@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.34.0](https://github.com/maidsafe/qp2p/compare/v0.33.2...v0.34.0) (2022-12-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **conn:** the `Connection::send_uni` public API has been removed
+since it has the same implementation as the `Connection::send_with` API.
+
+* **conn:** removing redundant Connection::send_uni public API ([4026bf2](https://github.com/maidsafe/qp2p/commit/4026bf283a1cc11e220bd5ca9f8d7b45078ac205))
+
 ### [0.33.2](https://github.com/maidsafe/qp2p/compare/v0.33.1...v0.33.2) (2022-12-13)
 
 ### [0.33.1](https://github.com/maidsafe/qp2p/compare/v0.33.0...v0.33.1) (2022-12-13)
