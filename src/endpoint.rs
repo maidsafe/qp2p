@@ -230,18 +230,11 @@ impl Endpoint {
         send_stream.send_wire_msg(WireMsg::EndpointEchoReq).await?;
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv_stream.next_wire_msg()).await?? {
-            Some(WireMsg::EndpointEchoResp(_)) => Ok(()),
-            Some(other) => {
+            WireMsg::EndpointEchoResp(_) => Ok(()),
+            other => {
                 info!(
                     "Unexpected message type when verifying reachability: {}",
                     &other
-                );
-                Ok(())
-            }
-            None => {
-                info!(
-                    "Peer {} did not reply when verifying reachability",
-                    peer_addr
                 );
                 Ok(())
             }
@@ -372,10 +365,10 @@ impl Endpoint {
         send.send_wire_msg(WireMsg::EndpointEchoReq).await?;
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
-            Some(WireMsg::EndpointEchoResp(addr)) => Ok(addr),
+            WireMsg::EndpointEchoResp(addr) => Ok(addr),
             msg => Err(RpcError::EchoResponseMissing {
                 peer: contact.remote_address(),
-                response: msg.map(|m| m.to_string()),
+                response: Some(msg.to_string()),
             }),
         }
     }
@@ -392,10 +385,10 @@ impl Endpoint {
             .await?;
 
         match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
-            Some(WireMsg::EndpointVerificationResp(valid)) => Ok(valid),
+            WireMsg::EndpointVerificationResp(valid) => Ok(valid),
             msg => Err(RpcError::EndpointVerificationRespMissing {
                 peer: contact.remote_address(),
-                response: msg.map(|m| m.to_string()),
+                response: Some(msg.to_string()),
             }),
         }
     }
