@@ -12,7 +12,7 @@ use crate::{
     utils,
 };
 use bytes::{Bytes, BytesMut};
-use futures::TryFutureExt;
+use quinn::VarInt;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::{fmt, net::SocketAddr};
@@ -41,19 +41,11 @@ const ECHO_SRVC_MSG_FLAG: u8 = 0x01;
 
 impl WireMsg {
     // Read a message's bytes from the provided stream
-    pub(crate) async fn read_from_stream(
-        recv: &mut quinn::RecvStream,
-    ) -> Result<Option<Self>, RecvError> {
+    /// # Cancellation safety
+    /// Warning: This method is not cancellation safe!
+    pub(crate) async fn read_from_stream(recv: &mut quinn::RecvStream) -> Result<Self, RecvError> {
         let mut header_bytes = [0; MSG_HEADER_LEN];
-        match recv.read(&mut header_bytes).err_into().await {
-            Err(error) => return Err(error),
-            Ok(None) => return Ok(None),
-            Ok(Some(len)) => {
-                if len < MSG_HEADER_LEN {
-                    recv.read_exact(&mut header_bytes[len..]).await?;
-                }
-            }
-        }
+        recv.read_exact(&mut header_bytes).await?;
 
         let msg_header = MsgHeader::from_bytes(header_bytes);
         // https://github.com/rust-lang/rust/issues/70460 for work on a cleaner alternative:
@@ -81,16 +73,19 @@ impl WireMsg {
         recv.read_exact(&mut dst_data).await?;
         recv.read_exact(&mut payload_data).await?;
 
+        // let sender know we won't receive any more.
+        let _ = recv.stop(VarInt::from_u32(0));
+
         if payload_data.is_empty() {
             Err(RecvError::EmptyMsgPayload)
         } else if msg_flag == USER_MSG_FLAG {
-            Ok(Some(WireMsg::UserMsg((
+            Ok(WireMsg::UserMsg((
                 header_data.freeze(),
                 dst_data.freeze(),
                 payload_data.freeze(),
-            ))))
+            )))
         } else if msg_flag == ECHO_SRVC_MSG_FLAG {
-            Ok(Some(bincode::deserialize(&payload_data)?))
+            Ok(bincode::deserialize(&payload_data)?)
         } else {
             Err(RecvError::InvalidMsgTypeFlag(msg_flag))
         }

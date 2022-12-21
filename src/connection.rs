@@ -172,9 +172,7 @@ fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>)
             let _ = tokio::spawn(async move {
                 let msg = WireMsg::read_from_stream(&mut recv).await;
                 let msg = match msg {
-                    // Stream was finished or connection closed.
-                    Ok(None) => return,
-                    Ok(Some(msg)) => match msg {
+                    Ok(msg) => match msg {
                         WireMsg::UserMsg(msg) => Ok(msg),
                         _ => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
                     },
@@ -227,17 +225,15 @@ fn listen_on_bi_streams(
             let _ = tokio::spawn(async move {
                 let msg = WireMsg::read_from_stream(&mut recv).await;
                 let msg = match msg {
-                    // Stream was finished or connection closed.
-                    Ok(None) => return,
-                    Ok(Some(WireMsg::UserMsg(msg))) => Ok(msg),
-                    Ok(Some(WireMsg::EndpointEchoReq)) => {
+                    Ok(WireMsg::UserMsg(msg)) => Ok(msg),
+                    Ok(WireMsg::EndpointEchoReq) => {
                         if let Err(error) = handle_endpoint_echo(send, addr).await {
                             // TODO: consider more carefully how to handle this
                             warn!("Error handling endpoint echo request on conn_id {conn_id}: {error}");
                         }
                         return;
                     }
-                    Ok(Some(WireMsg::EndpointVerificationReq(addr))) => {
+                    Ok(WireMsg::EndpointVerificationReq(addr)) => {
                         if let Err(error) =
                             handle_endpoint_verification(&endpoint, send, addr).await
                         {
@@ -247,7 +243,7 @@ fn listen_on_bi_streams(
                         return;
                     }
                     // We do not expect other types.
-                    Ok(Some(msg)) => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
+                    Ok(msg) => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
                     Err(err) => Err(err),
                 };
 
@@ -399,15 +395,14 @@ impl RecvStream {
     }
 
     /// Get the next message sent by the peer over this stream.
-    pub async fn next(&mut self) -> Result<Option<UsrMsgBytes>, RecvError> {
+    pub async fn next(&mut self) -> Result<UsrMsgBytes, RecvError> {
         match self.next_wire_msg().await? {
-            Some(WireMsg::UserMsg(msg)) => Ok(Some(msg)),
-            Some(msg) => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
-            None => Ok(None),
+            WireMsg::UserMsg(msg) => Ok(msg),
+            msg => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
         }
     }
 
-    pub(crate) async fn next_wire_msg(&mut self) -> Result<Option<WireMsg>, RecvError> {
+    pub(crate) async fn next_wire_msg(&mut self) -> Result<WireMsg, RecvError> {
         WireMsg::read_from_stream(&mut self.inner).await
     }
 }
@@ -452,13 +447,13 @@ async fn handle_endpoint_verification(
             .await?;
 
         match WireMsg::read_from_stream(&mut recv_stream).await? {
-            Some(WireMsg::EndpointEchoResp(_)) => {
+            WireMsg::EndpointEchoResp(_) => {
                 trace!("EndpointVerificationReq: Received EndpointEchoResp from {addr}");
                 Ok(())
             }
             msg => Err(RpcError::EchoResponseMissing {
                 peer: addr,
-                response: msg.map(|m| m.to_string()),
+                response: Some(msg.to_string()),
             }),
         }
     };
@@ -630,17 +625,14 @@ mod tests {
             let (mut send_stream, mut recv_stream) = p1_conn.open_bi().await?;
             send_stream.send_wire_msg(WireMsg::EndpointEchoReq).await?;
 
-            if let Some(msg) = timeout(recv_stream.next_wire_msg()).await?? {
-                if let WireMsg::EndpointEchoResp(addr) = msg {
-                    assert_eq!(addr, peer1.local_addr()?);
-                } else {
-                    bail!(
-                        "received unexpected message when EndpointEchoResp was expected: {:?}",
-                        msg
-                    );
-                }
+            let msg = timeout(recv_stream.next_wire_msg()).await??;
+            if let WireMsg::EndpointEchoResp(addr) = msg {
+                assert_eq!(addr, peer1.local_addr()?);
             } else {
-                bail!("did not receive incoming message when one was expected");
+                bail!(
+                    "received unexpected message when EndpointEchoResp was expected: {:?}",
+                    msg
+                );
             }
         }
 
@@ -695,16 +687,13 @@ mod tests {
                 bail!("did not receive incoming connection when one was expected");
             };
 
-            if let Some(msg) = timeout(recv_stream.next_wire_msg()).await?? {
-                if let WireMsg::EndpointVerificationResp(true) = msg {
-                } else {
-                    bail!(
+            let msg = timeout(recv_stream.next_wire_msg()).await??;
+            if let WireMsg::EndpointVerificationResp(true) = msg {
+            } else {
+                bail!(
                         "received unexpected message when EndpointVerificationResp(true) was expected: {:?}",
                         msg
                     );
-                }
-            } else {
-                bail!("did not receive incoming message when one was expected");
             }
 
             // only one msg per bi-stream is supported, let's create a new bi-stream for this test
@@ -713,16 +702,13 @@ mod tests {
                 .send_wire_msg(WireMsg::EndpointVerificationReq(local_addr()))
                 .await?;
 
-            if let Some(msg) = timeout(recv_stream.next_wire_msg()).await?? {
-                if let WireMsg::EndpointVerificationResp(false) = msg {
-                } else {
-                    bail!(
+            let msg = timeout(recv_stream.next_wire_msg()).await??;
+            if let WireMsg::EndpointVerificationResp(false) = msg {
+            } else {
+                bail!(
                         "received unexpected message when EndpointVerificationResp(false) was expected: {:?}",
                         msg
                     );
-                }
-            } else {
-                bail!("did not receive incoming message when one was expected");
             }
         }
 
