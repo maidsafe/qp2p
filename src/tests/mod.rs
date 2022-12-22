@@ -10,6 +10,7 @@
 use crate::{Config, Connection, ConnectionIncoming, Endpoint, IncomingConnections};
 use bytes::Bytes;
 use color_eyre::eyre::Result;
+use rand::{distributions::Standard, rngs, Rng, SeedableRng};
 use std::{
     net::{Ipv4Addr, SocketAddr},
     time::Duration,
@@ -63,7 +64,10 @@ pub(crate) fn local_addr() -> SocketAddr {
 }
 
 pub(crate) fn random_msg(size: usize) -> Bytes {
-    let random_bytes: Vec<u8> = (0..size).map(|_| rand::random::<u8>()).collect();
+    let random_bytes: Vec<u8> = rngs::SmallRng::from_entropy()
+        .sample_iter(Standard)
+        .take(size)
+        .collect();
     Bytes::from(random_bytes)
 }
 

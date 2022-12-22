@@ -31,7 +31,7 @@ structopt = {version = "0.3.25", optional = true}
 [dev-dependencies]
 color-eyre = "0.5.11"
 ctor = "0.1.20"
-rand = "~0.7.3"
+rand = { version = "~0.7.3", features = [ "small_rng" ] }
 tiny-keccak = { version = "2.0.2", features = ["sha3"] }
 tokio = { version = "1.12.0", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.2.19"
