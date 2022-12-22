@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.34.1](https://github.com/maidsafe/qp2p/compare/v0.34.0...v0.34.1) (2022-12-22)
+
+
+### Bug Fixes
+
+* generate random Bytes faster ([31b63ac](https://github.com/maidsafe/qp2p/commit/31b63ac96b1b511eebd69859b89ad090bc54a08b))
+
 ## [0.34.0](https://github.com/maidsafe/qp2p/compare/v0.33.2...v0.34.0) (2022-12-19)
 
 
