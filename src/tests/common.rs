@@ -481,6 +481,7 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     Ok(())
 }
 
+#[tracing_test::traced_test]
 #[tokio::test(flavor = "multi_thread")]
 async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<()> {
     use futures::future;
