@@ -154,9 +154,11 @@ fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>)
             let uni = connection.accept_uni().await.map_err(ConnectionError::from);
             let mut recv = match uni {
                 Ok(recv) => recv,
-                // In case of a connection error, there is not much we can do.
                 Err(err) => {
-                    trace!("Connection {conn_id}: incoming uni-stream: ERROR: {err}");
+                    // In case of a connection error, there is not much we can do.
+                    trace!(
+                        "Connection {conn_id}: failure when awaiting incoming uni-streams: {err:?}"
+                    );
                     // WARNING: This might block!
                     let _ = tx.send(Err(RecvError::ConnectionLost(err))).await;
                     break;
@@ -204,9 +206,11 @@ fn listen_on_bi_streams(
             let bi = connection.accept_bi().await.map_err(ConnectionError::from);
             let (send, mut recv) = match bi {
                 Ok(recv) => recv,
-                // In case of a connection error, there is not much we can do.
                 Err(err) => {
-                    trace!("Connection {conn_id}: incoming bi-stream: ERROR: {err:?}");
+                    // In case of a connection error, there is not much we can do.
+                    trace!(
+                        "Connection {conn_id}: failure when awaiting incoming bi-streams: {err:?}"
+                    );
                     // WARNING: This might block!
                     let _ = tx.send(Err(RecvError::ConnectionLost(err))).await;
                     break;
@@ -248,9 +252,10 @@ fn listen_on_bi_streams(
                 };
 
                 // Pass the stream, so it can be used to respond to the user message.
-                let msg = msg.map(|msg| (msg, Some(SendStream::new(send, conn_id))));
+                let msg = msg.map(|msg| (msg, Some(SendStream::new(send, conn_id.clone()))));
                 // Send away the msg or error
                 let _ = tx.send(msg).await;
+                trace!("Incoming new msg on conn_id={conn_id} sent to user in upper layer");
             });
         }
 

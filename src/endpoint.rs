@@ -24,7 +24,7 @@ use tracing::{error, info, trace, warn};
 const ECHO_SERVICE_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Standard size of our channel bounds
-const STANDARD_CHANNEL_SIZE: usize = 10000;
+const STANDARD_CHANNEL_SIZE: usize = 10_000;
 
 /// Channel on which incoming connections are notified on
 #[derive(Debug)]
@@ -406,26 +406,25 @@ pub(super) fn listen_for_incoming_connections(
     connection_tx: mpsc::Sender<(Connection, ConnectionIncoming)>,
 ) {
     let _ = tokio::spawn(async move {
-        loop {
-            match quinn_endpoint.accept().await {
-                Some(quinn_conn) => match quinn_conn.await {
-                    Ok(connection) => {
-                        let connection = Connection::new(connection, quinn_endpoint.clone());
-                        let conn_id = connection.0.id();
-                        if connection_tx.send(connection).await.is_err() {
-                            warn!("Dropping incoming connection conn_id={conn_id}, because receiver was dropped");
-                        }
+        while let Some(quinn_conn) = quinn_endpoint.accept().await {
+            match quinn_conn.await {
+                Ok(connection) => {
+                    let connection = Connection::new(connection, quinn_endpoint.clone());
+                    let conn_id = connection.0.id();
+                    trace!("Incoming new connection conn_id={conn_id}");
+                    if connection_tx.send(connection).await.is_err() {
+                        warn!("Dropping incoming connection conn_id={conn_id}, because receiver was dropped");
                     }
-                    Err(err) => {
-                        warn!("An incoming connection failed because of: {:?}", err);
-                    }
-                },
-                None => {
-                    trace!("quinn::Incoming::next() returned None. There will be no more incoming connections");
-                    break;
+                }
+                Err(err) => {
+                    warn!("An incoming connection failed because of: {:?}", err);
                 }
             }
         }
+
+        trace!(
+            "quinn::Endpoint::accept() returned None. There will be no more incoming connections"
+        );
     });
 }
 
