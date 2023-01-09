@@ -394,15 +394,15 @@ impl RecvStream {
         }
     }
 
-    /// Get the next message sent by the peer over this stream.
-    pub async fn next(&mut self) -> Result<UsrMsgBytes, RecvError> {
-        match self.next_wire_msg().await? {
+    /// Parse the message sent by the peer over this stream.
+    pub async fn read(&mut self) -> Result<UsrMsgBytes, RecvError> {
+        match self.read_wire_msg().await? {
             WireMsg::UserMsg(msg) => Ok(msg),
             msg => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
         }
     }
 
-    pub(crate) async fn next_wire_msg(&mut self) -> Result<WireMsg, RecvError> {
+    pub(crate) async fn read_wire_msg(&mut self) -> Result<WireMsg, RecvError> {
         WireMsg::read_from_stream(&mut self.inner).await
     }
 }
@@ -625,7 +625,7 @@ mod tests {
             let (mut send_stream, mut recv_stream) = p1_conn.open_bi().await?;
             send_stream.send_wire_msg(WireMsg::EndpointEchoReq).await?;
 
-            let msg = timeout(recv_stream.next_wire_msg()).await??;
+            let msg = timeout(recv_stream.read_wire_msg()).await??;
             if let WireMsg::EndpointEchoResp(addr) = msg {
                 assert_eq!(addr, peer1.local_addr()?);
             } else {
@@ -687,7 +687,7 @@ mod tests {
                 bail!("did not receive incoming connection when one was expected");
             };
 
-            let msg = timeout(recv_stream.next_wire_msg()).await??;
+            let msg = timeout(recv_stream.read_wire_msg()).await??;
             if let WireMsg::EndpointVerificationResp(true) = msg {
             } else {
                 bail!(
@@ -702,7 +702,7 @@ mod tests {
                 .send_wire_msg(WireMsg::EndpointVerificationReq(local_addr()))
                 .await?;
 
-            let msg = timeout(recv_stream.next_wire_msg()).await??;
+            let msg = timeout(recv_stream.read_wire_msg()).await??;
             if let WireMsg::EndpointVerificationResp(false) = msg {
             } else {
                 bail!(
