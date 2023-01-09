@@ -229,7 +229,7 @@ impl Endpoint {
 
         send_stream.send_wire_msg(WireMsg::EndpointEchoReq).await?;
 
-        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv_stream.next_wire_msg()).await?? {
+        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv_stream.read_wire_msg()).await?? {
             WireMsg::EndpointEchoResp(_) => Ok(()),
             other => {
                 info!(
@@ -364,7 +364,7 @@ impl Endpoint {
 
         send.send_wire_msg(WireMsg::EndpointEchoReq).await?;
 
-        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
+        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.read_wire_msg()).await?? {
             WireMsg::EndpointEchoResp(addr) => Ok(addr),
             msg => Err(RpcError::EchoResponseMissing {
                 peer: contact.remote_address(),
@@ -384,7 +384,7 @@ impl Endpoint {
         send.send_wire_msg(WireMsg::EndpointVerificationReq(public_addr))
             .await?;
 
-        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.next_wire_msg()).await?? {
+        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.read_wire_msg()).await?? {
             WireMsg::EndpointVerificationResp(valid) => Ok(valid),
             msg => Err(RpcError::EndpointVerificationRespMissing {
                 peer: contact.remote_address(),
