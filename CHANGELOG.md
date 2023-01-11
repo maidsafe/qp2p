@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.34.4](https://github.com/maidsafe/qp2p/compare/v0.34.3...v0.34.4) (2023-01-11)
+
+
+### Bug Fixes
+
+* **test:** keep connection to prevent failure ([27535dc](https://github.com/maidsafe/qp2p/commit/27535dc7c82972678f9217b1f15377765985519c))
+
 ### [0.34.3](https://github.com/maidsafe/qp2p/compare/v0.34.2...v0.34.3) (2023-01-10)
 
 ### [0.34.2](https://github.com/maidsafe/qp2p/compare/v0.34.1...v0.34.2) (2022-12-27)
