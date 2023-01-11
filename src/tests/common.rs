@@ -51,11 +51,11 @@ async fn single_message() -> Result<()> {
         .await?;
 
     // Peer 1 gets an incoming connection
-    let mut peer1_incoming_messages = if let Ok(Some((connection, incoming))) =
+    let (mut peer1_incoming_messages, _conn) = if let Ok(Some((connection, incoming))) =
         peer1_incoming_connections.next().timeout().await
     {
         assert_eq!(connection.remote_address(), peer2_addr);
-        incoming
+        (incoming, connection)
     } else {
         bail!("No incoming connection");
     };
