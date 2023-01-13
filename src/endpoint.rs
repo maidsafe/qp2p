@@ -8,6 +8,7 @@
 // Software.
 
 use crate::connection::ConnectionIncoming;
+use crate::EndpointBuilder;
 
 use super::wire_msg::WireMsg;
 use super::{
@@ -47,9 +48,9 @@ impl IncomingConnections {
 /// Endpoint instance which can be used to communicate with peers.
 #[derive(Clone)]
 pub struct Endpoint {
-    inner: quinn::Endpoint,
-    local_addr: SocketAddr,
-    public_addr: Option<SocketAddr>,
+    pub(crate) inner: quinn::Endpoint,
+    pub(crate) local_addr: SocketAddr,
+    pub(crate) public_addr: Option<SocketAddr>,
 }
 
 impl std::fmt::Debug for Endpoint {
@@ -391,6 +392,11 @@ impl Endpoint {
                 response: Some(msg.to_string()),
             }),
         }
+    }
+
+    /// Builder to create an `Endpoint`.
+    pub fn builder() -> EndpointBuilder {
+        EndpointBuilder::default()
     }
 }
 
