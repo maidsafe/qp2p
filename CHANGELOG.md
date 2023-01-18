@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.34.5](https://github.com/maidsafe/qp2p/compare/v0.34.4...v0.34.5) (2023-01-18)
+
+
+### Features
+
+* implement builder for Endpoint ([e34471a](https://github.com/maidsafe/qp2p/commit/e34471a49604b64af986b0f91f627c05e02ecc5e))
+
 ### [0.34.4](https://github.com/maidsafe/qp2p/compare/v0.34.3...v0.34.4) (2023-01-11)
 
 
