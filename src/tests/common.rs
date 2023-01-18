@@ -8,6 +8,7 @@
 // Software.
 
 use super::{hash, local_addr, new_endpoint, new_endpoint_with_keepalive, random_msg};
+use crate::endpoint_builder::DEFAULT_IDLE_TIMEOUT;
 use crate::{SendError, WireMsg};
 use bytes::Bytes;
 use color_eyre::eyre::{bail, eyre, Report, Result};
@@ -780,8 +781,7 @@ async fn no_client_keep_alive_times_out() -> Result<()> {
     assert_eq!(&message[..], b"hello");
 
     // Idle timeout + 2 second wait
-    tokio::time::sleep(crate::config::DEFAULT_IDLE_TIMEOUT.saturating_add(Duration::from_secs(2)))
-        .await;
+    tokio::time::sleep(Duration::from_millis(DEFAULT_IDLE_TIMEOUT as u64 + 2000)).await;
 
     let err = server_to_client
         .send((Bytes::new(), Bytes::new(), b"world"[..].into()))
@@ -825,9 +825,8 @@ async fn client_keep_alive_works() -> Result<()> {
         .ok_or_else(|| eyre!("Did not receive expected message"))??;
     assert_eq!(&message[..], b"hello");
 
-    // Idle timeout and a 2 second wait
-    tokio::time::sleep(crate::config::DEFAULT_IDLE_TIMEOUT.saturating_add(Duration::from_secs(2)))
-        .await;
+    // Idle timeout + 2 second wait
+    tokio::time::sleep(Duration::from_millis(DEFAULT_IDLE_TIMEOUT as u64 + 2000)).await;
 
     server_to_client
         .send((Bytes::new(), Bytes::new(), b"world"[..].into()))

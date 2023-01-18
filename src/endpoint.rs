@@ -7,20 +7,13 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::connection::ConnectionIncoming;
 use crate::EndpointBuilder;
+use crate::{connection::ConnectionIncoming, endpoint_builder::SERVER_NAME};
 
-use super::{
-    config::{Config, InternalConfig, SERVER_NAME},
-    connection::Connection,
-    error::{ClientEndpointError, ConnectionError, EndpointError},
-};
+use super::{connection::Connection, error::ConnectionError};
 use std::net::SocketAddr;
 use tokio::sync::mpsc::{self, error::TryRecvError, Receiver};
 use tracing::{error, trace, warn};
-
-/// Standard size of our channel bounds
-const STANDARD_CHANNEL_SIZE: usize = 10_000;
 
 /// Channel on which incoming connections are notified on
 #[derive(Debug)]
@@ -57,62 +50,6 @@ impl std::fmt::Debug for Endpoint {
 }
 
 impl Endpoint {
-    /// Create a peer endpoint at the given address.
-    ///
-    /// A peer endpoint, unlike a [client](Self::new_client) endpoint, can receive incoming
-    /// connections.
-    pub async fn new_peer(
-        local_addr: impl Into<SocketAddr>,
-        config: Config,
-    ) -> Result<(Self, IncomingConnections), EndpointError> {
-        let config = InternalConfig::try_from_config(config)?;
-
-        let mut quinn_endpoint = quinn::Endpoint::server(config.server.clone(), local_addr.into())?;
-
-        // set client config used for any outgoing connections
-        quinn_endpoint.set_default_client_config(config.client);
-
-        // Get actual socket address.
-        let local_addr = quinn_endpoint.local_addr()?;
-
-        let endpoint = Self {
-            local_addr,
-            inner: quinn_endpoint,
-        };
-
-        let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
-
-        listen_for_incoming_connections(endpoint.inner.clone(), connection_tx);
-
-        Ok((endpoint, IncomingConnections(connection_rx)))
-    }
-
-    /// Create a client endpoint at the given address.
-    ///
-    /// A client endpoint cannot receive incoming connections, as such they also do not need to be
-    /// publicly reachable. They can still communicate over outgoing connections and receive
-    /// incoming streams, since QUIC allows for either side of a connection to initiate streams.
-    pub fn new_client(
-        local_addr: impl Into<SocketAddr>,
-        config: Config,
-    ) -> Result<Self, ClientEndpointError> {
-        let config = InternalConfig::try_from_config(config)?;
-
-        let mut quinn_endpoint = quinn::Endpoint::client(local_addr.into())?;
-
-        quinn_endpoint.set_default_client_config(config.client);
-
-        // retrieve the actual used socket addr
-        let local_addr = quinn_endpoint.local_addr()?;
-
-        let endpoint = Self {
-            local_addr,
-            inner: quinn_endpoint,
-        };
-
-        Ok(endpoint)
-    }
-
     /// Endpoint local address
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr

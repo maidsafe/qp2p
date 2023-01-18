@@ -33,7 +33,6 @@
     clippy::unicode_not_nfc
 )]
 
-pub mod config;
 mod connection;
 mod endpoint;
 mod endpoint_builder;
@@ -41,7 +40,6 @@ mod error;
 mod utils;
 mod wire_msg;
 
-pub use config::{Config, ConfigError};
 pub use connection::{Connection, ConnectionIncoming, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections};
 pub use endpoint_builder::EndpointBuilder;
