@@ -7,7 +7,7 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::{Config, Connection, ConnectionIncoming, Endpoint, IncomingConnections};
+use crate::{Config, Endpoint, IncomingConnections};
 use bytes::Bytes;
 use color_eyre::eyre::Result;
 use rand::{distributions::Standard, rngs, Rng, SeedableRng};
@@ -28,14 +28,9 @@ fn setup() {
 }
 
 /// Construct an `Endpoint` with sane defaults for testing.
-pub(crate) async fn new_endpoint_with_keepalive() -> Result<(
-    Endpoint,
-    IncomingConnections,
-    Option<(Connection, ConnectionIncoming)>,
-)> {
+pub(crate) async fn new_endpoint_with_keepalive() -> Result<(Endpoint, IncomingConnections)> {
     Ok(Endpoint::new_peer(
         local_addr(),
-        &[],
         Config {
             keep_alive_interval: Some(Duration::from_secs(5)),
             ..Config::default()
@@ -44,14 +39,9 @@ pub(crate) async fn new_endpoint_with_keepalive() -> Result<(
     .await?)
 }
 /// Construct an `Endpoint` with sane defaults for testing.
-pub(crate) async fn new_endpoint() -> Result<(
-    Endpoint,
-    IncomingConnections,
-    Option<(Connection, ConnectionIncoming)>,
-)> {
+pub(crate) async fn new_endpoint() -> Result<(Endpoint, IncomingConnections)> {
     Ok(Endpoint::new_peer(
         local_addr(),
-        &[],
         Config {
             ..Config::default()
         },

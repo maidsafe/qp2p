@@ -109,8 +109,6 @@ fn parse_millis(millis: &str) -> Result<Duration, std::num::ParseIntError> {
 pub(crate) struct InternalConfig {
     pub(crate) client: quinn::ClientConfig,
     pub(crate) server: quinn::ServerConfig,
-    pub(crate) external_port: Option<u16>,
-    pub(crate) external_ip: Option<IpAddr>,
 }
 
 impl InternalConfig {
@@ -152,12 +150,7 @@ impl InternalConfig {
         let mut client = quinn::ClientConfig::new(Arc::new(client_crypto));
         let _ = client.transport_config(transport);
 
-        Ok(Self {
-            client,
-            server,
-            external_port: config.external_port,
-            external_ip: config.external_ip,
-        })
+        Ok(Self { client, server })
     }
 
     fn new_transport_config(

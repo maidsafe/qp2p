@@ -16,7 +16,7 @@ use super::{
     connection::Connection,
     error::{ClientEndpointError, ConnectionError, EndpointError, RpcError},
 };
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use tokio::sync::mpsc::{self, error::TryRecvError, Receiver};
 use tokio::time::{timeout, Duration};
 use tracing::{error, info, trace, warn};
@@ -50,7 +50,6 @@ impl IncomingConnections {
 pub struct Endpoint {
     pub(crate) inner: quinn::Endpoint,
     pub(crate) local_addr: SocketAddr,
-    pub(crate) public_addr: Option<SocketAddr>,
 }
 
 impl std::fmt::Debug for Endpoint {
@@ -67,31 +66,10 @@ impl Endpoint {
     ///
     /// A peer endpoint, unlike a [client](Self::new_client) endpoint, can receive incoming
     /// connections.
-    ///
-    /// # Bootstrapping
-    ///
-    /// When given a non-empty list of `contacts`, this will attempt to 'bootstrap' against them.
-    /// This involves connecting to all the contacts concurrently and selecting the first
-    /// successfully connected peer (if any), whose `SocketAddr` will be returned.
-    ///
-    /// If bootstrapping is successful, the connected peer will be used to perform a reachability
-    /// check to validate that this endpoint can be reached at its
-    /// [`public_addr`](Self::public_addr).
-    ///
-    /// **Note:** if no contacts are given, the [`public_addr`](Self::public_addr) of the endpoint
-    /// will not have been validated to be reachable by anyone
     pub async fn new_peer(
         local_addr: impl Into<SocketAddr>,
-        contacts: &[SocketAddr],
         config: Config,
-    ) -> Result<
-        (
-            Self,
-            IncomingConnections,
-            Option<(Connection, ConnectionIncoming)>,
-        ),
-        EndpointError,
-    > {
+    ) -> Result<(Self, IncomingConnections), EndpointError> {
         let config = InternalConfig::try_from_config(config)?;
 
         let mut quinn_endpoint = quinn::Endpoint::server(config.server.clone(), local_addr.into())?;
@@ -102,39 +80,16 @@ impl Endpoint {
         // Get actual socket address.
         let local_addr = quinn_endpoint.local_addr()?;
 
-        let mut endpoint = Self {
+        let endpoint = Self {
             local_addr,
-            public_addr: None, // we'll set this below
             inner: quinn_endpoint,
         };
-
-        let contact = endpoint.connect_to_any(contacts).await;
-        let contact_ref = contact.as_ref().map(|c| &c.0);
-
-        let public_addr = endpoint
-            .resolve_public_addr(config.external_ip, config.external_port, contact_ref)
-            .await?;
-
-        endpoint.public_addr = Some(public_addr);
 
         let (connection_tx, connection_rx) = mpsc::channel(STANDARD_CHANNEL_SIZE);
 
         listen_for_incoming_connections(endpoint.inner.clone(), connection_tx);
 
-        if let Some(contact) = contact_ref {
-            let valid = endpoint
-                .endpoint_verification(contact, public_addr)
-                .await
-                .map_err(|error| EndpointError::EndpointVerification {
-                    peer: contact.remote_address(),
-                    error,
-                })?;
-            if !valid {
-                return Err(EndpointError::Unreachable { public_addr });
-            }
-        }
-
-        Ok((endpoint, IncomingConnections(connection_rx), contact))
+        Ok((endpoint, IncomingConnections(connection_rx)))
     }
 
     /// Create a client endpoint at the given address.
@@ -157,7 +112,6 @@ impl Endpoint {
 
         let endpoint = Self {
             local_addr,
-            public_addr: None, // we're a client
             inner: quinn_endpoint,
         };
 
@@ -167,11 +121,6 @@ impl Endpoint {
     /// Endpoint local address
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
-    }
-
-    /// Get the public address of the endpoint.
-    pub fn public_addr(&self) -> SocketAddr {
-        self.public_addr.unwrap_or(self.local_addr)
     }
 
     /// Connect to a peer.
@@ -282,118 +231,6 @@ impl Endpoint {
         Ok(new_conn)
     }
 
-    // set an appropriate public address based on `config` and a reachability check.
-    async fn resolve_public_addr(
-        &mut self,
-        config_external_ip: Option<IpAddr>,
-        config_external_port: Option<u16>,
-        contact: Option<&Connection>,
-    ) -> Result<SocketAddr, EndpointError> {
-        let mut public_addr = self.local_addr;
-
-        // get the IP seen for us by our contact
-        let visible_addr = if let Some(contact) = contact {
-            Some(self.endpoint_echo(contact).await.map_err(|error| {
-                EndpointError::EndpointEcho {
-                    peer: contact.remote_address(),
-                    error,
-                }
-            })?)
-        } else {
-            None
-        };
-
-        if let Some(external_ip) = config_external_ip {
-            // set the public IP based on config
-            public_addr.set_ip(external_ip);
-
-            if let Some(visible_addr) = visible_addr {
-                // if we set a different external IP than peers can see, we will have a bad time
-                if visible_addr.ip() != external_ip {
-                    warn!(
-                        "Configured external IP ({}) does not match that seen by peers ({})",
-                        external_ip,
-                        visible_addr.ip()
-                    );
-                }
-            }
-        } else if let Some(visible_addr) = visible_addr {
-            // set the public IP based on that seen by the peer
-            public_addr.set_ip(visible_addr.ip());
-        } else {
-            // we have no good source for public IP, leave it as the local IP and warn
-            warn!(
-                "Could not determine better public IP than local IP ({})",
-                public_addr.ip()
-            );
-        }
-
-        if let Some(external_port) = config_external_port {
-            // set the public port based on config
-            public_addr.set_port(external_port);
-
-            if let Some(visible_addr) = visible_addr {
-                // if we set a different external IP than peers can see, we will have a bad time
-                if visible_addr.port() != external_port {
-                    warn!(
-                        "Configured external port ({}) does not match that seen by peers ({})",
-                        external_port,
-                        visible_addr.port()
-                    );
-                }
-            }
-        } else if let Some(visible_addr) = visible_addr {
-            // set the public port based on that seen by the peer
-            public_addr.set_port(visible_addr.port());
-        } else {
-            // we have no good source for public port, leave it as the local port and warn
-            warn!(
-                "Could not determine better public port than local port ({})",
-                public_addr.port()
-            );
-        }
-
-        self.public_addr = Some(public_addr);
-
-        // Return the address so callers can avoid the optionality of `self.public_addr`
-        Ok(public_addr)
-    }
-
-    /// Perform the endpoint echo RPC with the given contact.
-    async fn endpoint_echo(&self, contact: &Connection) -> Result<SocketAddr, RpcError> {
-        let (mut send, mut recv) = contact.open_bi().await?;
-
-        send.send_wire_msg(WireMsg::EndpointEchoReq).await?;
-
-        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.read_wire_msg()).await?? {
-            WireMsg::EndpointEchoResp(addr) => Ok(addr),
-            msg => Err(RpcError::EchoResponseMissing {
-                peer: contact.remote_address(),
-                response: Some(msg.to_string()),
-            }),
-        }
-    }
-
-    /// Perform the endpoint verification RPC with the given peer.
-    async fn endpoint_verification(
-        &self,
-        contact: &Connection,
-        public_addr: SocketAddr,
-    ) -> Result<bool, RpcError> {
-        let (mut send, mut recv) = contact.open_bi().await?;
-
-        send.send_wire_msg(WireMsg::EndpointVerificationReq(public_addr))
-            .await?;
-
-        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv.read_wire_msg()).await?? {
-            WireMsg::EndpointVerificationResp(valid) => Ok(valid),
-            msg => Err(RpcError::EndpointVerificationRespMissing {
-                peer: contact.remote_address(),
-                response: Some(msg.to_string()),
-            }),
-        }
-    }
-
     /// Builder to create an `Endpoint`.
     pub fn builder() -> EndpointBuilder {
         EndpointBuilder::default()
@@ -425,86 +262,4 @@ pub(super) fn listen_for_incoming_connections(
             "quinn::Endpoint::accept() returned None. There will be no more incoming connections"
         );
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Endpoint;
-    use crate::{tests::local_addr, Config};
-    use color_eyre::eyre::Result;
-    use std::net::SocketAddr;
-
-    #[tokio::test]
-    async fn new_without_external_addr() -> Result<()> {
-        let (endpoint, _, _) = Endpoint::new_peer(
-            local_addr(),
-            &[],
-            Config {
-                external_ip: None,
-                external_port: None,
-                ..Default::default()
-            },
-        )
-        .await?;
-        assert_eq!(endpoint.public_addr(), endpoint.local_addr());
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn new_with_external_ip() -> Result<()> {
-        let (endpoint, _, _) = Endpoint::new_peer(
-            local_addr(),
-            &[],
-            Config {
-                external_ip: Some([123u8, 123, 123, 123].into()),
-                external_port: None,
-                ..Default::default()
-            },
-        )
-        .await?;
-        assert_eq!(
-            endpoint.public_addr(),
-            SocketAddr::new([123u8, 123, 123, 123].into(), endpoint.local_addr().port())
-        );
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn new_with_external_port() -> Result<()> {
-        let (endpoint, _, _) = Endpoint::new_peer(
-            local_addr(),
-            &[],
-            Config {
-                external_ip: None,
-                external_port: Some(123),
-                ..Default::default()
-            },
-        )
-        .await?;
-        assert_eq!(
-            endpoint.public_addr(),
-            SocketAddr::new(endpoint.local_addr().ip(), 123)
-        );
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn new_with_external_addr() -> Result<()> {
-        let (endpoint, _, _) = Endpoint::new_peer(
-            local_addr(),
-            &[],
-            Config {
-                external_ip: Some([123u8, 123, 123, 123].into()),
-                external_port: Some(123),
-                ..Default::default()
-            },
-        )
-        .await?;
-        assert_eq!(endpoint.public_addr(), "123.123.123.123:123".parse()?);
-
-        Ok(())
-    }
 }
