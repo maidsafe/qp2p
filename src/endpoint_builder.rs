@@ -38,23 +38,23 @@ impl EndpointBuilder {
     }
 
     /// Local address passed to [`quinn::Endpoint::client`].
-    pub fn addr(&mut self, addr: SocketAddr) -> &mut Self {
-        self.addr = addr;
+    pub fn addr(mut self, addr: impl Into<SocketAddr>) -> Self {
+        self.addr = addr.into();
         self
     }
 
-    /// Takes time in milliseconds.
+    /// Maximum time before timout. Takes time in milliseconds.
     ///
     /// Maps to [`quinn::TransportConfig::max_idle_timeout`].
-    pub fn max_idle_timeout(&mut self, to: Option<u32>) -> &mut Self {
-        self.max_idle_timeout = to.map(|v| IdleTimeout::from(VarInt::from_u32(v)));
+    pub fn idle_timeout(mut self, to: impl Into<Option<u32>>) -> Self {
+        self.max_idle_timeout = to.into().map(|v| IdleTimeout::from(VarInt::from_u32(v)));
         self
     }
 
     /// Takes time in milliseconds.
     ///
     /// Maps to [`quinn::TransportConfig::max_concurrent_bidi_streams`].
-    pub fn max_concurrent_bidi_streams(&mut self, max: u32) -> &mut Self {
+    pub fn max_concurrent_bidi_streams(mut self, max: u32) -> Self {
         self.max_concurrent_bidi_streams = VarInt::from_u32(max);
         self
     }
@@ -62,14 +62,14 @@ impl EndpointBuilder {
     /// Takes time in milliseconds.
     ///
     /// Maps to [`quinn::TransportConfig::max_concurrent_uni_streams`].
-    pub fn max_concurrent_uni_streams(&mut self, max: u32) -> &mut Self {
+    pub fn max_concurrent_uni_streams(mut self, max: u32) -> Self {
         self.max_concurrent_uni_streams = VarInt::from_u32(max);
         self
     }
 
     /// Maps to [`quinn::TransportConfig::keep_alive_interval`].
-    pub fn keep_alive_interval(&mut self, interval: Option<Duration>) -> &mut Self {
-        self.keep_alive_interval = interval;
+    pub fn keep_alive_interval(mut self, interval: impl Into<Option<Duration>>) -> Self {
+        self.keep_alive_interval = interval.into();
         self
     }
 
