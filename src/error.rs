@@ -7,7 +7,6 @@
 // specific language governing permissions and limitations relating to use of the SAFE Network
 // Software.
 
-use crate::config::ConfigError;
 use bytes::Bytes;
 use std::{fmt, io, net::SocketAddr};
 use thiserror::Error;
@@ -15,10 +14,6 @@ use thiserror::Error;
 /// Errors returned from [`Endpoint::new`](crate::Endpoint::new).
 #[derive(Debug, Error)]
 pub enum EndpointError {
-    /// There was a problem with the provided configuration.
-    #[error("There was a problem with the provided configuration")]
-    Config(#[from] ConfigError),
-
     /// Failed to bind UDP socket.
     #[error("Failed to bind UDP socket")]
     Socket(#[source] io::Error),
@@ -31,10 +26,6 @@ pub enum EndpointError {
 /// Errors returned by [`Endpoint::new_client`](crate::Endpoint::new_client).
 #[derive(Debug, Error)]
 pub enum ClientEndpointError {
-    /// There was a problem with the provided configuration.
-    #[error("There was a problem with the provided configuration")]
-    Config(#[from] ConfigError),
-
     /// Failed to bind UDP socket.
     #[error("Failed to bind UDP socket")]
     Socket(#[source] io::Error),

@@ -366,7 +366,7 @@ impl fmt::Debug for RecvStream {
 mod tests {
     use super::Connection;
     use crate::{
-        config::SERVER_NAME,
+        endpoint_builder::SERVER_NAME,
         error::{ConnectionError, SendError},
         tests::local_addr,
         wire_msg::WireMsg,

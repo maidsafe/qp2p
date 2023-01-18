@@ -5,6 +5,8 @@ use tokio::sync::mpsc;
 
 use crate::{endpoint::listen_for_incoming_connections, Endpoint, IncomingConnections};
 
+pub(crate) const DEFAULT_IDLE_TIMEOUT: u32 = 10_000; // 10s
+
 /// Standard size of our channel bounds
 const STANDARD_CHANNEL_SIZE: usize = 10_000;
 
@@ -22,7 +24,7 @@ impl Default for EndpointBuilder {
     fn default() -> Self {
         Self {
             addr: SocketAddr::from(([0, 0, 0, 0], 0)),
-            max_idle_timeout: Some(IdleTimeout::from(VarInt::from_u32(10_000))), // 10s
+            max_idle_timeout: Some(IdleTimeout::from(VarInt::from_u32(DEFAULT_IDLE_TIMEOUT))),
             max_concurrent_bidi_streams: 100u32.into(),
             max_concurrent_uni_streams: 100u32.into(),
             keep_alive_interval: None,
