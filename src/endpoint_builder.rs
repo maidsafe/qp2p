@@ -86,7 +86,6 @@ impl EndpointBuilder {
         Ok((
             Endpoint {
                 local_addr: self.addr,
-                public_addr: None,
                 inner: endpoint,
             },
             IncomingConnections(connection_rx),
@@ -102,7 +101,6 @@ impl EndpointBuilder {
 
         Ok(Endpoint {
             local_addr: self.addr,
-            public_addr: None,
             inner: endpoint,
         })
     }

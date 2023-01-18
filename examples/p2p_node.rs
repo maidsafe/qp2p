@@ -35,9 +35,8 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     // create an endpoint for us to listen on and send from.
-    let (node, mut incoming_conns, _contact) = Endpoint::new_peer(
+    let (node, mut incoming_conns) = Endpoint::new_peer(
         SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
-        &[],
         Config {
             idle_timeout: Duration::from_secs(60 * 60).into(), // 1 hour idle timeout.
             ..Default::default()
@@ -67,7 +66,7 @@ async fn main() -> Result<()> {
     }
 
     println!("\n---");
-    println!("Listening on: {:?}", node.public_addr());
+    println!("Listening on: {:?}", node.local_addr());
     println!("---\n");
 
     // loop over incoming connections
