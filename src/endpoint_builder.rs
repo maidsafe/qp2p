@@ -85,7 +85,7 @@ impl EndpointBuilder {
 
         Ok((
             Endpoint {
-                local_addr: self.addr,
+                local_addr: endpoint.local_addr()?,
                 inner: endpoint,
             },
             IncomingConnections(connection_rx),
@@ -100,7 +100,7 @@ impl EndpointBuilder {
         endpoint.set_default_client_config(cfg_cli);
 
         Ok(Endpoint {
-            local_addr: self.addr,
+            local_addr: endpoint.local_addr()?,
             inner: endpoint,
         })
     }
