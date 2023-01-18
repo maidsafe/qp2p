@@ -116,7 +116,9 @@ impl EndpointBuilder {
         config
     }
 
-    fn config(&self) -> Result<(quinn::ServerConfig, quinn::ClientConfig), EndpointError> {
+    pub(crate) fn config(
+        &self,
+    ) -> Result<(quinn::ServerConfig, quinn::ClientConfig), EndpointError> {
         let transport = Arc::new(self.transport_config());
 
         let (mut server, mut client) = config().map_err(EndpointError::Certificate)?;

@@ -366,7 +366,7 @@ impl fmt::Debug for RecvStream {
 mod tests {
     use super::Connection;
     use crate::{
-        config::{Config, InternalConfig, SERVER_NAME},
+        config::SERVER_NAME,
         error::{ConnectionError, SendError},
         tests::local_addr,
         wire_msg::WireMsg,
@@ -379,12 +379,12 @@ mod tests {
     #[tokio::test]
     #[tracing_test::traced_test]
     async fn basic_usage() -> Result<()> {
-        let config = InternalConfig::try_from_config(Default::default())?;
+        let (cfg_srv, cfg_cli) = crate::Endpoint::builder().config()?;
 
-        let mut peer1 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
-        peer1.set_default_client_config(config.client);
+        let mut peer1 = quinn::Endpoint::server(cfg_srv.clone(), local_addr())?;
+        peer1.set_default_client_config(cfg_cli);
 
-        let peer2 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
+        let peer2 = quinn::Endpoint::server(cfg_srv, local_addr())?;
 
         {
             let (p1_conn, mut p1_incoming) =
@@ -434,16 +434,15 @@ mod tests {
 
     #[tokio::test]
     async fn connection_loss() -> Result<()> {
-        let config = InternalConfig::try_from_config(Config {
+        let (cfg_srv, cfg_cli) = crate::Endpoint::builder()
             // set a very low idle timeout
-            idle_timeout: Some(Duration::from_secs(1)),
-            ..Default::default()
-        })?;
+            .idle_timeout(1000)
+            .config()?;
 
-        let mut peer1 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
-        peer1.set_default_client_config(config.client);
+        let mut peer1 = quinn::Endpoint::server(cfg_srv.clone(), local_addr())?;
+        peer1.set_default_client_config(cfg_cli);
 
-        let peer2 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
+        let peer2 = quinn::Endpoint::server(cfg_srv, local_addr())?;
 
         // open a connection between the two peers
         let (p1_conn, _) = Connection::new(peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?);
