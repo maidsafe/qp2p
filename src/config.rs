@@ -13,7 +13,7 @@ use quinn::{IdleTimeout, VarInt};
 
 use rustls::{Certificate, ClientConfig, ServerName};
 use serde::{Deserialize, Serialize};
-use std::{net::IpAddr, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 #[cfg(feature = "structopt")]
 use structopt::StructOpt;
@@ -60,17 +60,6 @@ impl From<rcgen::RcgenError> for ConfigError {
 #[cfg_attr(feature = "structopt", derive(StructOpt))]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Config {
-    /// External port number assigned to the socket address of the program.
-    /// If this is provided, QP2p considers that the local port provided has been mapped to the
-    /// provided external port number.
-    #[cfg_attr(feature = "structopt", structopt(long))]
-    pub external_port: Option<u16>,
-
-    /// External IP address of the computer on the WAN. This field is mandatory if the node is the genesis node.
-    /// In case of non-genesis nodes, the external IP address will be resolved using the Echo service.
-    #[cfg_attr(feature = "structopt", structopt(long))]
-    pub external_ip: Option<IpAddr>,
-
     /// How long to wait to hear from a peer before timing out a connection.
     ///
     /// In the absence of any keep-alive messages, connections will be closed if they remain idle
