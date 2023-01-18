@@ -10,19 +10,14 @@
 use crate::connection::ConnectionIncoming;
 use crate::EndpointBuilder;
 
-use super::wire_msg::WireMsg;
 use super::{
     config::{Config, InternalConfig, SERVER_NAME},
     connection::Connection,
-    error::{ClientEndpointError, ConnectionError, EndpointError, RpcError},
+    error::{ClientEndpointError, ConnectionError, EndpointError},
 };
 use std::net::SocketAddr;
 use tokio::sync::mpsc::{self, error::TryRecvError, Receiver};
-use tokio::time::{timeout, Duration};
-use tracing::{error, info, trace, warn};
-
-// Number of seconds before timing out the echo service query.
-const ECHO_SERVICE_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
+use tracing::{error, trace, warn};
 
 /// Standard size of our channel bounds
 const STANDARD_CHANNEL_SIZE: usize = 10_000;
@@ -168,29 +163,6 @@ impl Endpoint {
         }
     }
 
-    /// Verify if an address is publicly reachable. This will attempt to create
-    /// a new connection and use it to exchange a message and verify that the node
-    /// can be reached.
-    pub async fn is_reachable(&self, peer_addr: &SocketAddr) -> Result<(), RpcError> {
-        trace!("Checking is reachable");
-
-        let (connection, _) = self.new_connection(peer_addr).await?;
-        let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
-
-        send_stream.send_wire_msg(WireMsg::EndpointEchoReq).await?;
-
-        match timeout(ECHO_SERVICE_QUERY_TIMEOUT, recv_stream.read_wire_msg()).await?? {
-            WireMsg::EndpointEchoResp(_) => Ok(()),
-            other => {
-                info!(
-                    "Unexpected message type when verifying reachability: {}",
-                    &other
-                );
-                Ok(())
-            }
-        }
-    }
-
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
     pub fn close(&self) {
         trace!("Closing endpoint");
@@ -218,7 +190,7 @@ impl Endpoint {
 
         let new_conn = match connecting.await {
             Ok(new_conn) => {
-                let connection = Connection::new(new_conn, self.inner.clone());
+                let connection = Connection::new(new_conn);
                 trace!(
                     "Successfully connected to peer {node_addr}, conn_id={}",
                     connection.0.id()
@@ -245,7 +217,7 @@ pub(super) fn listen_for_incoming_connections(
         while let Some(quinn_conn) = quinn_endpoint.accept().await {
             match quinn_conn.await {
                 Ok(connection) => {
-                    let connection = Connection::new(connection, quinn_endpoint.clone());
+                    let connection = Connection::new(connection);
                     let conn_id = connection.0.id();
                     trace!("Incoming new connection conn_id={conn_id}");
                     if connection_tx.send(connection).await.is_err() {

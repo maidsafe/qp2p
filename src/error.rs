@@ -23,35 +23,6 @@ pub enum EndpointError {
     #[error("Failed to bind UDP socket")]
     Socket(#[source] io::Error),
 
-    /// Failed to query our public address from peer.
-    #[error("Failed to query our public address from peer {peer}")]
-    EndpointEcho {
-        /// The peer we tried to query.
-        peer: SocketAddr,
-
-        /// The error that occurred.
-        #[source]
-        error: RpcError,
-    },
-
-    /// Failed to verify our public address with peer.
-    #[error("Failed to verify our public address with peer {peer}")]
-    EndpointVerification {
-        /// The peer we asked to verify our public address.
-        peer: SocketAddr,
-
-        /// The error that occurred.
-        #[source]
-        error: RpcError,
-    },
-
-    /// Our determined public address is not reachable.
-    #[error("Our determined public address ({public_addr}) is not reachable")]
-    Unreachable {
-        /// The public address we thought we should have.
-        public_addr: SocketAddr,
-    },
-
     /// Io error.
     #[error(transparent)]
     IoError(#[from] io::Error),
@@ -266,24 +237,6 @@ pub enum RpcError {
     /// Failed to receive the response.
     #[error("Failed to receive the response")]
     Recv(#[from] RecvError),
-
-    /// Endpoint echo response was not received
-    #[error("Endpoint echo response from {peer} was not received. Response received instead: {response:?}")]
-    EchoResponseMissing {
-        /// Peer the response was expected from
-        peer: SocketAddr,
-        /// Response received instead, in any
-        response: Option<String>,
-    },
-
-    /// Endpoint verification response was not received
-    #[error("Endpoint verification response from {peer} was not received. Response received instead: {response:?}")]
-    EndpointVerificationRespMissing {
-        /// Peer the response was expected from
-        peer: SocketAddr,
-        /// Response received instead, in any
-        response: Option<String>,
-    },
 }
 
 // Treating `ConnectionError`s as happening on send works because we would only encounter them

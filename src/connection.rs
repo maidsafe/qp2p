@@ -1,28 +1,22 @@
 //! A message-oriented API wrapping the underlying QUIC library (`quinn`).
 
 use crate::{
-    config::SERVER_NAME,
-    error::{ConnectionError, RecvError, RpcError, SendError, StreamError},
-    wire_msg::{UsrMsgBytes, WireMsg},
+    error::{ConnectionError, RecvError, SendError, StreamError},
+    wire_msg::WireMsg,
+    UsrMsgBytes,
 };
 use quinn::VarInt;
-use std::{fmt, net::SocketAddr, time::Duration};
-use tokio::{
-    sync::mpsc::{Receiver, Sender},
-    time::timeout,
-};
+use std::{fmt, net::SocketAddr};
+use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{trace, warn};
 
 // TODO: this seems arbitrary - it may need tuned or made configurable.
 const INCOMING_MESSAGE_BUFFER_LEN: usize = 10_000;
 
-// TODO: this seems arbitrary - it may need tuned or made configurable.
-const ENDPOINT_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(30);
-
 // Error reason for closing a connection when triggered manually by qp2p apis
 const QP2P_CLOSED_CONNECTION: &str = "The connection was closed intentionally by qp2p.";
 
-type IncomingMsg = Result<(UsrMsgBytes, Option<SendStream>), RecvError>;
+type IncomingMsg = Result<(WireMsg, Option<SendStream>), RecvError>;
 
 /// The sending API for a connection.
 pub struct Connection {
@@ -39,13 +33,10 @@ impl Drop for Connection {
 }
 
 impl Connection {
-    pub(crate) fn new(
-        connection: quinn::Connection,
-        endpoint: quinn::Endpoint,
-    ) -> (Connection, ConnectionIncoming) {
+    pub(crate) fn new(connection: quinn::Connection) -> (Connection, ConnectionIncoming) {
         let (tx, rx) = tokio::sync::mpsc::channel(INCOMING_MESSAGE_BUFFER_LEN);
         listen_on_uni_streams(connection.clone(), tx.clone());
-        listen_on_bi_streams(connection.clone(), endpoint, tx);
+        listen_on_bi_streams(connection.clone(), tx);
 
         (Self { inner: connection }, ConnectionIncoming(rx))
     }
@@ -171,13 +162,6 @@ fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>)
             // Make sure we are able to process multiple streams in parallel.
             let _ = tokio::spawn(async move {
                 let msg = WireMsg::read_from_stream(&mut recv).await;
-                let msg = match msg {
-                    Ok(msg) => match msg {
-                        WireMsg::UserMsg(msg) => Ok(msg),
-                        _ => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
-                    },
-                    Err(err) => Err(err),
-                };
 
                 // Send away the msg or error
                 let _ = tx.send(msg.map(|r| (r, None))).await;
@@ -189,11 +173,7 @@ fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>)
 }
 
 #[allow(clippy::type_complexity)]
-fn listen_on_bi_streams(
-    connection: quinn::Connection,
-    endpoint: quinn::Endpoint,
-    tx: Sender<IncomingMsg>,
-) {
+fn listen_on_bi_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>) {
     let conn_id = build_conn_id(&connection);
 
     let _ = tokio::spawn(async move {
@@ -217,35 +197,11 @@ fn listen_on_bi_streams(
             trace!("Connection {conn_id}: incoming bi-stream accepted");
 
             let tx = tx.clone();
-            let endpoint = endpoint.clone();
-            let addr = connection.remote_address();
             let conn_id = conn_id.clone();
 
             // Make sure we are able to process multiple streams in parallel.
             let _ = tokio::spawn(async move {
                 let msg = WireMsg::read_from_stream(&mut recv).await;
-                let msg = match msg {
-                    Ok(WireMsg::UserMsg(msg)) => Ok(msg),
-                    Ok(WireMsg::EndpointEchoReq) => {
-                        if let Err(error) = handle_endpoint_echo(send, addr).await {
-                            // TODO: consider more carefully how to handle this
-                            warn!("Error handling endpoint echo request on conn_id {conn_id}: {error}");
-                        }
-                        return;
-                    }
-                    Ok(WireMsg::EndpointVerificationReq(addr)) => {
-                        if let Err(error) =
-                            handle_endpoint_verification(&endpoint, send, addr).await
-                        {
-                            // TODO: consider more carefully how to handle this
-                            warn!("Error handling endpoint verification request on conn_id {conn_id}: {error}");
-                        }
-                        return;
-                    }
-                    // We do not expect other types.
-                    Ok(msg) => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
-                    Err(err) => Err(err),
-                };
 
                 // Pass the stream, so it can be used to respond to the user message.
                 let msg = msg.map(|msg| (msg, Some(SendStream::new(send, conn_id.clone()))));
@@ -298,7 +254,7 @@ impl fmt::Display for StreamId {
 pub struct ConnectionIncoming(Receiver<IncomingMsg>);
 impl ConnectionIncoming {
     /// Get the next message sent by the peer, over any stream.
-    pub async fn next(&mut self) -> Result<Option<UsrMsgBytes>, RecvError> {
+    pub async fn next(&mut self) -> Result<Option<WireMsg>, RecvError> {
         if let Some((bytes, _opt)) = self.next_with_stream().await? {
             Ok(Some(bytes))
         } else {
@@ -309,7 +265,7 @@ impl ConnectionIncoming {
     /// Get the next message sent by the peer, over any stream along with the stream to respond with.
     pub async fn next_with_stream(
         &mut self,
-    ) -> Result<Option<(UsrMsgBytes, Option<SendStream>)>, RecvError> {
+    ) -> Result<Option<(WireMsg, Option<SendStream>)>, RecvError> {
         self.0.recv().await.transpose()
     }
 }
@@ -351,7 +307,7 @@ impl SendStream {
     ///
     /// Messages sent over the stream will arrive at the peer in the order they were sent.
     pub async fn send_user_msg(&mut self, user_msg_bytes: UsrMsgBytes) -> Result<(), SendError> {
-        WireMsg::UserMsg(user_msg_bytes)
+        WireMsg(user_msg_bytes)
             .write_to_stream(&mut self.inner)
             .await
     }
@@ -362,10 +318,6 @@ impl SendStream {
     pub async fn finish(&mut self) -> Result<(), SendError> {
         self.inner.finish().await?;
         Ok(())
-    }
-
-    pub(crate) async fn send_wire_msg(&mut self, msg: WireMsg) -> Result<(), SendError> {
-        msg.write_to_stream(&mut self.inner).await
     }
 }
 
@@ -395,11 +347,8 @@ impl RecvStream {
     }
 
     /// Parse the message sent by the peer over this stream.
-    pub async fn read(&mut self) -> Result<UsrMsgBytes, RecvError> {
-        match self.read_wire_msg().await? {
-            WireMsg::UserMsg(msg) => Ok(msg),
-            msg => Err(RecvError::UnexpectedMsgReceived(msg.to_string())),
-        }
+    pub async fn read(&mut self) -> Result<WireMsg, RecvError> {
+        self.read_wire_msg().await
     }
 
     pub(crate) async fn read_wire_msg(&mut self) -> Result<WireMsg, RecvError> {
@@ -411,66 +360,6 @@ impl fmt::Debug for RecvStream {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("RecvStream").finish_non_exhaustive()
     }
-}
-
-async fn handle_endpoint_echo(
-    mut send_stream: quinn::SendStream,
-    peer_addr: SocketAddr,
-) -> Result<(), SendError> {
-    trace!("Replying to EndpointEchoReq from {peer_addr}");
-    WireMsg::EndpointEchoResp(peer_addr)
-        .write_to_stream(&mut send_stream)
-        .await
-}
-
-async fn handle_endpoint_verification(
-    endpoint: &quinn::Endpoint,
-    mut send_stream: quinn::SendStream,
-    addr: SocketAddr,
-) -> Result<(), SendError> {
-    trace!("Performing endpoint verification for {addr}");
-
-    let verify = async {
-        trace!("EndpointVerificationReq: opening new connection to {addr}");
-        let connection = endpoint
-            .connect(addr, SERVER_NAME)
-            .map_err(ConnectionError::from)?
-            .await?;
-
-        let (mut send_stream, mut recv_stream) = connection.open_bi().await?;
-        trace!(
-            "EndpointVerificationReq: sending EndpointEchoReq to {addr} over connection {}",
-            connection.stable_id()
-        );
-        WireMsg::EndpointEchoReq
-            .write_to_stream(&mut send_stream)
-            .await?;
-
-        match WireMsg::read_from_stream(&mut recv_stream).await? {
-            WireMsg::EndpointEchoResp(_) => {
-                trace!("EndpointVerificationReq: Received EndpointEchoResp from {addr}");
-                Ok(())
-            }
-            msg => Err(RpcError::EchoResponseMissing {
-                peer: addr,
-                response: Some(msg.to_string()),
-            }),
-        }
-    };
-
-    let verified: Result<_, RpcError> = timeout(ENDPOINT_VERIFICATION_TIMEOUT, verify)
-        .await
-        .unwrap_or_else(|error| Err(error.into()));
-
-    if let Err(error) = &verified {
-        warn!("Endpoint verification for {addr} failed: {error:?}");
-    }
-
-    WireMsg::EndpointVerificationResp(verified.is_ok())
-        .write_to_stream(&mut send_stream)
-        .await?;
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -498,17 +387,15 @@ mod tests {
         let peer2 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
 
         {
-            let (p1_conn, mut p1_incoming) = Connection::new(
-                peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
-                peer1.clone(),
-            );
+            let (p1_conn, mut p1_incoming) =
+                Connection::new(peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?);
 
             let (p2_conn, mut p2_incoming) = if let Some(connection) =
                 timeout(OptionFuture::from(peer2.accept().await))
                     .await?
                     .and_then(|c| c.ok())
             {
-                Connection::new(connection, peer2.clone())
+                Connection::new(connection)
             } else {
                 bail!("did not receive incoming connection when one was expected");
             };
@@ -519,7 +406,7 @@ mod tests {
                 .send_user_msg((Bytes::new(), Bytes::new(), Bytes::from_static(b"hello")))
                 .await?;
 
-            if let Ok(Some((_, _, msg))) = timeout(p2_incoming.next()).await? {
+            if let Ok(Some(WireMsg((_, _, msg)))) = timeout(p2_incoming.next()).await? {
                 assert_eq!(&msg[..], b"hello");
             } else {
                 bail!("did not receive message when one was expected");
@@ -531,7 +418,7 @@ mod tests {
                 .send_user_msg((Bytes::new(), Bytes::new(), Bytes::from_static(b"world")))
                 .await?;
 
-            if let Ok(Some((_, _, msg))) = timeout(p1_incoming.next()).await? {
+            if let Ok(Some(WireMsg((_, _, msg)))) = timeout(p1_incoming.next()).await? {
                 assert_eq!(&msg[..], b"world");
             } else {
                 bail!("did not receive message when one was expected");
@@ -559,17 +446,14 @@ mod tests {
         let peer2 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
 
         // open a connection between the two peers
-        let (p1_conn, _) = Connection::new(
-            peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
-            peer1.clone(),
-        );
+        let (p1_conn, _) = Connection::new(peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?);
 
         let (_p2_conn, mut p2_incoming) = if let Some(connection) =
             timeout(OptionFuture::from(peer2.accept().await))
                 .await?
                 .and_then(|c| c.ok())
         {
-            Connection::new(connection, peer2.clone())
+            Connection::new(connection)
         } else {
             bail!("did not receive incoming connection when one was expected");
         };
@@ -591,130 +475,6 @@ mod tests {
             Err(_) => {}
             res => bail!("unexpected recv result: {:?}", res),
         }
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[tracing_test::traced_test]
-    async fn test_endpoint_echo() -> Result<()> {
-        let config = InternalConfig::try_from_config(Config::default())?;
-
-        let mut peer1 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
-        peer1.set_default_client_config(config.client);
-
-        let peer2 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
-
-        {
-            let (p1_conn, _) = Connection::new(
-                peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
-                peer1.clone(),
-            );
-
-            // we need to accept the connection on p2, or the message won't be processed
-            let _p2_handle = if let Some(connection) =
-                timeout(OptionFuture::from(peer2.accept().await))
-                    .await?
-                    .and_then(|c| c.ok())
-            {
-                Connection::new(connection, peer2.clone())
-            } else {
-                bail!("did not receive incoming connection when one was expected");
-            };
-
-            let (mut send_stream, mut recv_stream) = p1_conn.open_bi().await?;
-            send_stream.send_wire_msg(WireMsg::EndpointEchoReq).await?;
-
-            let msg = timeout(recv_stream.read_wire_msg()).await??;
-            if let WireMsg::EndpointEchoResp(addr) = msg {
-                assert_eq!(addr, peer1.local_addr()?);
-            } else {
-                bail!(
-                    "received unexpected message when EndpointEchoResp was expected: {:?}",
-                    msg
-                );
-            }
-        }
-
-        // check the connections were shutdown on drop
-        timeout(peer1.wait_idle()).await?;
-        timeout(peer2.wait_idle()).await?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[tracing_test::traced_test]
-    async fn endpoint_verification() -> Result<()> {
-        let config = InternalConfig::try_from_config(Default::default())?;
-
-        let mut peer1 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
-        peer1.set_default_client_config(config.client.clone());
-
-        let mut peer2 = quinn::Endpoint::server(config.server.clone(), local_addr())?;
-        peer2.set_default_client_config(config.client);
-
-        {
-            let (p1_conn, _) = Connection::new(
-                peer1.connect(peer2.local_addr()?, SERVER_NAME)?.await?,
-                peer1.clone(),
-            );
-
-            // we need to accept the connection on p2, or the message won't be processed
-            let _p2_handle = if let Some(connection) =
-                timeout(OptionFuture::from(peer2.accept().await))
-                    .await?
-                    .and_then(|c| c.ok())
-            {
-                Connection::new(connection, peer2.clone())
-            } else {
-                bail!("did not receive incoming connection when one was expected");
-            };
-
-            let (mut send_stream, mut recv_stream) = p1_conn.open_bi().await?;
-            send_stream
-                .send_wire_msg(WireMsg::EndpointVerificationReq(peer1.local_addr()?))
-                .await?;
-
-            // we need to accept the connection on p1, or the message won't be processed
-            let _p1_handle = if let Some(connection) =
-                timeout(OptionFuture::from(peer1.accept().await))
-                    .await?
-                    .and_then(|c| c.ok())
-            {
-                Connection::new(connection, peer1.clone())
-            } else {
-                bail!("did not receive incoming connection when one was expected");
-            };
-
-            let msg = timeout(recv_stream.read_wire_msg()).await??;
-            if let WireMsg::EndpointVerificationResp(true) = msg {
-            } else {
-                bail!(
-                        "received unexpected message when EndpointVerificationResp(true) was expected: {:?}",
-                        msg
-                    );
-            }
-
-            // only one msg per bi-stream is supported, let's create a new bi-stream for this test
-            let (mut send_stream, mut recv_stream) = p1_conn.open_bi().await?;
-            send_stream
-                .send_wire_msg(WireMsg::EndpointVerificationReq(local_addr()))
-                .await?;
-
-            let msg = timeout(recv_stream.read_wire_msg()).await??;
-            if let WireMsg::EndpointVerificationResp(false) = msg {
-            } else {
-                bail!(
-                        "received unexpected message when EndpointVerificationResp(false) was expected: {:?}",
-                        msg
-                    );
-            }
-        }
-
-        // check the connections were shutdown on drop
-        timeout(peer1.wait_idle()).await?;
-        timeout(peer2.wait_idle()).await?;
 
         Ok(())
     }

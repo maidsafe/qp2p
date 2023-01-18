@@ -15,29 +15,20 @@ use bytes::{Bytes, BytesMut};
 use quinn::VarInt;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
-use std::{fmt, net::SocketAddr};
+use std::fmt;
 
-const MSG_HEADER_LEN: usize = 17;
+const MSG_HEADER_LEN: usize = 16;
 const MSG_PROTOCOL_VERSION: u16 = 0x0002;
+
+/// Final type serialised and sent on the wire by `QuicP2p`
+/// The message bytes that comprise the message,
+/// These are (header, dst, payload) bytes to be passed to qp2p
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct WireMsg(pub UsrMsgBytes);
 
 /// The message bytes that comprise the message,
 /// These are (header, dst, payload) bytes to be passed to qp2p
 pub type UsrMsgBytes = (Bytes, Bytes, Bytes);
-
-/// Final type serialised and sent on the wire by `QuicP2p`
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub(crate) enum WireMsg {
-    EndpointEchoReq,
-    EndpointEchoResp(SocketAddr),
-    EndpointVerificationReq(SocketAddr),
-    EndpointVerificationResp(bool),
-    /// Msg Header, Dst and Payload bytes
-    /// Reagularly we send the same header and payload, with a new dst
-    UserMsg(UsrMsgBytes),
-}
-
-const USER_MSG_FLAG: u8 = 0x00;
-const ECHO_SRVC_MSG_FLAG: u8 = 0x01;
 
 impl WireMsg {
     // Read a message's bytes from the provided stream
@@ -66,8 +57,6 @@ impl WireMsg {
         dst_data.resize(dst_length, 0);
         payload_data.resize(payload_length, 0);
 
-        let msg_flag = msg_header.usr_msg_flag();
-
         // fill up our data vecs from the stream
         recv.read_exact(&mut header_data).await?;
         recv.read_exact(&mut dst_data).await?;
@@ -78,16 +67,12 @@ impl WireMsg {
 
         if payload_data.is_empty() {
             Err(RecvError::EmptyMsgPayload)
-        } else if msg_flag == USER_MSG_FLAG {
-            Ok(WireMsg::UserMsg((
+        } else {
+            Ok(WireMsg((
                 header_data.freeze(),
                 dst_data.freeze(),
                 payload_data.freeze(),
             )))
-        } else if msg_flag == ECHO_SRVC_MSG_FLAG {
-            Ok(bincode::deserialize(&payload_data)?)
-        } else {
-            Err(RecvError::InvalidMsgTypeFlag(msg_flag))
         }
     }
 
@@ -97,27 +82,9 @@ impl WireMsg {
         send_stream: &mut quinn::SendStream,
     ) -> Result<(), SendError> {
         // Let's generate the message bytes
-        let ((msg_head, msg_dst, msg_payload), msg_flag) = match self {
-            WireMsg::UserMsg((ref header, ref dst, ref payload)) => (
-                (header.clone(), dst.clone(), payload.clone()),
-                USER_MSG_FLAG,
-            ),
-            _ => (
-                (
-                    BytesMut::zeroed(4).freeze(), // at least 4 bytes reserved here to aid deserialisation
-                    BytesMut::zeroed(4).freeze(), // at least 4 bytes reserved here to aid deserialisation
-                    Bytes::from(bincode::serialize(&self)?),
-                ),
-                ECHO_SRVC_MSG_FLAG,
-            ),
-        };
+        let WireMsg((ref msg_head, ref msg_dst, ref msg_payload)) = self;
 
-        let msg_header = MsgHeader::new(
-            msg_head.clone(),
-            msg_dst.clone(),
-            msg_payload.clone(),
-            msg_flag,
-        )?;
+        let msg_header = MsgHeader::new(msg_head.clone(), msg_dst.clone(), msg_payload.clone())?;
 
         let header_bytes = msg_header.to_bytes();
 
@@ -125,9 +92,9 @@ impl WireMsg {
         send_stream.write_all(&header_bytes).await?;
 
         // Send message bytes over QUIC
-        send_stream.write_all(&msg_head).await?;
-        send_stream.write_all(&msg_dst).await?;
-        send_stream.write_all(&msg_payload).await?;
+        send_stream.write_all(msg_head).await?;
+        send_stream.write_all(msg_dst).await?;
+        send_stream.write_all(msg_payload).await?;
 
         Ok(())
     }
@@ -135,27 +102,13 @@ impl WireMsg {
 
 impl fmt::Display for WireMsg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            WireMsg::UserMsg((ref h, ref d, ref p)) => {
-                write!(
-                    f,
-                    "WireMsg::UserMsg({} {} {})",
-                    utils::bin_data_format(h),
-                    utils::bin_data_format(d),
-                    utils::bin_data_format(p)
-                )
-            }
-            WireMsg::EndpointEchoReq => write!(f, "WireMsg::EndpointEchoReq"),
-            WireMsg::EndpointEchoResp(ref sa) => write!(f, "WireMsg::EndpointEchoResp({})", sa),
-            WireMsg::EndpointVerificationReq(ref sa) => {
-                write!(f, "WireMsg::EndpointVerificationReq({})", sa)
-            }
-            WireMsg::EndpointVerificationResp(valid) => write!(
-                f,
-                "WireMsg::EndpointEchoResp({})",
-                if valid { "Valid" } else { "Invalid" }
-            ),
-        }
+        write!(
+            f,
+            "WireMsg({} {} {})",
+            utils::bin_data_format(&self.0 .0),
+            utils::bin_data_format(&self.0 .1),
+            utils::bin_data_format(&self.0 .2)
+        )
     }
 }
 
@@ -169,18 +122,12 @@ struct MsgHeader {
     user_header_len: u32,
     user_dst_len: u32,
     payload_len: u32,
-    usr_msg_flag: u8,
     #[allow(unused)]
     reserved: [u8; 2],
 }
 
 impl MsgHeader {
-    fn new(
-        user_header: Bytes,
-        user_dst: Bytes,
-        payload: Bytes,
-        usr_msg_flag: u8,
-    ) -> Result<Self, SendError> {
+    fn new(user_header: Bytes, user_dst: Bytes, payload: Bytes) -> Result<Self, SendError> {
         let total_len = user_header.len() + user_dst.len() + payload.len();
         let _total_len =
             u32::try_from(total_len).map_err(|_| SendError::MessageTooLong(total_len))?;
@@ -190,7 +137,6 @@ impl MsgHeader {
             user_header_len: user_header.len() as u32,
             user_dst_len: user_dst.len() as u32,
             payload_len: payload.len() as u32,
-            usr_msg_flag,
             reserved: [0, 0],
         })
     }
@@ -203,10 +149,6 @@ impl MsgHeader {
     }
     fn user_payload_len(&self) -> u32 {
         self.payload_len
-    }
-
-    fn usr_msg_flag(&self) -> u8 {
-        self.usr_msg_flag
     }
 
     fn to_bytes(&self) -> [u8; MSG_HEADER_LEN] {
@@ -229,7 +171,6 @@ impl MsgHeader {
             user_payload_len[1],
             user_payload_len[2],
             user_payload_len[3],
-            self.usr_msg_flag,
             0,
             0,
         ]
@@ -240,13 +181,11 @@ impl MsgHeader {
         let user_header_len = u32::from_be_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]);
         let user_dst_len = u32::from_be_bytes([bytes[6], bytes[7], bytes[8], bytes[9]]);
         let user_payload_len = u32::from_be_bytes([bytes[10], bytes[11], bytes[12], bytes[13]]);
-        let usr_msg_flag = bytes[14];
         Self {
             version,
             user_header_len,
             user_dst_len,
             payload_len: user_payload_len,
-            usr_msg_flag,
             reserved: [0, 0],
         }
     }
