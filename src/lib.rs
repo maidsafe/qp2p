@@ -49,7 +49,7 @@ pub use error::{
     ClientEndpointError, Close, ConnectionError, EndpointError, InternalConfigError, RecvError,
     RpcError, SendError, StreamError, TransportErrorCode, UnsupportedStreamOperation,
 };
-pub use wire_msg::UsrMsgBytes;
+pub use wire_msg::{UsrMsgBytes, WireMsg};
 
 #[cfg(test)]
 mod tests;
