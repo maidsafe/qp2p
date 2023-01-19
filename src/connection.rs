@@ -347,8 +347,8 @@ impl RecvStream {
     }
 
     /// Parse the message sent by the peer over this stream.
-    pub async fn read(&mut self) -> Result<WireMsg, RecvError> {
-        self.read_wire_msg().await
+    pub async fn read(&mut self) -> Result<UsrMsgBytes, RecvError> {
+        self.read_wire_msg().await.map(|v| v.0)
     }
 
     pub(crate) async fn read_wire_msg(&mut self) -> Result<WireMsg, RecvError> {
