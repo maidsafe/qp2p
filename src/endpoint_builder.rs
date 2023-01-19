@@ -76,7 +76,7 @@ impl EndpointBuilder {
     }
 
     /// Instantiate a server (peer) [`Endpoint`] using the parameters passed to this builder.
-    pub async fn server(self) -> Result<(Endpoint, IncomingConnections), EndpointError> {
+    pub fn server(self) -> Result<(Endpoint, IncomingConnections), EndpointError> {
         let (cfg_srv, cfg_cli) = self.config()?;
 
         let mut endpoint = quinn::Endpoint::server(cfg_srv, self.addr)?;
@@ -95,7 +95,7 @@ impl EndpointBuilder {
     }
 
     /// Instantiate a client (unreachable) [`Endpoint`] using the parameters passed to this builder.
-    pub async fn client(self) -> Result<Endpoint, EndpointError> {
+    pub fn client(self) -> Result<Endpoint, EndpointError> {
         let (_, cfg_cli) = self.config()?;
 
         let mut endpoint = quinn::Endpoint::client(self.addr)?;

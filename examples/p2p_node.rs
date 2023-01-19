@@ -37,8 +37,7 @@ async fn main() -> Result<()> {
     let (node, mut incoming_conns) = Endpoint::builder()
         .addr((Ipv4Addr::LOCALHOST, 0))
         .idle_timeout(60 * 60 * 1_000 /* 3600s = 1h */)
-        .server()
-        .await?;
+        .server()?;
 
     // if we received args then we parse them as SocketAddr and send a "marco" msg to each peer.
     if args.len() > 1 {

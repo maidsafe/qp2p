@@ -692,7 +692,7 @@ async fn client() -> Result<()> {
     use crate::Endpoint;
 
     let (server, mut server_connections) = new_endpoint_with_keepalive().await?;
-    let client = Endpoint::builder().addr(local_addr()).client().await?;
+    let client = Endpoint::builder().addr(local_addr()).client()?;
 
     let (client_to_server, mut client_messages) = client.connect_to(&server.local_addr()).await?;
     client_to_server
@@ -757,7 +757,7 @@ async fn no_client_keep_alive_times_out() -> Result<()> {
     use crate::Endpoint;
 
     let (server, mut server_connections) = new_endpoint().await?;
-    let client = Endpoint::builder().addr(local_addr()).client().await?;
+    let client = Endpoint::builder().addr(local_addr()).client()?;
 
     let (client_to_server, _client_messages) = client.connect_to(&server.local_addr()).await?;
     client_to_server
@@ -801,8 +801,7 @@ async fn client_keep_alive_works() -> Result<()> {
     let client = Endpoint::builder()
         .addr(local_addr())
         .keep_alive_interval(Duration::from_secs(5))
-        .client()
-        .await?;
+        .client()?;
 
     let (client_to_server, mut client_messages) = client.connect_to(&server.local_addr()).await?;
     client_to_server

@@ -32,13 +32,12 @@ pub(crate) async fn new_endpoint_with_keepalive() -> Result<(Endpoint, IncomingC
     let ep = Endpoint::builder()
         .addr(local_addr())
         .keep_alive_interval(Duration::from_secs(5))
-        .server()
-        .await?;
+        .server()?;
     Ok(ep)
 }
 /// Construct an `Endpoint` with sane defaults for testing.
 pub(crate) async fn new_endpoint() -> Result<(Endpoint, IncomingConnections)> {
-    let ep = Endpoint::builder().addr(local_addr()).server().await?;
+    let ep = Endpoint::builder().addr(local_addr()).server()?;
     Ok(ep)
 }
 
