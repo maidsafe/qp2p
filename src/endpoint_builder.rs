@@ -3,7 +3,10 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use quinn::{IdleTimeout, TransportConfig, VarInt};
 use tokio::sync::mpsc;
 
-use crate::{endpoint::listen_for_incoming_connections, Endpoint, IncomingConnections};
+use crate::{
+    endpoint::listen_for_incoming_connections, error::CertificateError, Endpoint, EndpointError,
+    IncomingConnections,
+};
 
 pub(crate) const DEFAULT_IDLE_TIMEOUT: u32 = 10_000; // 10s
 
@@ -129,25 +132,6 @@ impl EndpointBuilder {
 
         Ok((server, client))
     }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum EndpointError {
-    #[error("Certificate could not be generated for config")]
-    Certificate(CertificateError),
-
-    #[error("Failed to bind UDP socket")]
-    Socket(#[from] std::io::Error),
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum CertificateError {
-    #[error("Rcgen internal error generating certificate")]
-    Rcgen(#[from] rcgen::RcgenError),
-    #[error("Certificate or name validation error")]
-    WebPki(#[from] webpki::Error),
-    #[error("Rustls internal error")]
-    Rustls(#[from] rustls::Error),
 }
 
 // We use a hard-coded server name for self-signed certificates.
