@@ -23,18 +23,6 @@ pub enum EndpointError {
     IoError(#[from] io::Error),
 }
 
-/// Errors returned by [`Endpoint::new_client`](crate::Endpoint::new_client).
-#[derive(Debug, Error)]
-pub enum ClientEndpointError {
-    /// Failed to bind UDP socket.
-    #[error("Failed to bind UDP socket")]
-    Socket(#[source] io::Error),
-
-    /// Io error.
-    #[error(transparent)]
-    Io(#[from] io::Error),
-}
-
 /// Errors that can cause connection loss.
 // This is a copy of `quinn::ConnectionError` without the `*Closed` variants, since we want to
 // separate them in our interface.
