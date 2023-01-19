@@ -11,16 +11,29 @@ use bytes::Bytes;
 use std::{fmt, io, net::SocketAddr};
 use thiserror::Error;
 
-/// Errors returned from [`Endpoint::new`](crate::Endpoint::new).
-#[derive(Debug, Error)]
+/// Errors returned from the endpoint builder ([`crate::EndpointBuilder::server`]).
+#[derive(Error, Debug)]
 pub enum EndpointError {
-    /// Failed to bind UDP socket.
-    #[error("Failed to bind UDP socket")]
-    Socket(#[source] io::Error),
-
-    /// Io error.
+    ///
+    #[error("Certificate could not be generated for config")]
+    Certificate(CertificateError),
+    ///
     #[error(transparent)]
     IoError(#[from] io::Error),
+}
+
+/// Various error related to certificates. Should mostly occur due to bugs, not runtime constraints.
+#[derive(Error, Debug)]
+pub enum CertificateError {
+    ///
+    #[error("Rcgen internal error generating certificate")]
+    Rcgen(#[from] rcgen::RcgenError),
+    ///
+    #[error("Certificate or name validation error")]
+    WebPki(#[from] webpki::Error),
+    ///
+    #[error("Rustls internal error")]
+    Rustls(#[from] rustls::Error),
 }
 
 /// Errors that can cause connection loss.

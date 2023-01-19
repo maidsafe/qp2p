@@ -44,7 +44,7 @@ pub use connection::{Connection, ConnectionIncoming, RecvStream, SendStream};
 pub use endpoint::{Endpoint, IncomingConnections};
 pub use endpoint_builder::EndpointBuilder;
 pub use error::{
-    Close, ConnectionError, EndpointError, InternalConfigError, RecvError,
+    CertificateError, Close, ConnectionError, EndpointError, InternalConfigError, RecvError,
     RpcError, SendError, StreamError, TransportErrorCode, UnsupportedStreamOperation,
 };
 pub use wire_msg::{UsrMsgBytes, WireMsg};
