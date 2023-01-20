@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.35.0](https://github.com/maidsafe/qp2p/compare/v0.34.5...v0.35.0) (2023-01-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* ease transition of API changes
+* remove Config
+* remove bootstrap and reachability
+* remove bootstrapping; external IP/port
+
+### Bug Fixes
+
+* builder setting right address bound ([0e42455](https://github.com/maidsafe/qp2p/commit/0e424555fb332e3dfdbdb80ee30dd988037e7305))
+* unneeded async ([0538e57](https://github.com/maidsafe/qp2p/commit/0538e572acc05107c1e2f41ec101dd1459e6e836))
+
+
+* ease transition of API changes ([e5ab6df](https://github.com/maidsafe/qp2p/commit/e5ab6df33d7a7f56c863a47cbab36cae2803db36))
+* remove bootstrap and reachability ([b7b4976](https://github.com/maidsafe/qp2p/commit/b7b497624a1d663c2274bedd1b250b4bcbe009f8))
+* remove bootstrapping; external IP/port ([5b2aaac](https://github.com/maidsafe/qp2p/commit/5b2aaac7342720d5cb2f29f00e13398e43b59a91))
+* remove Config ([aa6197b](https://github.com/maidsafe/qp2p/commit/aa6197b4379c20d3ee8e62309fe6db410b30c329))
+
 ### [0.34.5](https://github.com/maidsafe/qp2p/compare/v0.34.4...v0.34.5) (2023-01-18)
 
 
