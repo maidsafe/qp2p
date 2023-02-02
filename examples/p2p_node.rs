@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
                 .parse()
                 .expect("Invalid SocketAddr.  Use the form 127.0.0.1:1234");
             let msg = Bytes::from(MSG_MARCO);
-            println!("Sending to {:?} --> {:?}\n", peer, msg);
+            println!("Sending to {peer:?} --> {msg:?}\n");
             let (conn, mut incoming) = node.connect_to(&peer).await?;
             conn.send((Bytes::new(), Bytes::new(), msg.clone())).await?;
             // `Endpoint` no longer having `connection_pool` to hold established connection.
@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
             // And causes the receiver side a sending error when reply via the in-coming connection.
             // Hence here have to listen for the reply to avoid such error
             let reply = incoming.next().await.unwrap();
-            println!("Received from {:?} --> {:?}", peer, reply);
+            println!("Received from {peer:?} --> {reply:?}");
         }
 
         println!("Done sending");
@@ -70,13 +70,13 @@ async fn main() -> Result<()> {
 
         // loop over incoming messages
         while let Ok(Some(WireMsg((_, _, bytes)))) = incoming.next().await {
-            println!("Received from {:?} --> {:?}", src, bytes);
+            println!("Received from {src:?} --> {bytes:?}");
             if bytes == *MSG_MARCO {
                 let reply = Bytes::from(MSG_POLO);
                 connection
                     .send((Bytes::new(), Bytes::new(), reply.clone()))
                     .await?;
-                println!("Replied to {:?} --> {:?}", src, reply);
+                println!("Replied to {src:?} --> {reply:?}");
             }
             println!();
         }
