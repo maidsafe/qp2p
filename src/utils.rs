@@ -12,7 +12,7 @@
 pub(crate) fn bin_data_format(data: &[u8]) -> String {
     let len = data.len();
     if len < 8 {
-        return format!("[ {:?} ]", data);
+        return format!("[ {data:?} ]");
     }
 
     format!(
