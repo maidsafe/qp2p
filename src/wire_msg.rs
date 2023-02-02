@@ -90,7 +90,7 @@ impl WireMsg {
         send_stream: &mut quinn::SendStream,
     ) -> Result<(), SendError> {
         // Let's generate the message bytes
-        let WireMsg((ref msg_head, ref msg_dst, ref msg_payload)) = self;
+        let WireMsg((msg_head, msg_dst, msg_payload)) = self;
 
         let msg_header = MsgHeader::new(msg_head.clone(), msg_dst.clone(), msg_payload.clone())?;
 
