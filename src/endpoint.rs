@@ -150,7 +150,7 @@ pub(super) fn listen_for_incoming_connections(
     quinn_endpoint: quinn::Endpoint,
     connection_tx: mpsc::Sender<(Connection, ConnectionIncoming)>,
 ) {
-    let _ = tokio::spawn(async move {
+    let _handle = tokio::spawn(async move {
         while let Some(quinn_conn) = quinn_endpoint.accept().await {
             match quinn_conn.await {
                 Ok(connection) => {
