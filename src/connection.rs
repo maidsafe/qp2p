@@ -11,7 +11,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{trace, warn};
 
 // TODO: this seems arbitrary - it may need tuned or made configurable.
-const INCOMING_MESSAGE_BUFFER_LEN: usize = 10_000;
+const INCOMING_MESSAGE_BUFFER_LEN: usize = 1;
 
 // Error reason for closing a connection when triggered manually by qp2p apis
 const QP2P_CLOSED_CONNECTION: &str = "The connection was closed intentionally by qp2p.";
@@ -137,13 +137,13 @@ fn build_conn_id(conn: &quinn::Connection) -> String {
 fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>) {
     let conn_id = build_conn_id(&connection);
 
-    let _ = tokio::spawn(async move {
+    let _handle = tokio::spawn(async move {
         trace!("Connection {conn_id}: listening for incoming uni-streams");
 
         loop {
             // Wait for an incoming stream.
             let uni = connection.accept_uni().await.map_err(ConnectionError::from);
-            let mut recv = match uni {
+            let recv = match uni {
                 Ok(recv) => recv,
                 Err(err) => {
                     // In case of a connection error, there is not much we can do.
@@ -160,11 +160,21 @@ fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>)
             let tx = tx.clone();
 
             // Make sure we are able to process multiple streams in parallel.
-            let _ = tokio::spawn(async move {
-                let msg = WireMsg::read_from_stream(&mut recv).await;
+            let _handle = tokio::spawn(async move {
+                let reserved_sender = match tx.reserve().await {
+                    Ok(p) => p,
+                    Err(error) => {
+                        tracing::error!(
+                            "Could not reserve sender for new conn msg read: {error:?}"
+                        );
+                        return;
+                    }
+                };
+
+                let msg = WireMsg::read_from_stream(recv).await;
 
                 // Send away the msg or error
-                let _ = tx.send(msg.map(|r| (r, None))).await;
+                reserved_sender.send(msg.map(|r| (r, None)));
             });
         }
 
@@ -176,13 +186,13 @@ fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>)
 fn listen_on_bi_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>) {
     let conn_id = build_conn_id(&connection);
 
-    let _ = tokio::spawn(async move {
+    let _handle = tokio::spawn(async move {
         trace!("Connection {conn_id}: listening for incoming bi-streams");
 
         loop {
             // Wait for an incoming stream.
             let bi = connection.accept_bi().await.map_err(ConnectionError::from);
-            let (send, mut recv) = match bi {
+            let (send, recv) = match bi {
                 Ok(recv) => recv,
                 Err(err) => {
                     // In case of a connection error, there is not much we can do.
@@ -200,13 +210,22 @@ fn listen_on_bi_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>) 
             let conn_id = conn_id.clone();
 
             // Make sure we are able to process multiple streams in parallel.
-            let _ = tokio::spawn(async move {
-                let msg = WireMsg::read_from_stream(&mut recv).await;
+            let _handle = tokio::spawn(async move {
+                let reserved_sender = match tx.reserve().await {
+                    Ok(p) => p,
+                    Err(error) => {
+                        tracing::error!(
+                            "Could not reserve sender for new conn msg read: {error:?}"
+                        );
+                        return;
+                    }
+                };
+                let msg = WireMsg::read_from_stream(recv).await;
 
                 // Pass the stream, so it can be used to respond to the user message.
                 let msg = msg.map(|msg| (msg, Some(SendStream::new(send, conn_id.clone()))));
                 // Send away the msg or error
-                let _ = tx.send(msg).await;
+                reserved_sender.send(msg);
                 trace!("Incoming new msg on conn_id={conn_id} sent to user in upper layer");
             });
         }
@@ -347,12 +366,12 @@ impl RecvStream {
     }
 
     /// Parse the message sent by the peer over this stream.
-    pub async fn read(&mut self) -> Result<UsrMsgBytes, RecvError> {
+    pub async fn read(self) -> Result<UsrMsgBytes, RecvError> {
         self.read_wire_msg().await.map(|v| v.0)
     }
 
-    pub(crate) async fn read_wire_msg(&mut self) -> Result<WireMsg, RecvError> {
-        WireMsg::read_from_stream(&mut self.inner).await
+    pub(crate) async fn read_wire_msg(self) -> Result<WireMsg, RecvError> {
+        WireMsg::read_from_stream(self.inner).await
     }
 }
 

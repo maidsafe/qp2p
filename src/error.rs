@@ -322,6 +322,10 @@ pub enum RecvError {
     #[error("Connection was lost when trying to receive a message")]
     ConnectionLost(#[from] ConnectionError),
 
+    /// Connection was lost when trying to receive a message.
+    #[error("Error reading to end of stream")]
+    ReadToEndError(#[from] quinn::ReadToEndError),
+
     /// Stream was lost when trying to receive a message.
     #[error("Stream was lost when trying to receive a message")]
     StreamLost(#[source] StreamError),

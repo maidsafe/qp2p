@@ -12,11 +12,11 @@ use crate::{
     utils,
 };
 use bytes::{Bytes, BytesMut};
-use quinn::VarInt;
-use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
-use std::fmt;
 
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::{convert::TryFrom, time::Instant};
+use tracing::trace;
 const MSG_HEADER_LEN: usize = 16;
 const MSG_PROTOCOL_VERSION: u16 = 0x0002;
 
@@ -34,11 +34,28 @@ impl WireMsg {
     // Read a message's bytes from the provided stream
     /// # Cancellation safety
     /// Warning: This method is not cancellation safe!
-    pub(crate) async fn read_from_stream(recv: &mut quinn::RecvStream) -> Result<Self, RecvError> {
+    pub(crate) async fn read_from_stream(mut recv: quinn::RecvStream) -> Result<Self, RecvError> {
         let mut header_bytes = [0; MSG_HEADER_LEN];
         recv.read_exact(&mut header_bytes).await?;
 
         let msg_header = MsgHeader::from_bytes(header_bytes);
+
+        let start = Instant::now();
+        let all_bytes = recv.read_to_end(1024 * 1024 * 100).await?;
+
+        let duration = start.elapsed();
+        trace!(
+            "Incoming new msg. Reading {:?} bytes took: {:?}",
+            all_bytes.len(),
+            duration
+        );
+
+        if all_bytes.is_empty() {
+            return Err(RecvError::EmptyMsgPayload);
+        }
+
+        let mut bytes = Bytes::from(all_bytes);
+
         // https://github.com/rust-lang/rust/issues/70460 for work on a cleaner alternative:
         #[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
         {
@@ -49,30 +66,21 @@ impl WireMsg {
         let dst_length = msg_header.user_dst_len() as usize;
         let payload_length = msg_header.user_payload_len() as usize;
 
-        let mut header_data = BytesMut::with_capacity(header_length);
-        let mut dst_data = BytesMut::with_capacity(dst_length);
-        let mut payload_data = BytesMut::with_capacity(payload_length);
-        // buffer capacity does not actually give us length, so this sets us up
-        header_data.resize(header_length, 0);
-        dst_data.resize(dst_length, 0);
-        payload_data.resize(payload_length, 0);
+        // Check we have all the data and we weren't cut short, otherwise
+        // the following would panic...
+        if bytes.len() != (header_length + dst_length + payload_length) {
+            return Err(RecvError::NotEnoughBytes);
+        }
 
-        // fill up our data vecs from the stream
-        recv.read_exact(&mut header_data).await?;
-        recv.read_exact(&mut dst_data).await?;
-        recv.read_exact(&mut payload_data).await?;
+        let header_data = bytes.split_to(header_length);
 
-        // let sender know we won't receive any more.
-        let _ = recv.stop(VarInt::from_u32(0));
+        let dst_data = bytes.split_to(dst_length);
+        let payload_data = bytes;
 
         if payload_data.is_empty() {
             Err(RecvError::EmptyMsgPayload)
         } else {
-            Ok(WireMsg((
-                header_data.freeze(),
-                dst_data.freeze(),
-                payload_data.freeze(),
-            )))
+            Ok(WireMsg((header_data, dst_data, payload_data)))
         }
     }
 
@@ -88,13 +96,23 @@ impl WireMsg {
 
         let header_bytes = msg_header.to_bytes();
 
-        // Send the header bytes over QUIC
-        send_stream.write_all(&header_bytes).await?;
+        let mut all_bytes = BytesMut::with_capacity(
+            header_bytes.len()
+                + msg_header.user_header_len() as usize
+                + msg_header.user_dst_len() as usize
+                + msg_header.user_payload_len() as usize,
+        );
 
-        // Send message bytes over QUIC
-        send_stream.write_all(msg_head).await?;
-        send_stream.write_all(msg_dst).await?;
-        send_stream.write_all(msg_payload).await?;
+        all_bytes.extend_from_slice(&header_bytes);
+        all_bytes.extend_from_slice(msg_head);
+        all_bytes.extend_from_slice(msg_dst);
+        all_bytes.extend_from_slice(msg_payload);
+
+        let start = Instant::now();
+        // Send the header bytes over QUIC
+        send_stream.write_all(&all_bytes).await?;
+        let duration = start.elapsed();
+        trace!("Writing {:?} bytes took: {duration:?}", all_bytes.len());
 
         Ok(())
     }
