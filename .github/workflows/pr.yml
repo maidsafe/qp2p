@@ -78,6 +78,8 @@ jobs:
         uses: actions-rs/tarpaulin@v0.1
         with:
           args: '-v --release --out Lcov -- --skip echo_service --skip multiple_connections_with_many_larger_concurrent_messages' # tests would timeout on CI
+          version: "0.15.0"
+          out-type: Lcov
       - name: Push code coverage results to coveralls.io
         uses: coverallsapp/github-action@master
         with:
