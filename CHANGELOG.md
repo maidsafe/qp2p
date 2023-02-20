@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [0.36.0](https://github.com/maidsafe/qp2p/compare/v0.35.1...v0.36.0) (2023-02-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* consumes receiver on read.
+
+### Features
+
+* limit async during read/write for greater consistency ([c466644](https://github.com/maidsafe/qp2p/commit/c466644fdf4dc720099217b538d32e8bfb51f23b))
+
 ### [0.35.1](https://github.com/maidsafe/qp2p/compare/v0.35.0...v0.35.1) (2023-01-25)
 
 ## [0.35.0](https://github.com/maidsafe/qp2p/compare/v0.34.5...v0.35.0) (2023-01-20)
