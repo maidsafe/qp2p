@@ -152,19 +152,23 @@ pub(super) fn listen_for_incoming_connections(
 ) {
     let _handle = tokio::spawn(async move {
         while let Some(quinn_conn) = quinn_endpoint.accept().await {
-            match quinn_conn.await {
-                Ok(connection) => {
-                    let connection = Connection::new(connection);
-                    let conn_id = connection.0.id();
-                    trace!("Incoming new connection conn_id={conn_id}");
-                    if connection_tx.send(connection).await.is_err() {
-                        warn!("Dropping incoming connection conn_id={conn_id}, because receiver was dropped");
+            let conn_sender = connection_tx.clone();
+            // move incoming conn waiting off thread so as not to block us
+            let _handle = tokio::spawn(async move {
+                match quinn_conn.await {
+                    Ok(connection) => {
+                        let connection = Connection::new(connection);
+                        let conn_id = connection.0.id();
+                        trace!("Incoming new connection conn_id={conn_id}");
+                        if conn_sender.send(connection).await.is_err() {
+                            warn!("Dropping incoming connection conn_id={conn_id}, because receiver was dropped");
+                        }
+                    }
+                    Err(err) => {
+                        warn!("An incoming connection failed because of: {:?}", err);
                     }
                 }
-                Err(err) => {
-                    warn!("An incoming connection failed because of: {:?}", err);
-                }
-            }
+            });
         }
 
         trace!(
