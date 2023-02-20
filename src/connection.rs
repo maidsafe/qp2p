@@ -68,8 +68,12 @@ impl Connection {
     /// responsible for correlating any anticipated responses from incoming streams.
     ///
     /// The priority will be `0`.
-    pub async fn send(&self, user_msg_bytes: UsrMsgBytes) -> Result<(), SendError> {
-        self.send_with(user_msg_bytes, 0).await
+    pub async fn send(
+        &self,
+        user_msg_bytes: UsrMsgBytes,
+        msg_id: &[u8; 32],
+    ) -> Result<(), SendError> {
+        self.send_with(user_msg_bytes, 0, msg_id).await
     }
 
     /// Open a unidirection stream to the peer.
@@ -111,11 +115,12 @@ impl Connection {
         &self,
         user_msg_bytes: UsrMsgBytes,
         priority: i32,
+        msg_id: &[u8; 32],
     ) -> Result<(), SendError> {
         let mut send_stream = self.open_uni().await.map_err(SendError::ConnectionLost)?;
         send_stream.set_priority(priority);
 
-        send_stream.send_user_msg(user_msg_bytes).await?;
+        send_stream.send_user_msg(user_msg_bytes, msg_id).await?;
 
         // We try to make sure the stream is gracefully closed and the bytes get sent, but if it
         // was already closed (perhaps by the peer) then we ignore the error.
@@ -158,7 +163,7 @@ fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>)
             trace!("Connection {conn_id}: incoming uni-stream accepted");
 
             let tx = tx.clone();
-
+            let conn_id = conn_id.clone();
             // Make sure we are able to process multiple streams in parallel.
             let _handle = tokio::spawn(async move {
                 let reserved_sender = match tx.reserve().await {
@@ -171,10 +176,11 @@ fn listen_on_uni_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>)
                     }
                 };
 
-                let msg = WireMsg::read_from_stream(recv).await;
+                let (msg, _) = WireMsg::read_from_stream(recv, &conn_id).await.unwrap();
 
                 // Send away the msg or error
-                reserved_sender.send(msg.map(|r| (r, None)));
+                //reserved_sender.send(msg.map(|r| (r, None)));
+                reserved_sender.send(Ok((msg, None)));
             });
         }
 
@@ -220,13 +226,20 @@ fn listen_on_bi_streams(connection: quinn::Connection, tx: Sender<IncomingMsg>) 
                         return;
                     }
                 };
-                let msg = WireMsg::read_from_stream(recv).await;
+                let stream_id = recv.id();
+                let (msg, msg_id) = match WireMsg::read_from_stream(recv, &conn_id).await {
+                    Ok((msg, msg_id)) => (Ok(msg), msg_id),
+                    Err(err) => (Err(err), "UNKNOWN".to_string()),
+                };
 
                 // Pass the stream, so it can be used to respond to the user message.
                 let msg = msg.map(|msg| (msg, Some(SendStream::new(send, conn_id.clone()))));
                 // Send away the msg or error
                 reserved_sender.send(msg);
-                trace!("Incoming new msg on conn_id={conn_id} sent to user in upper layer");
+                trace!(
+                    "Incoming new msg {msg_id} on conn_id={conn_id} sent to user in upper layer (capacity {}): {stream_id}",
+                    tx.capacity()
+                );
             });
         }
 
@@ -325,9 +338,13 @@ impl SendStream {
     /// Send a message over the stream to the peer.
     ///
     /// Messages sent over the stream will arrive at the peer in the order they were sent.
-    pub async fn send_user_msg(&mut self, user_msg_bytes: UsrMsgBytes) -> Result<(), SendError> {
+    pub async fn send_user_msg(
+        &mut self,
+        user_msg_bytes: UsrMsgBytes,
+        msg_id: &[u8; 32],
+    ) -> Result<(), SendError> {
         WireMsg(user_msg_bytes)
-            .write_to_stream(&mut self.inner)
+            .write_to_stream(&mut self.inner, &self.conn_id, msg_id)
             .await
     }
 
@@ -371,7 +388,9 @@ impl RecvStream {
     }
 
     pub(crate) async fn read_wire_msg(self) -> Result<WireMsg, RecvError> {
-        WireMsg::read_from_stream(self.inner).await
+        WireMsg::read_from_stream(self.inner, &self.conn_id)
+            .await
+            .map(|(msg, _)| msg)
     }
 }
 
