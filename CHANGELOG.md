@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.36.2](https://github.com/maidsafe/qp2p/compare/v0.36.1...v0.36.2) (2023-02-21)
+
+
+### Bug Fixes
+
+* move incoming conn handling off thread to not block ([d1624cb](https://github.com/maidsafe/qp2p/commit/d1624cb7d9c441ff778d7c80b2d160ab61ecfe80))
+
 ### [0.36.1](https://github.com/maidsafe/qp2p/compare/v0.36.0...v0.36.1) (2023-02-20)
 
 ## [0.36.0](https://github.com/maidsafe/qp2p/compare/v0.35.1...v0.36.0) (2023-02-20)
