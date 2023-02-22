@@ -40,22 +40,6 @@ impl WireMsg {
 
         let msg_header = MsgHeader::from_bytes(header_bytes);
 
-        let start = Instant::now();
-        let all_bytes = recv.read_to_end(1024 * 1024 * 100).await?;
-
-        let duration = start.elapsed();
-        trace!(
-            "Incoming new msg. Reading {:?} bytes took: {:?}",
-            all_bytes.len(),
-            duration
-        );
-
-        if all_bytes.is_empty() {
-            return Err(RecvError::EmptyMsgPayload);
-        }
-
-        let mut bytes = Bytes::from(all_bytes);
-
         // https://github.com/rust-lang/rust/issues/70460 for work on a cleaner alternative:
         #[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
         {
@@ -65,15 +49,29 @@ impl WireMsg {
         let header_length = msg_header.user_header_len() as usize;
         let dst_length = msg_header.user_dst_len() as usize;
         let payload_length = msg_header.user_payload_len() as usize;
+        let total_length = header_length + dst_length + payload_length;
+
+        let start = Instant::now();
+        let all_bytes = recv.read_to_end(total_length).await?;
+
+        let duration = start.elapsed();
+        trace!(
+            "Incoming new msg. Reading {:?} bytes took: {duration:?}",
+            all_bytes.len(),
+        );
+
+        if all_bytes.is_empty() {
+            return Err(RecvError::EmptyMsgPayload);
+        }
 
         // Check we have all the data and we weren't cut short, otherwise
         // the following would panic...
-        if bytes.len() != (header_length + dst_length + payload_length) {
+        if all_bytes.len() != total_length {
             return Err(RecvError::NotEnoughBytes);
         }
 
+        let mut bytes = Bytes::from(all_bytes);
         let header_data = bytes.split_to(header_length);
-
         let dst_data = bytes.split_to(dst_length);
         let payload_data = bytes;
 
