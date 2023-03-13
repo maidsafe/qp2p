@@ -395,8 +395,7 @@ mod tests {
     use futures::future::OptionFuture;
     use std::time::Duration;
 
-    #[tokio::test]
-    #[tracing_test::traced_test]
+    #[test_log::test(tokio::test(flavor = "multi_thread"))]
     async fn basic_usage() -> Result<()> {
         let (cfg_srv, cfg_cli) = crate::Endpoint::builder().config()?;
 
