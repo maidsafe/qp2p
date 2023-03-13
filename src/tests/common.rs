@@ -489,9 +489,8 @@ async fn multiple_connections_with_many_concurrent_messages() -> Result<()> {
     Ok(())
 }
 
-#[tracing_test::traced_test]
-#[tokio::test(flavor = "multi_thread")]
-async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<()> {
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn multiple_connections_with_many_large_concurrent_messages() -> Result<()> {
     use futures::future;
 
     let num_senders: usize = 10;
@@ -612,6 +611,150 @@ async fn multiple_connections_with_many_larger_concurrent_messages() -> Result<(
                 }
 
                 Ok::<_, Report>(task_connection)
+            }
+        }));
+    }
+
+    let _res = future::try_join_all(tasks).await?;
+
+    Ok(())
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn multiple_connections_with_many_large_concurrent_bidi_messages() -> Result<()> {
+    use futures::future;
+
+    info!("woooo");
+    let num_senders: usize = 10;
+    let num_messages_each: usize = 100;
+    let num_messages_total: usize = num_senders * num_messages_each;
+
+    let (server_endpoint, mut recv_incoming_connections) = new_endpoint_with_keepalive().await?;
+    let server_addr = server_endpoint.local_addr();
+    let msg_len = 1024 * 1024;
+    let test_msgs: Vec<_> = (0..num_messages_each)
+        .map(|_| random_msg(msg_len))
+        .collect();
+    assert_eq!(test_msgs.len(), num_messages_each);
+    assert_eq!(msg_len, test_msgs[0].len());
+
+    let sending_msgs = Arc::new(test_msgs);
+
+    let mut tasks = Vec::new();
+
+    // Receiver
+    tasks.push(tokio::spawn({
+        async move {
+            let mut num_received = 0;
+            let mut sending_tasks = Vec::new();
+            // let mut task_connection = None;
+            while let Some((connection, mut recv_incoming_messages)) =
+                recv_incoming_connections.next().await
+            {
+                debug!("Sssssssssssssssssssssssss");
+                let connection = Arc::new(connection);
+                while let Ok(Some((WireMsg((_, _, msg)), Some(mut send_stream)))) =
+                    recv_incoming_messages.next_with_stream().await
+                {
+                    info!(
+                        "received from {:?} with message size {}",
+                        connection.remote_address(),
+                        msg.len()
+                    );
+                    // task_connection = Some(connection.clone());
+                    sending_tasks.push(tokio::spawn({
+                        // let connection = connection.clone();
+                        async move {
+                            let hash_result = hash(&msg);
+                            // to simulate certain workload.
+                            for _ in 0..5 {
+                                let _ = hash(&msg);
+                            }
+
+                            // Send the hash result back.
+                            info!("About to send hash from receiver");
+                            send_stream
+                                .send_user_msg((Bytes::new(), Bytes::new(), hash_result.to_vec().into()))
+                                .await?;
+                            send_stream.finish().await?;
+
+                            Ok::<_, Report>(())
+                        }
+                    }));
+
+                    num_received += 1;
+                }
+
+                debug!("hmmmmmmmmmmmm");
+                // break;
+                if num_received >= num_messages_total {
+                    break;
+                }
+            }
+
+            let _res = future::try_join_all(sending_tasks).await?;
+
+            info!("Receiver closed");
+
+            Ok(())
+            // Ok(task_connection)
+        }
+    }));
+
+    // Sender
+    for id in 0..num_senders {
+        let messages = sending_msgs.clone();
+        tasks.push(tokio::spawn({
+            let (send_endpoint, _) = new_endpoint_with_keepalive().await?;
+            // let task_connection = None;
+
+            async move {
+                let mut hash_results = BTreeSet::new();
+                let (connection, mut _recv_incoming_messages) =
+                    send_endpoint.connect_to(&server_addr).await?;
+
+                assert_eq!(messages.len(), num_messages_each);
+                // let mut all_received_msgs = 0;
+                for (index, message) in messages.iter().enumerate() {
+                    let _ = hash_results.insert(hash(message));
+                    info!("sender #{} sending message #{}", id, index);
+                    let (mut send, recv) = connection
+                        .open_bi().await?;
+
+                        send.send_user_msg((Bytes::new(), Bytes::new(), message.clone())).await?;
+                        send.finish().await?;
+                        // send.((Bytes::new(), Bytes::new(), message.clone()))
+                        // .await?;
+                        
+                        let (_,_, msg) = recv.read().await?;
+                        info!(
+                            "#{} received from server {:?} with message size {}",
+                            id,
+                            connection.remote_address(),
+                            msg.len()
+                        );
+                        info!("Hash len before: {:?}", hash_results.len());
+                        assert!(hash_results.remove(&msg[..]));
+                        // all_received_msgs += 1;
+                        info!("Hash len after: {:?}", hash_results.len());
+                    }
+                    
+                    
+                    // if let Ok(Some(WireMsg((_, _, msg)))) =
+                    info!(
+                        "sender #{} completed sending message on this streams, starts listening",
+                        id
+                    );
+                //     recv.read().timeout().await
+                // {
+
+                //     if hash_results.is_empty() && all_received_msgs == num_messages_each {
+                //         break;
+                //     }
+                // }
+
+                Ok::<_, Report>(())
+                // Ok::<_, Report>(task_connection)
             }
         }));
     }
