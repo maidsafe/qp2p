@@ -100,7 +100,8 @@ impl Endpoint {
         }
     }
 
-    /// Close all the connections of this endpoint immediately and stop accepting new connections.
+    /// Clean up endpoint resources.
+    /// Will do so cleanly and wait for all incoming connections to close.
     pub fn close(&self) {
         trace!("Closing endpoint");
         self.inner.wait_idle(); // wait for all connections to close
