@@ -102,9 +102,9 @@ impl Endpoint {
 
     /// Clean up endpoint resources.
     /// Will do so cleanly and wait for all incoming connections to close.
-    pub fn close(&self) {
+    pub async fn close(&self) {
         trace!("Closing endpoint");
-        self.inner.wait_idle(); // wait for all connections to close
+        self.inner.wait_idle().await; // wait for all connections to close
         self.inner.close(0_u32.into(), b"Endpoint closed")
     }
 
