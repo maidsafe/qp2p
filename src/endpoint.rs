@@ -103,6 +103,7 @@ impl Endpoint {
     /// Close all the connections of this endpoint immediately and stop accepting new connections.
     pub fn close(&self) {
         trace!("Closing endpoint");
+        self.inner.wait_idle(); // wait for all connections to close
         self.inner.close(0_u32.into(), b"Endpoint closed")
     }
 
